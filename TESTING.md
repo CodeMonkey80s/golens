@@ -235,28 +235,96 @@ Read **every** diagnostic and judge it, then cross-check against the real compil
 
 Look for: each diagnostic is a genuine issue, and nothing real is missing.
 
-The unused-import check is documented as best-effort. It should **miss** some cases — an import
-whose name appears only in a comment, or is shadowed by a local variable. It must **never**
-falsely accuse an import that is in use. A false positive there would have an agent delete working
-code.
+### Cross-check per platform, not just once
 
-Failure: a false positive on a used import.
+`go build` compiles one file per build-tag combination. `golens check` parses **every** `.go`
+file in the tree, whatever its constraints. On a repository with platform files that is a
+different file set, so a clean `go build` does not clear the diagnostics. Build each platform:
+
+```console
+$ for os in linux darwin windows freebsd openbsd; do
+      GOOS=$os go build ./... 2>&1 | head -3
+      echo "GOOS=$os exit=$?"
+  done
+```
+
+Now group the diagnostics by kind and check each against *some* platform's verdict.
+
+### Two false-positive classes to expect
+
+**Redeclarations across mutually exclusive build tags.** If `isFuseFs` appears in
+`filesystems_linux.go`, `filesystems_darwin.go` and `filesystems_windows.go`, no build compiles
+two of them, so the compiler never reports a redeclaration. golens sees one package containing
+all three and does.
+
+**Unused imports whose path element is not a valid identifier.** golens derives an import's
+local name from the last path element, and cannot resolve the real package name — module
+resolution is out of scope. For `github.com/mattn/go-runewidth` that yields `go-runewidth`,
+which is not a Go identifier and never appears in the source, so a genuinely used import is
+reported as unused:
+
+```console
+$ cat /tmp/dash.go <<'EOF'
+package dash
+
+import "github.com/mattn/go-runewidth"
+
+func W(r rune) int { return runewidth.RuneWidth(r) }
+EOF
+$ /tmp/golens check /tmp/dash.go     # reports an import that is used on the last line
+```
+
+The rule is that golens must **never falsely accuse an import that is in use**. When it cannot
+determine the name, silence is correct and a diagnostic is not. Affected paths are common:
+`mattn/go-isatty`, `mattn/go-colorable`, anything with a dash or a digit in the final element.
+
+### Positive control
+
+A check that reports nothing proves nothing. Confirm it still catches a real problem:
+
+```console
+$ cp <file.go> /tmp/ctl.go
+$ # add an import that is genuinely never referenced
+$ /tmp/golens check /tmp/ctl.go ; echo "exit=$?"   # want 3, naming the import
+```
+
+The unused-import check is documented as best-effort. It should **miss** some cases — an import
+whose name appears only in a comment, or is shadowed by a local variable. A miss is acceptable.
+A false accusation is not: it would have an agent delete working code.
+
+Failure: any diagnostic that no platform's compiler would report, or a false positive on a used
+import.
 
 ☐
 
 ## 14. Naming check against your own style
 
 ```console
-$ /tmp/golens check . --naming | head -20
-$ /tmp/golens check . --naming | wc -l
+$ /tmp/golens check . --naming 2>&1 | head -20
+$ /tmp/golens check . --naming 2>&1 | wc -l
 ```
 
 Look for: every reported identifier really is an all-caps initialism — `userID`, `HTTPHandler`.
 
-Expect **false positives** where a run of capitals is genuinely one word, such as `userIdX`. Note
-those separately; they are a known and accepted limitation.
+Expect **false positives** in two situations:
 
-Failure: a plain camelCase name reported as a violation.
+- A run of capitals that is genuinely one word, such as `userIdX`. Note those separately; this
+  is a known and accepted limitation.
+- **Any identifier with no lowercase letters at all.** `camelCaseId` cannot be satisfied by an
+  identifier that is entirely upper-case, so every SCREAMING_SNAKE_CASE constant containing a
+  dictionary word is flagged by construction — `RAMFS_MAGIC` reports "RAM should be ram",
+  `VMHGFS_SUPER_MAGIC` reports "VM should be vm". Those are not camelCase names, so the rule
+  does not apply to them and reporting them is a defect, not a limitation.
+
+```console
+$ /tmp/golens check . --naming 2>&1 | grep -oP '(?<=: )[A-Z_0-9]+(?=: initialism)' | sort -u
+```
+
+Note the `2>&1`: `check` writes diagnostics to stderr, so a pipe without it silently sees
+nothing and the raw lines scroll past unfiltered.
+
+Failure: a plain camelCase name reported as a violation, or an all-caps identifier reported at
+all.
 
 ☐
 
