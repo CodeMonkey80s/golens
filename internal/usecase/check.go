@@ -214,7 +214,7 @@ func (p *packageSymbols) add(dir string, doc domain.Document) {
 		p.builtIn[ns] = make(map[string][]bool)
 	}
 	if _, seen := p.builtIn[ns][doc.Path]; !seen {
-		p.builtIn[ns][doc.Path] = constraintVector(parseBuildConstraint(doc.Source))
+		p.builtIn[ns][doc.Path] = constraintVector(parseBuildConstraint(doc.BuildConstraint))
 	}
 
 	for _, sym := range doc.Symbols {

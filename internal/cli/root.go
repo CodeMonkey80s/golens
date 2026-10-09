@@ -51,7 +51,10 @@ Streams:
   a clean result.
 
 Run "golens <command> --help" before the first use of a command. The conventions
-differ between them, and bounds in particular will corrupt a file if guessed.`,
+differ between them, and bounds in particular will corrupt a file if guessed.
+
+The outline header reports a file's //go:build constraint when it has one, so
+you can tell whether the current GOOS compiles an edit before making it.`,
 		// Errors are reported by Execute, which owns the exit code mapping.
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -60,6 +63,11 @@ differ between them, and bounds in particular will corrupt a file if guessed.`,
 	// Global flags are persistent so they may appear before or after the subcommand.
 	root.PersistentFlags().Bool("json", false, "output a machine-readable JSON payload")
 	root.PersistentFlags().Bool("compact", false, "minify output to reduce token usage")
+
+	// Cobra renders --version as "golens version <v>" using the command's Name, which is
+	// bare, so the template is set to include the binary name.
+	root.SetVersionTemplate("golens {{.Version}}\n")
+	root.Version = Version
 
 	root.AddCommand(
 		newOutlineCmd(env),
@@ -94,6 +102,9 @@ func Execute(root *cobra.Command) int {
 		for _, candidate := range amb.Candidates() {
 			fmt.Fprintln(root.ErrOrStderr(), "  "+candidate)
 		}
+		if advised, ok := classified.(interface{ Advice() string }); ok {
+			fmt.Fprintln(root.ErrOrStderr(), advised.Advice())
+		}
 	}
 
 	return code
@@ -105,6 +116,13 @@ type AmbiguousError interface {
 	error
 	Candidates() []string
 }
+
+// Version is the release identifier reported by --version.
+//
+// It is a constant rather than a derived value so the command works from any build, including
+// one made with `go build` rather than the module proxy, which is how most people obtain it
+// while it is unpublished.
+const Version = "0.1.0"
 
 // exitCodeFor maps an error to the documented exit code.
 //

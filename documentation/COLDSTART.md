@@ -50,6 +50,7 @@ Six things, in the order an agent meets them. Each is a pass/fail, not a judgeme
 | 4 | Replacement starts at the name | Splices `type Mount struct {...}` into a span beginning at `Mount`, producing `type type Mount struct` |
 | 5 | **Preserves what it did not mean to change** | Drops struct fields it did not notice. See below |
 | 6 | Verifies with `go build` | Trusts `check` exit 0 and calls the edit done |
+| 7 | Checks the build constraint | Edits a platform-specific file the current `GOOS` excludes, so plain `go build` passes on code that never compiled |
 
 **5 is the one to look hardest at.** My own first attempt at the reference run dropped five of
 fourteen fields — `InodesFree`, `InodesUsed`, `Blocks`, `BlockSize`, `Metadata` — because I
@@ -89,6 +90,7 @@ into the repository as `AGENTS.md`:
 | 4 span starts at the name | pass | no `type type`; file parses |
 | 5 preserves the rest | pass | `git diff --numstat` → `2  0`, field inventory minus baseline is exactly `CreatedAt` |
 | 6 verifies with `go build` | pass | builds clean on linux, darwin, windows, freebsd and openbsd |
+| 7 checks the build constraint | pass | second run: edited `mounts_windows.go` and verified with `GOOS=windows go build ./...` |
 
 Traps 2 and 3 were not exercised by that run and remain unverified.
 

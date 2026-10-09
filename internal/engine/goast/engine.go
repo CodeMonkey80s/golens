@@ -86,6 +86,10 @@ func (e *Engine) ParseSource(path string, src []byte) (domain.Document, error) {
 		Source:   src,
 		Imports:  importPaths(file),
 		Comments: e.ParseComments,
+		// BuildConstraint is surfaced so a caller editing a file can tell whether the
+		// current platform compiles it. golens parses every file regardless, so nothing
+		// else in the document hints at the constraint.
+		BuildConstraint: buildConstraintText(src),
 	}
 
 	b := &builder{fset: fset, tf: tf}

@@ -189,14 +189,21 @@ func (s Symbol) Declaration() string {
 
 // Document is the result of parsing one source file.
 type Document struct {
-	Path     string
-	Package  string
-	Bounds   Bounds
-	Nodes    []Node
-	Symbols  []Symbol
-	Imports  []string
-	Source   []byte
-	Comments bool
+	Path    string
+	Package string
+	Bounds  Bounds
+	Nodes   []Node
+	Symbols []Symbol
+	Imports []string
+	Source  []byte
+	// BuildConstraint is the file's //go:build expression, normalised from either source
+	// syntax, or empty when the file carries no constraint and is always built.
+	//
+	// It is recorded because golens parses every file in a tree whatever its constraints,
+	// which is right for a structural query and misleading for an edit. A caller changing a
+	// file needs to know whether the current platform compiles it.
+	BuildConstraint string
+	Comments        bool
 }
 
 // Symbol looks up a package-level declaration by bare or qualified name.

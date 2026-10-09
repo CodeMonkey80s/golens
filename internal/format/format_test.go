@@ -291,3 +291,45 @@ func TestOutlineJsonShape(t *testing.T) {
 		}
 	}
 }
+
+// TestOutlineReportsBuildConstraint covers the constraint surfacing.
+//
+// golens parses every file whatever its constraints, which is right for a structural query and
+// misleading for an edit: an agent changing a file the current GOOS excludes gets no signal
+// that the change will not compile. The header is where that signal belongs, and the JSON
+// payload carries it so a machine consumer sees it too.
+func TestOutlineReportsBuildConstraint(t *testing.T) {
+	tagged := sampleDoc()
+	tagged.Path = "filesystems_linux.go"
+	tagged.BuildConstraint = "linux"
+
+	var buf bytes.Buffer
+	if err := WriteOutlineHuman(&buf, tagged, UnlimitedDepth, false); err != nil {
+		t.Fatalf("WriteOutlineHuman: %v", err)
+	}
+	if !strings.Contains(buf.String(), "build: linux\n") {
+		t.Errorf("human outline lacks the constraint line:\n%s", buf.String())
+	}
+
+	var compact bytes.Buffer
+	if err := WriteOutlineHuman(&compact, tagged, UnlimitedDepth, true); err != nil {
+		t.Fatalf("WriteOutlineHuman compact: %v", err)
+	}
+	if !strings.Contains(compact.String(), "filesystems_linux.go\tstore\tlinux\n") {
+		t.Errorf("compact outline lacks the constraint:\n%s", compact.String())
+	}
+
+	if got := Outline(tagged, UnlimitedDepth).Build; got != "linux" {
+		t.Errorf("JSON Outline.Build = %q, want %q", got, "linux")
+	}
+
+	// An untagged file keeps its original header, so nothing downstream has to special-case
+	// the absence of a constraint.
+	var plain bytes.Buffer
+	if err := WriteOutlineHuman(&plain, sampleDoc(), UnlimitedDepth, false); err != nil {
+		t.Fatalf("WriteOutlineHuman: %v", err)
+	}
+	if strings.Contains(plain.String(), "build:") {
+		t.Errorf("untagged file gained a build line:\n%s", plain.String())
+	}
+}

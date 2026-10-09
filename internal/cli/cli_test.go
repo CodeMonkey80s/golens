@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/CodeMonkey80s/golens/internal/engine/goast"
+	"github.com/CodeMonkey80s/golens/internal/testfixture"
 )
 
 const userGo = `package store
@@ -505,5 +506,52 @@ func TestCheckNamingFlagAcrossFiles(t *testing.T) {
 	}
 	if strings.Contains(stderr, "userId") {
 		t.Errorf("a compliant identifier was reported:\n%s", stderr)
+	}
+}
+
+// TestAmbiguousErrorAdvisesDisambiguation covers the remedy line printed under the candidate
+// list.
+//
+// The error names the problem and the help documents the fix, but a caller meets the error
+// first. Without the advice the likely responses are to retry the same command or to conclude
+// the tool is broken, and duf declares Mount.Stat in four platform files, so this is the
+// ordinary case rather than an edge one.
+func TestAmbiguousErrorAdvisesDisambiguation(t *testing.T) {
+	dir := t.TempDir()
+	testfixture.Write(t, dir, "a_linux.go", "//go:build linux\n\npackage p\n\ntype T struct{}\n\nfunc (T) M() {}\n")
+	testfixture.Write(t, dir, "a_darwin.go", "//go:build darwin\n\npackage p\n\ntype T struct{}\n\nfunc (T) M() {}\n")
+
+	var stdout, stderr bytes.Buffer
+	cmd := New(Env{Stdout: &stdout, Stderr: &stderr, Engine: goast.New()})
+	// Execute reports through cobra's error writer, which defaults to os.Stderr rather than
+	// Env.Stderr, so it is pointed at the buffer explicitly.
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"get", "T.M", dir})
+
+	if code := Execute(cmd); code != 2 {
+		t.Fatalf("exit = %d, want 2 for an ambiguous symbol", code)
+	}
+	if !strings.Contains(stderr.String(), "pass a specific file") {
+		t.Errorf("stderr lacks the disambiguation advice:\n%s", stderr.String())
+	}
+}
+
+// TestVersionFlag covers --version, which most callers try before anything else.
+//
+// Cobra writes the version to the command's own output rather than the Env streams, so the
+// test sets it explicitly; without that the assertion passes vacuously on an empty buffer.
+func TestVersionFlag(t *testing.T) {
+	var out bytes.Buffer
+	cmd := New(Env{Stdout: &out, Stderr: &out, Engine: goast.New()})
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--version"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("--version: %v", err)
+	}
+	if !strings.Contains(out.String(), Version) {
+		t.Errorf("--version printed %q, want it to contain %q", out.String(), Version)
 	}
 }

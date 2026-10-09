@@ -69,6 +69,7 @@ type OutlineFile struct {
 	SchemaVersion int           `json:"schema_version"`
 	File          string        `json:"file"`
 	Package       string        `json:"package"`
+	Build         string        `json:"build,omitempty"`
 	Imports       []string      `json:"imports,omitempty"`
 	Nodes         []OutlineNode `json:"nodes,omitempty"`
 }
@@ -231,6 +232,7 @@ func Outline(doc domain.Document, depth int) OutlineFile {
 		SchemaVersion: SchemaVersion,
 		File:          doc.Path,
 		Package:       doc.Package,
+		Build:         doc.BuildConstraint,
 		Imports:       doc.Imports,
 		Nodes:         convertNodes(doc.Nodes, 0, depth),
 	}
@@ -268,6 +270,10 @@ func visible(depth, level int) bool {
 //
 // That satisfies the lossless-subset rule in specification 2: an agent parsing compact output
 // recovers the same lines, spans and declarations as from the full form.
+//
+// The build constraint is decoration about the file rather than a declaration, but it is the
+// one header fact that changes whether an edit compiles, so it is kept as its own line and
+// omitted when the file is unconstrained.
 func WriteOutlineHuman(w io.Writer, doc domain.Document, depth int, compact bool) error {
 	if compact {
 		return writeOutlineCompact(w, doc, depth)
@@ -277,6 +283,13 @@ func WriteOutlineHuman(w io.Writer, doc domain.Document, depth int, compact bool
 
 	sb.WriteString("file: " + doc.Path + "\n")
 	sb.WriteString("package: " + doc.Package + "\n")
+	// The constraint is printed only when the file has one, so an untagged file's header is
+	// unchanged. It matters because golens lists every file in a directory whatever its
+	// constraints: without this line, an agent editing a variant the current platform
+	// excludes gets no signal from the outline that the change will not be compiled.
+	if doc.BuildConstraint != "" {
+		sb.WriteString("build: " + doc.BuildConstraint + "\n")
+	}
 
 	if err := writeSection(&sb, doc.Nodes, depth); err != nil {
 		return err
@@ -294,7 +307,11 @@ func WriteOutlineHuman(w io.Writer, doc domain.Document, depth int, compact bool
 func writeOutlineCompact(w io.Writer, doc domain.Document, depth int) error {
 	var sb strings.Builder
 
-	sb.WriteString(doc.Path + "\t" + doc.Package + "\n")
+	if doc.BuildConstraint != "" {
+		sb.WriteString(doc.Path + "\t" + doc.Package + "\t" + doc.BuildConstraint + "\n")
+	} else {
+		sb.WriteString(doc.Path + "\t" + doc.Package + "\n")
+	}
 	compactNodes(&sb, doc.Nodes, depth)
 
 	_, err := io.WriteString(w, sb.String())

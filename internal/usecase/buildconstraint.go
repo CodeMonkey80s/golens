@@ -208,46 +208,18 @@ func couldCoBuild(a, b []bool) bool {
 	return false
 }
 
-// parseBuildConstraint extracts a file's build constraint, returning nil when the file is
-// always built.
+// parseBuildConstraint turns a normalised //go:build expression into an evaluable Expr,
+// returning nil when text is empty and the file is therefore always built.
 //
-// Both syntaxes are handled by the standard library: constraint.Parse accepts a whole comment
-// line, prefix included, and understands //go:build as well as the legacy // +build form. A
-// repository may carry either or both, so //go:build wins when present, matching the toolchain.
-//
-// Legacy lines are combined with AND because that is how the toolchain reads them: each line
-// is an OR-list of tags, and consecutive lines all have to hold. "linux darwin" followed by
-// "!windows" means (linux || darwin) && !windows.
-//
-// Lines are passed through untrimmed. constraint.Parse rejects a line with leading whitespace,
-// which is how the toolchain reads it too, so trimming here would accept files the compiler
-// rejects.
-func parseBuildConstraint(src []byte) constraint.Expr {
-	var goBuild, plusBuild constraint.Expr
-
-	for _, line := range strings.Split(string(src), "\n") {
-		// Constraints live in the header comment block; the package clause ends the search.
-		if strings.HasPrefix(line, "package ") {
-			break
-		}
-		switch {
-		case constraint.IsGoBuild(line):
-			if expr, err := constraint.Parse(line); err == nil {
-				goBuild = expr
-			}
-		case constraint.IsPlusBuild(line):
-			if expr, err := constraint.Parse(line); err == nil {
-				if plusBuild == nil {
-					plusBuild = expr
-				} else {
-					plusBuild = &constraint.AndExpr{X: plusBuild, Y: expr}
-				}
-			}
-		}
+// The engine owns the source-level scan and normalises both syntaxes; this only re-parses the
+// result so the expression can be evaluated over the configuration matrix.
+func parseBuildConstraint(text string) constraint.Expr {
+	if text == "" {
+		return nil
 	}
-
-	if goBuild != nil {
-		return goBuild
+	expr, err := constraint.Parse("//go:build " + text)
+	if err != nil {
+		return nil
 	}
-	return plusBuild
+	return expr
 }

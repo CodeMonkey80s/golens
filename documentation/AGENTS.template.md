@@ -71,10 +71,18 @@ Ambiguity exits 2, prints nothing to stdout, and lists the candidates on stderr.
 specific file instead of a directory to resolve it.
 
 **Build constraints are ignored.** Every `.go` file is parsed, including files this platform
-would not compile, because the question is what the tree contains. The consequence for you:
-`outline` lists all the platform variants, and the output does not show a file's `//go:build`
-line. Read that line in the file before editing — a change to an excluded variant will not be
-compiled and will appear to have done nothing.
+would not compile, because the question is what the tree contains. `outline` therefore reports
+each file's constraint in its header, and you should check it before editing:
+
+```console
+$ golens outline <path>
+file: filesystems_windows.go
+package: main
+build: windows
+```
+
+A change to a file the current `GOOS` excludes is never compiled, so it will appear to have done
+nothing. Verify with `GOOS=<platform> go build ./...`, not plain `go build`.
 
 **Edit the declaration, do not rewrite it.** A `bounds` span replaces one whole declaration. If
 you retype a struct body from an outline instead of editing the existing text, fields you did

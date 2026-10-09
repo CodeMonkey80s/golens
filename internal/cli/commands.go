@@ -23,16 +23,18 @@ func newOutlineCmd(env Env) *cobra.Command {
   Depth   1 = declarations only
           2 = adds struct fields and parameters
           default -1 (unlimited); --depth 3 and above add nothing further
+  Build   a file's //go:build expression, when it has one
   Lists   every .go file in a directory, including platform variants
-  Hides   a file's build constraint -- the output does not show it
 
 Structural, not semantic: imports, types, functions, methods, vars and consts.
 
 Build constraints are ignored on purpose -- the question is what the tree
-contains, not what this machine compiles. The cost is that the output cannot
-tell you which files apply to the current platform. Read the //go:build line in
-the file before editing it: a change to an excluded variant is never compiled,
-so it will appear to have done nothing.`,
+contains, not what this machine compiles. The header therefore reports each
+file's constraint so you can tell which edits the current GOOS will compile:
+
+  file: filesystems_windows.go
+  package: main
+  build: windows`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			depth, _ := cmd.Flags().GetInt("depth")

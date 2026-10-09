@@ -45,6 +45,16 @@ func (e AmbiguousSymbol) Error() string {
 	return fmt.Sprintf("%s is ambiguous, matches: %v", e.Name, e.Matches)
 }
 
+// Advice returns the line to print beneath the candidate list.
+//
+// The error names the problem but not the remedy, and the place a caller meets it is the error
+// itself rather than the help text. Without the remedy the likely response is to retry the same
+// command, or to conclude the tool is broken. Duf declares Mount.Stat in four platform files,
+// so this is the common case rather than an edge one.
+func (e AmbiguousSymbol) Advice() string {
+	return "  pass a specific file instead of a directory, or the qualified name, to disambiguate"
+}
+
 // IsNotFound marks ambiguity under exit 2, the same code as a missing symbol, since both
 // mean "the caller must disambiguate or correct the name".
 func (e AmbiguousSymbol) IsNotFound() bool { return true }
