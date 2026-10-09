@@ -1,0 +1,22 @@
+# Build artifacts. The binary is built to ./golens by `go build ./cmd/golens`.
+/golens
+/golens.exe
+/dist/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Coverage and profiling output.
+*.prof
+*.coverprofile
+
+# Editor and OS cruft.
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# NOTE: testdata/ is deliberately NOT ignored. Golden fixtures are the evidence for
+# acceptance criterion A12 and must be versioned so a formatting change shows up as a
+# reviewable diff rather than as a silent test rewrite.

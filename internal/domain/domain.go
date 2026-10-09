@@ -1,0 +1,248 @@
+// Package domain defines the language-neutral types used across golens.
+//
+// This package must not import anything outside the standard library, and must not
+// import any other golens package. It is the innermost layer: CLI wiring, engines and
+// formatters all depend on it, never the reverse.
+package domain
+
+import (
+	"fmt"
+	"strconv"
+)
+
+// Kind classifies a node in a structural outline.
+//
+// Kinds are deliberately coarse. They are meant to be stable across languages so that a
+// consumer can branch on "is this a function or a type" without knowing the engine that
+// produced it.
+type Kind string
+
+const (
+	KindPackage Kind = "package"
+	KindImport  Kind = "import"
+	KindType    Kind = "type"
+	KindFunc    Kind = "func"
+	KindMethod  Kind = "method"
+	KindVar     Kind = "var"
+	KindConst   Kind = "const"
+	KindField   Kind = "field"
+)
+
+// Bounds is a half-open span within a source file.
+//
+// Line numbers are 1-based and inclusive at both ends. Byte offsets are 0-based and
+// half-open: Src[StartByte:EndByte] is exactly the source text of the span.
+//
+// The asymmetry is deliberate. Lines mirror compiler diagnostics, where a declaration on
+// line 17 through 25 is written "17-25". Bytes mirror Go slicing, so a caller can do
+//
+//	file[bounds.StartByte:bounds.EndByte]
+//
+// and get the exact text. EndByte is one past the last byte.
+type Bounds struct {
+	StartLine int
+	EndLine   int
+	StartByte int
+	EndByte   int
+}
+
+// Valid reports whether the bounds describe a usable span: start before end, and
+// non-negative throughout.
+func (b Bounds) Valid() bool {
+	return b.StartByte >= 0 && b.StartLine >= 1 && b.EndLine >= b.StartLine && b.EndByte > b.StartByte
+}
+
+// LineCount returns the number of lines the span covers, inclusive at both ends.
+// A single-line span reports 1.
+func (b Bounds) LineCount() int {
+	if b.EndLine < b.StartLine {
+		return 0
+	}
+	return b.EndLine - b.StartLine + 1
+}
+
+// ByteLen returns the length of the span in bytes, which is EndByte minus StartByte.
+func (b Bounds) ByteLen() int {
+	if b.EndByte <= b.StartByte {
+		return 0
+	}
+	return b.EndByte - b.StartByte
+}
+
+// LineRange renders the line span for human output. A single-line span renders as
+// "line 12"; anything wider renders as "lines 12-25". This matches the two forms used in
+// the specification's outline examples.
+func (b Bounds) LineRange() string {
+	if b.EndLine == b.StartLine {
+		return "line " + strconv.Itoa(b.StartLine)
+	}
+	return "lines " + strconv.Itoa(b.StartLine) + "-" + strconv.Itoa(b.EndLine)
+}
+
+func (b Bounds) String() string {
+	return fmt.Sprintf("lines %d-%d bytes %d-%d", b.StartLine, b.EndLine, b.StartByte, b.EndByte)
+}
+
+// Source extracts the text the bounds describe from src.
+//
+// This is the single place byte offsets are turned back into text. The half-open
+// convention means the terminating newline after a declaration falls outside the span,
+// so an agent that overwrites [StartByte:EndByte) leaves the file's line structure
+// intact.
+func (b Bounds) Source(src []byte) string {
+	if b.StartByte < 0 || b.EndByte > len(src) || b.StartByte >= b.EndByte {
+		return ""
+	}
+	return string(src[b.StartByte:b.EndByte])
+}
+
+// Node is one entry in a structural outline.
+//
+// Nodes form a tree via Children. Depth-limited walks use nil Children to mean
+// "suppressed", which is distinct from an empty non-nil slice meaning "no children".
+type Node struct {
+	Name     string
+	Kind     Kind
+	Detail   string
+	Receiver string
+	Bounds   Bounds
+	Children []Node
+}
+
+// Declaration renders the node as a Go declaration head, which is what the human outline
+// prints after the bullet.
+//
+// For a method the receiver is restored, so a node built from Kind Method with Name
+// "GetUser" and Receiver "*UserStore" renders as
+// "func (s *UserStore) GetUser(...)". Generics-aware engines can supply a Receiver that
+// already includes the type parameters.
+func (n Node) Declaration() string {
+	keyword := n.Keyword()
+
+	switch n.Kind {
+	case KindFunc, KindMethod:
+		// Detail is the parenthesised parameter and result text, so it attaches directly
+		// to the name: "func NewUserStore() *UserStore".
+		if n.Kind == KindMethod && n.Receiver != "" {
+			return keyword + " (s " + n.Receiver + ") " + n.Name + n.Detail
+		}
+		return keyword + " " + n.Name + n.Detail
+
+	default:
+		// Detail is the underlying type or literal, separated by a space:
+		// "type User struct".
+		if n.Detail != "" {
+			return keyword + " " + n.Name + " " + n.Detail
+		}
+		return keyword + " " + n.Name
+	}
+}
+
+// Keyword returns the source keyword for the node's kind.
+//
+// A method renders with the "func" keyword, matching Go source and the specification's
+// outline example, even though Kind distinguishes methods for query purposes. Exported
+// because the CLI walks the outline tree and needs the same rendering the domain uses.
+func (n Node) Keyword() string {
+	if n.Kind == KindMethod {
+		return "func"
+	}
+	return string(n.Kind)
+}
+
+// Symbol is a package-level declaration, addressable by name.
+//
+// QualifiedName is the lookup key: "GetUser" for a package-level function,
+// "UserStore.GetUser" for a method. Name is always the bare identifier.
+type Symbol struct {
+	Name          string
+	QualifiedName string
+	Kind          Kind
+	Bounds        Bounds
+	File          string
+	Detail        string
+	Receiver      string
+}
+
+// Declaration renders the symbol as a Go declaration head, using the same form as
+// Node.Declaration.
+func (s Symbol) Declaration() string {
+	return Node{Name: s.Name, Kind: s.Kind, Detail: s.Detail, Receiver: s.Receiver}.Declaration()
+}
+
+// Document is the result of parsing one source file.
+type Document struct {
+	Path     string
+	Package  string
+	Bounds   Bounds
+	Nodes    []Node
+	Symbols  []Symbol
+	Imports  []string
+	Source   []byte
+	Comments bool
+}
+
+// Symbol looks up a package-level declaration by bare or qualified name.
+//
+// Matching is case-sensitive and exact. When a bare method name is given and several
+// methods share it, the caller must disambiguate using the qualified form; Symbol itself
+// reports only the first match in document order. Use Lookup to detect that case.
+func (d *Document) Symbol(name string) (Symbol, bool) {
+	for _, s := range d.Symbols {
+		if s.QualifiedName == name || s.Name == name {
+			return s, true
+		}
+	}
+	return Symbol{}, false
+}
+
+// Lookup resolves a symbol name and reports every match.
+//
+// An empty result means the symbol does not exist. More than one result means the name
+// is ambiguous and the caller must exit with code 2 and show the candidates rather than
+// guessing. Note that a bare method name legitimately matches one symbol per receiver
+// type, so ambiguity is expected there.
+func (d *Document) Lookup(name string) []Symbol {
+	var out []Symbol
+	for _, s := range d.Symbols {
+		if s.QualifiedName == name || s.Name == name {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// Node is the root node of the document's outline, carrying the file and package name.
+func (d *Document) RootNode() Node {
+	return Node{
+		Name:   d.Package,
+		Kind:   KindPackage,
+		Bounds: d.Bounds,
+	}
+}
+
+// Engine parses a source file into a Document.
+//
+// The interface is deliberately narrow and tree-shaped so that a Tree-Sitter backed
+// implementation can satisfy it in v0.2 without the generic layer changing. Engines own
+// all language-specific concerns: which declarations count as symbols, how byte offsets
+// are computed, and how names are qualified.
+type Engine interface {
+	Parse(path string) (Document, error)
+}
+
+// ErrorExit classifies a failure by the exit code the CLI should return.
+//
+// Exit codes are part of the public contract: 0 success, 1 usage error, 2 symbol or file
+// not found, 3 check found diagnostics, 4 parse or I/O failure.
+type ErrorExit int
+
+const (
+	ExitOk ErrorExit = iota
+	ExitUsage
+	ExitNotFound
+	ExitDiagnostics
+	ExitParse
+)
+
+func (e ErrorExit) Code() int { return int(e) }
