@@ -133,7 +133,7 @@ func Outline(engine domain.Engine, target string, depth int, w io.Writer, opts f
 		if err != nil {
 			return err
 		}
-		if err := format.WriteOutlineHuman(w, doc, normalizeDepth(depth)); err != nil {
+		if err := format.WriteOutlineHuman(w, doc, normalizeDepth(depth), opts.Compact); err != nil {
 			return err
 		}
 	}

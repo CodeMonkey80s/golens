@@ -197,10 +197,10 @@ func TestOutlineDepthLimitsRecursion(t *testing.T) {
 	doc := sampleDoc()
 
 	var shallow, deep bytes.Buffer
-	if err := WriteOutlineHuman(&shallow, doc, 1); err != nil {
+	if err := WriteOutlineHuman(&shallow, doc, 1, false); err != nil {
 		t.Fatalf("WriteOutlineHuman depth 1: %v", err)
 	}
-	if err := WriteOutlineHuman(&deep, doc, 2); err != nil {
+	if err := WriteOutlineHuman(&deep, doc, 2, false); err != nil {
 		t.Fatalf("WriteOutlineHuman depth 2: %v", err)
 	}
 
@@ -216,7 +216,7 @@ func TestOutlineDepthLimitsRecursion(t *testing.T) {
 // specification's outline example.
 func TestOutlineHumanFormat(t *testing.T) {
 	var buf bytes.Buffer
-	if err := WriteOutlineHuman(&buf, sampleDoc(), 1); err != nil {
+	if err := WriteOutlineHuman(&buf, sampleDoc(), 1, false); err != nil {
 		t.Fatalf("WriteOutlineHuman: %v", err)
 	}
 
@@ -240,7 +240,7 @@ func TestOutlineHumanFormat(t *testing.T) {
 // TestOutlineSingleLineRange covers the (line 10) versus (lines 5-8) distinction.
 func TestOutlineSingleLineRange(t *testing.T) {
 	var buf bytes.Buffer
-	if err := WriteOutlineHuman(&buf, sampleDoc(), 1); err != nil {
+	if err := WriteOutlineHuman(&buf, sampleDoc(), 1, false); err != nil {
 		t.Fatalf("WriteOutlineHuman: %v", err)
 	}
 

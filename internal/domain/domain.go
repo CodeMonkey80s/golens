@@ -107,6 +107,13 @@ type Node struct {
 	Receiver string
 	Bounds   Bounds
 	Children []Node
+
+	// IsGroup marks a synthetic container the engine introduced for presentation, such as
+	// the "IMPORTS" or "TYPES & STRUCTS" headings. A group has no source text of its own; its
+	// bounds are the span of its members. Formatters must not print a group as though it were
+	// a declaration, or a declaration that itself has children, such as a struct with fields,
+	// would be mistaken for one.
+	IsGroup bool
 }
 
 // Declaration renders the node as a Go declaration head, which is what the human outline

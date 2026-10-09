@@ -149,6 +149,26 @@ func WriteGetHuman(w io.Writer, sym domain.Symbol, file, source string, compact 
 	return err
 }
 
+// compactEntry renders one node for the compact outline, where the line range is a separate
+// leading field and therefore not repeated inside the text.
+func compactEntry(n domain.Node) string {
+	if n.Kind == domain.KindField {
+		if n.Detail != "" {
+			return n.Name + " " + n.Detail
+		}
+		return n.Name
+	}
+	return entry(n)
+}
+
+// unquotePath strips the surrounding quotes from a Go import path literal.
+func unquotePath(path string) string {
+	if len(path) >= 2 && path[0] == '"' && path[len(path)-1] == '"' {
+		return path[1 : len(path)-1]
+	}
+	return path
+}
+
 func lineRange(b domain.Bounds) string {
 	if b.EndLine == b.StartLine {
 		return "line " + strconv.Itoa(b.StartLine)
@@ -161,8 +181,11 @@ func byteRange(b domain.Bounds) string {
 }
 
 // convertNodes maps domain nodes onto their JSON shape.
-func convertNodes(nodes []domain.Node, depth int) []OutlineNode {
-	if depth == 0 || len(nodes) == 0 {
+// convertNodes maps domain nodes onto their JSON shape, recursing while depth allows.
+//
+// level and depth work as in the human form, so the two outputs select the same declarations.
+func convertNodes(nodes []domain.Node, level, depth int) []OutlineNode {
+	if len(nodes) == 0 || !visible(depth, level) {
 		return nil
 	}
 
@@ -174,32 +197,61 @@ func convertNodes(nodes []domain.Node, depth int) []OutlineNode {
 			Detail:    n.Detail,
 			StartLine: n.Bounds.StartLine,
 			EndLine:   n.Bounds.EndLine,
-			Children:  convertNodes(n.Children, depth-1),
+			Children:  convertNodes(n.Children, level+1, depth),
 		})
 	}
 	return out
 }
 
-// Outline converts a document for JSON output. depth limits recursion; a negative depth
-// means unlimited.
+// Outline converts a document for JSON output. depth limits recursion; a negative depth means
+// unlimited.
 func Outline(doc domain.Document, depth int) OutlineFile {
 	return OutlineFile{
 		SchemaVersion: SchemaVersion,
 		File:          doc.Path,
 		Package:       doc.Package,
 		Imports:       doc.Imports,
-		Nodes:         convertNodes(doc.Nodes, depth),
+		Nodes:         convertNodes(doc.Nodes, 0, depth),
 	}
 }
 
 // bullet is the marker used by the human outline. It matches the specification's examples.
 const bullet = "  • "
 
+// UnlimitedDepth disables the recursion limit on the outline.
+const UnlimitedDepth = -1
+
+// visible reports whether a node at the given level should be printed.
+//
+// Level 0 is the declarations under a group heading, level 1 their fields and parameters. A
+// negative depth means unlimited, which is why this is a helper rather than an inline
+// comparison: `depth > level` is false for every level when depth is negative, which silently
+// makes "unlimited" behave like depth 1.
+func visible(depth, level int) bool {
+	if depth < 0 {
+		return true
+	}
+	return level < depth
+}
+
 // WriteOutlineHuman prints the human outline for one document.
 //
-// depth limits recursion the same way the JSON form does, so the two stay consistent:
-// depth 1 shows group headers and declarations, depth 2 adds fields and parameters.
-func WriteOutlineHuman(w io.Writer, doc domain.Document, depth int) error {
+// depth limits recursion the same way the JSON form does, so the two stay consistent: depth 1
+// shows group headings and declarations, depth 2 adds fields and parameters, and a negative
+// depth shows everything.
+//
+// With compact set the output drops decoration but keeps every fact: no group headings, no
+// blank lines, no bullet glyphs, and one record per line as
+//
+//	<line-range>	<declaration>
+//
+// That satisfies the lossless-subset rule in specification 2: an agent parsing compact output
+// recovers the same lines, spans and declarations as from the full form.
+func WriteOutlineHuman(w io.Writer, doc domain.Document, depth int, compact bool) error {
+	if compact {
+		return writeOutlineCompact(w, doc, depth)
+	}
+
 	var sb strings.Builder
 
 	sb.WriteString("file: " + doc.Path + "\n")
@@ -213,6 +265,46 @@ func WriteOutlineHuman(w io.Writer, doc domain.Document, depth int) error {
 	return err
 }
 
+// writeOutlineCompact emits one declaration per line with no headings or decoration.
+//
+// Group nodes are flattened rather than printed: a heading is decoration, and its children
+// carry every fact the heading would otherwise convey. level and depth work exactly as in the
+// full form, so the two select the same declarations.
+func writeOutlineCompact(w io.Writer, doc domain.Document, depth int) error {
+	var sb strings.Builder
+
+	sb.WriteString(doc.Path + "\t" + doc.Package + "\n")
+	compactNodes(&sb, doc.Nodes, depth)
+
+	_, err := io.WriteString(w, sb.String())
+	return err
+}
+
+// compactNodes emits one line per declaration, recursing while depth allows.
+//
+// Group nodes are transparent: they contribute no line of their own and do not consume a
+// level, so a group heading cannot silently swallow a depth level. That is why this does not
+// simply call visible with its own index -- a file with only group nodes would report no
+// declarations at any depth.
+func compactNodes(sb *strings.Builder, nodes []domain.Node, depth int) {
+	for _, n := range nodes {
+		if n.IsGroup {
+			compactNodes(sb, n.Children, depth)
+			continue
+		}
+
+		sb.WriteString(n.Bounds.LineRange() + "\t" + compactEntry(n) + "\n")
+
+		if len(n.Children) > 0 && visible(depth, 1) {
+			compactNodes(sb, n.Children, depth-1)
+		}
+	}
+}
+
+// writeSection prints each group's heading followed by its members.
+//
+// Groups are always shown: a heading is what makes the full form readable, and hiding one at
+// depth 1 would leave declarations with no context. depth governs the members' children.
 func writeSection(sb *strings.Builder, nodes []domain.Node, depth int) error {
 	for _, node := range nodes {
 		if len(node.Children) == 0 {
@@ -224,7 +316,7 @@ func writeSection(sb *strings.Builder, nodes []domain.Node, depth int) error {
 			sb.WriteString(header + "\n")
 		}
 
-		if err := writeNodes(sb, node.Children, depth-1); err != nil {
+		if err := writeNodes(sb, node.Children, 0, depth); err != nil {
 			return err
 		}
 	}
@@ -243,14 +335,24 @@ func sectionHeader(node domain.Node) string {
 	return node.Name
 }
 
-func writeNodes(sb *strings.Builder, nodes []domain.Node, depth int) error {
+// writeNodes prints each node as a bullet entry, recursing into children while depth allows.
+//
+// level is this node's own nesting level, so depth 1 prints declarations (level 0) and stops
+// before their fields (level 1).
+func writeNodes(sb *strings.Builder, nodes []domain.Node, level, depth int) error {
 	for _, n := range nodes {
 		sb.WriteString(bullet)
 		sb.WriteString(entry(n))
-		sb.WriteString(" (" + n.Bounds.LineRange() + ")\n")
+		// An import's line range is omitted, matching the specification's sample: an import is
+		// always a single line, so the range carries no information, while a declaration's
+		// range is what an agent seeks and overwrites with.
+		if n.Kind != domain.KindImport {
+			sb.WriteString(" (" + n.Bounds.LineRange() + ")")
+		}
+		sb.WriteString("\n")
 
-		if depth > 0 {
-			if err := writeNodes(sb, n.Children, depth-1); err != nil {
+		if len(n.Children) > 0 && visible(depth, level+1) {
+			if err := writeNodes(sb, n.Children, level+1, depth); err != nil {
 				return err
 			}
 		}
@@ -262,10 +364,13 @@ func writeNodes(sb *strings.Builder, nodes []domain.Node, depth int) error {
 func entry(n domain.Node) string {
 	switch n.Kind {
 	case domain.KindImport:
-		if n.Detail != "" {
-			return n.Detail
+		// The local name, not the quoted path: the specification's outline example shows
+		// "context", and the local name is what a reader would search the file for. A renamed
+		// import still shows its alias, which is the whole point of the binding.
+		if n.Name != "" {
+			return n.Name
 		}
-		return n.Name
+		return unquotePath(n.Detail)
 	case domain.KindField:
 		if n.Detail != "" {
 			return n.Name + " " + n.Detail

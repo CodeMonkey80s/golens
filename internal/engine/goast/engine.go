@@ -272,6 +272,7 @@ func (b *builder) nodes(file *ast.File) []domain.Node {
 		nodes = append(nodes, domain.Node{
 			Name:     "IMPORTS",
 			Kind:     domain.KindImport,
+			IsGroup:  true,
 			Bounds:   groupBounds(children),
 			Children: children,
 		})
@@ -342,6 +343,7 @@ func (b *builder) nodes(file *ast.File) []domain.Node {
 		nodes = append(nodes, domain.Node{
 			Name:     "TYPES & STRUCTS",
 			Kind:     domain.KindType,
+			IsGroup:  true,
 			Bounds:   groupBounds(types),
 			Children: types,
 		})
@@ -350,6 +352,7 @@ func (b *builder) nodes(file *ast.File) []domain.Node {
 		nodes = append(nodes, domain.Node{
 			Name:     "FUNCTIONS & METHODS",
 			Kind:     domain.KindFunc,
+			IsGroup:  true,
 			Bounds:   groupBounds(funcs),
 			Children: funcs,
 		})
@@ -358,6 +361,7 @@ func (b *builder) nodes(file *ast.File) []domain.Node {
 		nodes = append(nodes, domain.Node{
 			Name:     "VARS & CONSTS",
 			Kind:     domain.KindVar,
+			IsGroup:  true,
 			Bounds:   groupBounds(values),
 			Children: values,
 		})

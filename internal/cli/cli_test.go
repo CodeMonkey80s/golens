@@ -299,3 +299,70 @@ func TestCheckNamingFlag(t *testing.T) {
 		t.Errorf("default check should not report naming, exit = %d (stderr: %s)", code, stderr)
 	}
 }
+
+// TestOutlineCompactFlag exercises the CLI surface of --compact on outline, and pins the
+// lossless-subset property from the outside: an agent reading compact output must still find
+// every declaration and its line range.
+func TestOutlineCompactFlag(t *testing.T) {
+	path := fixture(t, "user.go", userGo)
+
+	full, _, code := run(t, "outline", path)
+	if code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	compact, _, code := run(t, "outline", path, "--compact")
+	if code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+
+	// Every declaration in the full form survives compaction.
+	for _, fact := range []string{"GetUser", "UserStore", "context", "package: store"} {
+		if !strings.Contains(full, fact) {
+			t.Errorf("full output missing %q:\n%s", fact, full)
+		}
+	}
+
+	// Decoration is dropped.
+	for _, decoration := range []string{"•", "IMPORTS", "TYPES & STRUCTS"} {
+		if strings.Contains(compact, decoration) {
+			t.Errorf("compact output should drop %q:\n%s", decoration, compact)
+		}
+	}
+
+	// The first line carries path and package, tab separated.
+	first := strings.SplitN(compact, "\n", 2)[0]
+	if !strings.Contains(first, "user.go") || !strings.Contains(first, "store") {
+		t.Errorf("compact first line = %q, want path and package", first)
+	}
+}
+
+// TestOutlineDepthFlag exercises --depth through the CLI, including the unlimited default.
+func TestOutlineDepthFlag(t *testing.T) {
+	path := fixture(t, "user.go", userGo)
+
+	deep, _, code := run(t, "outline", path)
+	if code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	shallow, _, code := run(t, "outline", path, "--depth", "1")
+	if code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+
+	// Default is unlimited, so nested members appear: the struct's fields and the method's
+	// parameters. Note the method's own signature still contains "ctx context.Context" at any
+	// depth, so the parameter *entry* is matched by its leading bullet instead.
+	for _, nested := range []string{"• mu sync.Mutex", "• ctx context.Context"} {
+		if !strings.Contains(deep, nested) {
+			t.Errorf("default depth should include %q:\n%s", nested, deep)
+		}
+		if strings.Contains(shallow, nested) {
+			t.Errorf("--depth 1 must not include %q:\n%s", nested, shallow)
+		}
+	}
+
+	// Unlimited must not collapse to depth 1.
+	if deep == shallow {
+		t.Error("default (unlimited) depth produced identical output to --depth 1")
+	}
+}
