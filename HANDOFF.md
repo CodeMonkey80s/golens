@@ -11,8 +11,7 @@
 
 | Field | Value |
 |---|---|
-| Session | S5 complete — harden + ship. Plan finished |
-| Branch | `s5-harden-ship` (tip `43ae86d`) |
+| Branch | `main` only — all five sessions merged fast-forward, session branches deleted |
 | Tests | 136 top-level, 7 packages, all passing |
 | Test count by package | arch 7 · cli 26 · domain 7 · goast 16 · format 19 · naming 8 · usecase 53 |
 | Licence | MIT, `LICENSE` at repo root, copyright holder from git config |
@@ -22,18 +21,23 @@
 | Self-check | `golens check ./internal`, `./cmd`, and `check . --naming` all exit 0 |
 | Remote | **none configured** — nothing has been or can be pushed |
 
-### Branch map
+### History
+
+Ten commits, one per session plus docs, all linear on `main`. Kept unmerged-per-session so the
+commit messages and retrospectives stay navigable — each names the bugs it fixed.
 
 ```
-main            ddcd80a  S1: foundation, engine, and all four commands
-s2-outline      5963ae6  S2: outline golden tests, --compact, fix unlimited depth
-s3-get-bounds   554ef6d  S3: byte invariant through get, overwrite round trip
-s4-check-naming 675d0dc  S4: check test suite, cross-file conflicts, false positive fixed
-                 f5f85c5  docs: S4 retrospective and a current handoff
-s5-harden-ship  43ae86d  S5: concurrency (A3), spec conformance, and a README  ← you are here
+7e7089a  Add acknowledgements section
+91d5498  Add MIT LICENSE
+0b136d3  docs: final handoff, all sessions complete
+43ae86d  S5: concurrency (A3), spec conformance, and a README
+f5f85c5  docs: S4 retrospective and a current handoff
+675d0dc  S4: check test suite, cross-file conflicts, false positive fixed
+554ef6d  S3: byte invariant through get, overwrite round trip
+5963ae6  S2: outline golden tests, --compact, fix unlimited depth
+2b1889f  S2: add shared fixtures and the twelve A12 classes
+ddcd80a  S1: foundation, engine, and all four commands
 ```
-
-Five branches, none merged. `main` still holds S1 only.
 
 ## Landed in S5
 
@@ -106,7 +110,6 @@ The plan is finished. These are optional, none blocking.
 
 | Item | Notes |
 |---|---|
-| **Merge branches to `main`** | Six branches, none merged. `main` holds S1 only |
 | GoReleaser or CI workflow | Not in scope; a `.github/workflows` running `go test -count=1 ./...` would be the minimum |
 | Tag / publish | No remote configured |
 | `var x = 5` shows no `= 5` in outline | Cosmetic; `KindVar`/`KindConst` `Detail` carries the type only |
