@@ -1,0 +1,115 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref: a new push to a PR makes the previous
+# run irrelevant, and these jobs finish in seconds.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # Keep this in step with go.mod. The toolchain directive there is the
+          # source of truth; this is the version CI resolves.
+          go-version-file: go.mod
+          # Cache the module and build cache, not the toolchain.
+          cache: true
+
+      # -count=1 is mandatory here, not a precaution.
+      #
+      # Four packages assert facts about the build graph or the source tree rather
+      # than about their own test inputs: internal/arch shells out to `go list
+      # -deps`, internal/naming scans this repository, and selfcheck_test.go plus
+      # TestRepositoryPassesItsOwnCheck walk the tree. Go keys its test cache on
+      # test inputs, so editing an import does not invalidate them and a stale
+      # pass is possible. That has already hidden one real failure.
+      - name: Test
+        run: go test -count=1 ./...
+
+      # The same reasoning applies: the boundary tests and the repo-wide naming
+      # scan would otherwise be served from cache.
+      - name: Test under the race detector
+        run: go test -race -count=1 ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      # The binary budget from specification 3.2, and the no-cgo claim from 1.1.
+      #
+      # CGO_ENABLED=0 is exported rather than prefixed onto the build command: the
+      # go list call below runs in the same shell, and without the export it would
+      # see the default (cgo enabled), report runtime/cgo as a dependency, and fail
+      # the gate on a build that is in fact cgo-free.
+      - name: Build and check the size budget
+        run: |
+          export CGO_ENABLED=0
+          go build -ldflags="-s -w" -o golens ./cmd/golens
+
+          size=$(stat -c%s golens)
+          limit=$((15 * 1024 * 1024))
+          echo "binary: $((size / 1024)) KiB (limit: $((limit / 1024)) KiB)"
+          if [ "$size" -ge "$limit" ]; then
+            echo "binary exceeds the 15MB budget"
+            exit 1
+          fi
+
+          if go list -deps ./cmd/golens | grep -q 'runtime/cgo'; then
+            echo "build depends on runtime/cgo; the specification requires CGO_ENABLED=0"
+            exit 1
+          fi
+          echo "no cgo dependency"
+
+      # The tool checks itself. A checker that cannot be run on its own codebase
+      # is a checker nobody trusts, and this is how the namespace check's false
+      # positive on external test packages was caught.
+      - name: golens on its own source
+        run: |
+          ./golens check ./internal
+          ./golens check ./cmd
+          ./golens check . --naming
+
+      - name: Upload the binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: golens-linux-amd64
+          path: golens
+          if-no-files-found: error
+
+  # Deliberately lighter than verify: catches a contributor who needs help
+  # without waiting for the race detector and size checks.
+  quick:
+    name: quick
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test -count=1 ./...
+      - run: go vet ./...

@@ -48,6 +48,7 @@ ddcd80a  S1: foundation, engine, and all four commands
 | **Spec conformance suite** | `internal/cli/spec_test.go` — 12 tests, each citing the specification clause it verifies |
 | **README** | Install, four commands with real output, exit codes, byte-offset convention, agent workflow, layout, performance |
 | **Import-path check** | Verified reachable, extended to catch escape sequences |
+| **CI** | `.github/workflows/ci.yml` — tests, race, vet, gofmt gate, 15 MB budget, no-cgo, self-check. Two jobs: `verify` and a faster `quick` |
 
 ## Bugs found in S5
 
@@ -110,7 +111,6 @@ The plan is finished. These are optional, none blocking.
 
 | Item | Notes |
 |---|---|
-| GoReleaser or CI workflow | Not in scope; a `.github/workflows` running `go test -count=1 ./...` would be the minimum |
 | Tag / publish | No remote configured |
 | `var x = 5` shows no `= 5` in outline | Cosmetic; `KindVar`/`KindConst` `Detail` carries the type only |
 | `type X = Y` renders `type Alias User`, losing `=` | Cosmetic |

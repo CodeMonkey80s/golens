@@ -232,14 +232,18 @@ $ go vet ./...
 $ go build -o golens ./cmd/golens
 ```
 
-**Use `-count=1`.** Three packages assert facts about the build graph or the source tree rather
+**Use `-count=1`.** Four packages assert facts about the build graph or the source tree rather
 than about their own test inputs — `internal/arch` shells out to `go list -deps`,
-`internal/naming` scans this repository, and `selfcheck_test.go` walks the whole tree. Go's test
-cache does not invalidate on those, so a stale `ok` is possible. This has hidden a real failure
-once.
+`internal/naming` scans this repository, and `selfcheck_test.go` and
+`TestRepositoryPassesItsOwnCheck` walk the tree. Go's test cache does not invalidate on those,
+so a stale `ok` is possible. This has hidden a real failure once.
 
-`golens check ./internal ./cmd` and `golens check . --naming` both pass on this repository. The
-tool checks itself in CI, which is how a false positive in its namespace check was caught.
+`golens check ./internal` and `./cmd`, and `golens check . --naming`, all pass on this
+repository. The tool checks itself in CI, which is how a false positive in its namespace check
+was caught.
+
+CI runs on every push and pull request: tests, the race detector, `go vet`, a `gofmt` gate, the
+15 MB binary budget, the no-cgo check, and `golens` on its own source.
 
 ### Layout
 
