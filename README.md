@@ -10,7 +10,7 @@ golens bounds <symbol> <file>   byte and line offsets for an edit
 golens check <file|dir>         fast syntax and namespace validation
 ```
 
-Pure Go, no cgo, no daemon, no index. One binary, 3.9 MB, parses a file in well under a
+Pure Go, no cgo, no daemon, no index. One binary, ~5.4 MB stripped (`-ldflags="-s -w"`), parses a file in well under a
 millisecond.
 
 ---
