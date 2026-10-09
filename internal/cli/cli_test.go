@@ -421,3 +421,89 @@ func TestOverwriteRoundTripThroughCli(t *testing.T) {
 		t.Error("the original method body survived the overwrite")
 	}
 }
+
+// TestCheckFlagsAcrossCli covers the checks reachable from the command line, including the
+// cross-file namespace conflict that a per-file pass cannot see.
+func TestCheckFlagsAcrossCli(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, src string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	t.Run("cross-file duplicate", func(t *testing.T) {
+		sub := filepath.Join(dir, "pkg")
+		if err := os.MkdirAll(sub, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		write("pkg/a.go", "package p\n\nfunc Shared() {}\n")
+		write("pkg/b.go", "package p\n\nfunc Shared() {}\n")
+
+		_, stderr, code := run(t, "check", sub)
+		if code != 3 {
+			t.Errorf("exit = %d, want 3", code)
+		}
+		if !strings.Contains(stderr, "Shared") {
+			t.Errorf("stderr missing the conflicting name:\n%s", stderr)
+		}
+		// Exactly one diagnostic: a conflict must not be reported twice.
+		if got := strings.Count(strings.TrimSpace(stderr), "\n"); got != 0 {
+			t.Errorf("expected 1 diagnostic, got %d:\n%s", got+1, stderr)
+		}
+	})
+
+	t.Run("unused import", func(t *testing.T) {
+		path := write("u.go", "package p\n\nimport \"fmt\"\n\nfunc F() {}\n")
+		_, stderr, code := run(t, "check", path)
+		if code != 3 {
+			t.Errorf("exit = %d, want 3", code)
+		}
+		if !strings.Contains(stderr, "imported and not used") {
+			t.Errorf("stderr missing unused-import diagnostic:\n%s", stderr)
+		}
+	})
+
+	t.Run("used import is silent", func(t *testing.T) {
+		path := write("c.go", "package p\n\nimport \"fmt\"\n\nfunc F() { fmt.Println() }\n")
+		_, stderr, code := run(t, "check", path)
+		if code != 0 {
+			t.Errorf("exit = %d, want 0 (stderr: %s)", code, stderr)
+		}
+	})
+
+	t.Run("method names may repeat across types", func(t *testing.T) {
+		path := write("m.go", "package p\n\ntype A struct{}\n\ntype B struct{}\n\nfunc (A) S() {}\nfunc (B) S() {}\n")
+		_, stderr, code := run(t, "check", path)
+		if code != 0 {
+			t.Errorf("exit = %d, want 0: methods on different types do not conflict (stderr: %s)", code, stderr)
+		}
+	})
+}
+
+// TestCheckNamingFlagAcrossFiles confirms the naming check works over a whole directory, which is
+// how it would run in CI.
+func TestCheckNamingFlagAcrossFiles(t *testing.T) {
+	dir := t.TempDir()
+	for name, src := range map[string]string{
+		"clean.go": "package p\n\nfunc userId() int { return 1 }\n",
+		"bad.go":   "package p\n\nfunc HTTPHandler() {}\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, stderr, code := run(t, "check", dir, "--naming")
+	if code != 3 {
+		t.Errorf("exit = %d, want 3 (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stderr, "HTTPHandler") {
+		t.Errorf("stderr missing the offending identifier:\n%s", stderr)
+	}
+	if strings.Contains(stderr, "userId") {
+		t.Errorf("a compliant identifier was reported:\n%s", stderr)
+	}
+}

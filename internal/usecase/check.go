@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
+	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -69,13 +71,21 @@ func Check(engine domain.Engine, target string, stdout, stderr io.Writer, opts f
 	}
 
 	var diags []Diagnostic
+
+	// Package-level symbols are collected across files, because a duplicate declaration is a
+	// package-scope conflict: two files of one package declaring the same name is exactly the
+	// error this check exists to find, and a per-file pass cannot see it.
+	var pkg packageSymbols
+
 	for _, p := range paths {
-		found, err := checkFile(engine, p, namingOnly)
+		found, err := checkFile(engine, p, namingOnly, &pkg)
 		if err != nil {
 			return err
 		}
 		diags = append(diags, found...)
 	}
+
+	diags = append(diags, pkg.duplicates()...)
 
 	if opts.Json {
 		payload := checkPayload{SchemaVersion: format.SchemaVersion}
@@ -109,7 +119,7 @@ func Check(engine domain.Engine, target string, stdout, stderr io.Writer, opts f
 // is what golens check --naming does. The two are separate because a caller validating syntax
 // should not receive naming opinions, and a caller enforcing a convention should not be
 // blocked by an unrelated parse warning.
-func checkFile(engine domain.Engine, path string, namingOnly bool) ([]Diagnostic, error) {
+func checkFile(engine domain.Engine, path string, namingOnly bool, pkg *packageSymbols) ([]Diagnostic, error) {
 	doc, err := engine.Parse(path)
 	if err != nil {
 		// A parse failure is itself the finding: check must report it as a diagnostic and
@@ -136,10 +146,85 @@ func checkFile(engine domain.Engine, path string, namingOnly bool) ([]Diagnostic
 	}
 
 	var diags []Diagnostic
-	diags = append(diags, duplicateDeclarations(doc)...)
 	diags = append(diags, invalidImportPaths(doc)...)
 	diags = append(diags, unusedImports(doc)...)
+
+	// Hand the symbols to the package-level pass, which owns cross-file conflicts.
+	pkg.add(filepath.ToSlash(filepath.Dir(doc.Path)), doc)
 	return diags, nil
+}
+
+// packageSymbols accumulates package-level declarations across files, keyed by namespace.
+//
+// The key is directory *and* package name, not directory alone. A Go namespace is one package
+// in one directory, and a directory may legitimately hold two: an external test package
+// (foo_test) alongside the package under test (foo). Those two share a directory but not a
+// namespace, so a helper may be declared in both without conflict. Keying on the directory alone
+// reported those as redeclarations.
+//
+// Two directories may also both declare "package p" without conflicting, which is why the
+// directory is part of the key too.
+type packageSymbols struct {
+	byNamespace map[string]map[string][]symbolSite
+}
+
+// symbolSite records one declaration of a name.
+type symbolSite struct {
+	path string
+	line int
+}
+
+// add records doc's package-level symbols under its namespace.
+func (p *packageSymbols) add(dir string, doc domain.Document) {
+	ns := dir + "\x00" + doc.Package
+
+	if p.byNamespace == nil {
+		p.byNamespace = make(map[string]map[string][]symbolSite)
+	}
+	if p.byNamespace[ns] == nil {
+		p.byNamespace[ns] = make(map[string][]symbolSite, len(doc.Symbols))
+	}
+
+	for _, sym := range doc.Symbols {
+		name := sym.QualifiedName
+		p.byNamespace[ns][name] = append(p.byNamespace[ns][name], symbolSite{
+			path: doc.Path,
+			line: sym.Bounds.StartLine,
+		})
+	}
+}
+
+// duplicates reports names declared more than once within one directory.
+//
+// Only the second and later sites are reported, so a pair of conflicting declarations produces
+// one diagnostic rather than two, and the message names the earlier site so the reader can find
+// it. Results are sorted by path then line, because map iteration order is random and an agent
+// may diff or cache the output.
+func (p *packageSymbols) duplicates() []Diagnostic {
+	var diags []Diagnostic
+
+	for _, names := range p.byNamespace {
+		for name, sites := range names {
+			for i := 1; i < len(sites); i++ {
+				diags = append(diags, Diagnostic{
+					Severity: "error",
+					Path:     sites[i].path,
+					Line:     sites[i].line,
+					Column:   1,
+					Message: fmt.Sprintf("%s redeclared in this package (first declared at %s:%d)",
+						name, sites[i-1].path, sites[i-1].line),
+				})
+			}
+		}
+	}
+
+	sort.Slice(diags, func(i, j int) bool {
+		if diags[i].Path != diags[j].Path {
+			return diags[i].Path < diags[j].Path
+		}
+		return diags[i].Line < diags[j].Line
+	})
+	return diags
 }
 
 // namingViolations reports identifiers in doc that break the camelCaseId convention.
@@ -182,32 +267,9 @@ func namingViolations(doc domain.Document) []Diagnostic {
 	return diags
 }
 
-// duplicateDeclarations reports names declared more than once at package level.
-//
-// This is the AST-achievable part of "package namespace conflicts": a redeclared
-// identifier is a genuine namespace error. Type-level conflicts would need go/types and
-// are out of scope per decision D8.
-func duplicateDeclarations(doc domain.Document) []Diagnostic {
-	seen := make(map[string]domain.Bounds, len(doc.Symbols))
-	var diags []Diagnostic
-
-	for _, sym := range doc.Symbols {
-		// Grouped var/const specs legitimately span several names in one declaration,
-		// so a repeat is only a conflict when the name itself repeats.
-		if prev, ok := seen[sym.QualifiedName]; ok && prev.StartByte != sym.Bounds.StartByte {
-			diags = append(diags, Diagnostic{
-				Severity: "error",
-				Path:     doc.Path,
-				Line:     sym.Bounds.StartLine,
-				Column:   1,
-				Message:  fmt.Sprintf("%s redeclared in this block (first declared at line %d)", sym.QualifiedName, prev.StartLine),
-			})
-			continue
-		}
-		seen[sym.QualifiedName] = sym.Bounds
-	}
-	return diags
-}
+// duplicateDeclarations was the per-file half of the namespace check and is now subsumed by
+// packageSymbols.duplicates, which sees conflicts across files as well as within one. Reporting
+// both would double-report every conflict.
 
 // invalidImportPaths reports import paths that cannot be valid.
 //
