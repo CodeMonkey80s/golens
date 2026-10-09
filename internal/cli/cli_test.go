@@ -3,12 +3,13 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/CodeMonkey80s/golens/internal/domain"
 	"github.com/CodeMonkey80s/golens/internal/engine/goast"
 )
 
@@ -255,8 +256,6 @@ func TestHelpIsAvailable(t *testing.T) {
 	}
 }
 
-var _ = domain.ExitOk
-
 // TestCheckNamingFlag exercises golens check --naming, the CLI surface for the
 // camelCaseId convention from specification 3.1.
 //
@@ -364,5 +363,61 @@ func TestOutlineDepthFlag(t *testing.T) {
 	// Unlimited must not collapse to depth 1.
 	if deep == shallow {
 		t.Error("default (unlimited) depth produced identical output to --depth 1")
+	}
+}
+
+// TestOverwriteRoundTripThroughCli is the end-to-end version of the tool's central claim: an
+// agent reads offsets from golens bounds, overwrites that span, and lands on a file that still
+// compiles structurally.
+//
+// Everything else in the suite checks that get and bounds agree with each other. This checks
+// that they agree with the file on disk, which is the only thing that matters to a caller.
+func TestOverwriteRoundTripThroughCli(t *testing.T) {
+	path := fixture(t, "user.go", userGo)
+
+	var buf bytes.Buffer
+	root := New(Env{Stdout: &buf, Stderr: &bytes.Buffer{}, Engine: goast.New()})
+	root.SetArgs([]string{"bounds", "UserStore.GetUser", path, "--json", "--compact"})
+	root.SetOut(&buf)
+	if code := Execute(root); code != 0 {
+		t.Fatalf("bounds exit = %d: %s", code, buf.String())
+	}
+
+	var payload struct {
+		StartByte int `json:"start_byte"`
+		EndByte   int `json:"end_byte"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
+		t.Fatalf("Unmarshal: %v\n%s", err, buf.String())
+	}
+
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	const replacement = "func (s *UserStore) GetUser() error { return nil }"
+	edited := string(original[:payload.StartByte]) + replacement + string(original[payload.EndByte:])
+
+	if _, err := parser.ParseFile(token.NewFileSet(), path, edited, parser.SkipObjectResolution); err != nil {
+		t.Fatalf("edited file does not parse: %v", err)
+	}
+
+	// Everything outside the edited span must survive untouched. The fixture declares one type
+	// (UserStore), one method (GetUser) and an import, so checking the surrounding text and the
+	// declaration count catches an overrunning span without depending on a fixture layout.
+	if !strings.Contains(edited, "type UserStore struct") {
+		t.Error("the declaration before the edit was lost; the span overran backwards")
+	}
+	if !strings.Contains(edited, `import "context"`) {
+		t.Error("the import block was lost")
+	}
+
+	// Exactly one func must remain: the replacement. The fixture declares one method.
+	if got := strings.Count(edited, "func "); got != 1 {
+		t.Errorf("func count = %d, want 1 (the replacement); the span did not cover the original", got)
+	}
+	if strings.Contains(edited, "s.cache") || strings.Contains(edited, "s.mu.Lock") {
+		t.Error("the original method body survived the overwrite")
 	}
 }
