@@ -59,6 +59,15 @@ jobs:
             exit 1
           fi
 
+      # golangci-lint catches what go vet and golens check cannot: unchecked errors, dead code
+      # and simplifications. Auto-fixable findings are cleared by an agent with
+      # `golangci-lint run --fix`; the rest need judgement, which is why the enabled set is
+      # limited to bug detection plus formatters.
+      - name: Lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.14.0
+
       # The binary budget from specification 3.2, and the no-cgo claim from 1.1.
       #
       # CGO_ENABLED=0 is exported rather than prefixed onto the build command: the

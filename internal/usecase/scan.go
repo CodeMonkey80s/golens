@@ -52,15 +52,3 @@ func identEnd(src []byte, i int) int {
 }
 
 // words returns every identifier-like token in src, in order.
-func words(src []byte) []string {
-	var out []string
-	for i := 0; i < len(src); i++ {
-		if !isIdentStart(src[i]) || !atWordStart(src, i) {
-			continue
-		}
-		end := identEnd(src, i)
-		out = append(out, string(src[i:end]))
-		i = end - 1
-	}
-	return out
-}

@@ -1,0 +1,74 @@
+version: "2"
+
+# golens is maintained by agents, not humans. That shapes this file.
+#
+# Two rules follow from it. Auto-fixable linters are free: an agent runs
+# `golangci-lint run --fix` and clears them mechanically, so they are pure wins.
+# Non-auto-fixable linters need judgement, so they are limited to the ones that catch real bugs
+# and are paired with exclusions where the codebase is deliberately shaped that way.
+#
+# Style linters that produce churn without catching bugs are disabled. An agent fighting `wsl` or
+# `lll` burns tokens and rewrites correct code; the cost is not worth the consistency.
+
+linters:
+  enable:
+    # Bug detection. These catch what go vet and golens check cannot.
+    - errcheck      # unchecked errors
+    - staticcheck   # simplifications, dead branches, redundant code
+    - unused        # dead code: unused vars, consts, funcs
+    - ineffassign   # ineffectual assignments
+    # gosimple and stylecheck are merged into staticcheck in current golangci-lint.
+
+    # Auto-fixable. An agent clears misspell, godot and whitespace with --fix;
+    # gofumpt and goimports run as formatters below.
+    - misspell      # typos in comments and strings
+    - godot         # comments end in a period
+    - whitespace     # no leading/trailing blank lines in blocks
+
+    # Already run directly in CI; listed so one config is the whole story.
+    - govet
+
+  disable:
+    # Style churn, not bugs. Disabled deliberately. gosimple and stylecheck are not listed:
+    # they were merged into staticcheck and golangci-lint v2 rejects their names even here.
+    - wsl            # whitespace conventions; agents fight it constantly
+    - lll            # line length; this codebase has long lines
+    - varnamelen     # golens uses sb, tf, w, e throughout
+    - funlen         # Check is ~70 lines by design
+    - gocyclo        # cyclomatic complexity
+    - cyclop
+    - nestif
+    - dupl           # duplicate code; slow and noisy
+    - exhaustruct    # forces full struct literals
+    - gochecknoglobals
+    - gochecknoinits
+    - gocritic       # opinionated; overlaps with staticcheck
+    - gosec          # golens reads files by path; G304 fires on every ReadFile
+    - revive         # redundant: golens check --naming enforces camelCaseId on this source
+    - testpackage    # golens uses internal test packages
+    - thelper
+    - tparallel
+    - paralleltest
+    - wrapcheck      # golens returns sentinel errors by design
+    - errorlint      # overlaps with errcheck, stricter about wrapping
+    - nilnil
+    - nonamedreturns
+    - tagliatelle
+
+issues:
+  # Show all issues, not just the first per linter.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+
+  settings:
+    gofumpt:
+      # golens targets go 1.27; the extra rules are safe.
+      extra-rules: true
+
+run:
+  timeout: 5m

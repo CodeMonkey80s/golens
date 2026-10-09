@@ -62,7 +62,8 @@ func TestConcurrentCheckMatchesSerial(t *testing.T) {
 		// Every file has an unused import, so diagnostics are plentiful and their order
 		// depends on traversal, which is exactly what concurrency could disturb.
 		testfixture.Write(t, dir, name, fmt.Sprintf(
-			"package p\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc F%02d() {}\n", i))
+			"package p\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc F%02d() {}\n", i,
+		))
 	}
 
 	concurrent := checkWithProcs(t, dir, runtime.GOMAXPROCS(0))

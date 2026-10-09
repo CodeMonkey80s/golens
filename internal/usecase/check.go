@@ -1,7 +1,6 @@
 package usecase
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -127,7 +126,7 @@ func emit(diags []Diagnostic, stdout, stderr io.Writer, opts format.Options) err
 		}
 	} else {
 		for _, d := range diags {
-			fmt.Fprintln(stderr, d.String())
+			fmt.Fprintln(stderr, d.String()) //nolint:errcheck // diagnostic write; a failure here is not actionable
 		}
 	}
 
@@ -135,47 +134,6 @@ func emit(diags []Diagnostic, stdout, stderr io.Writer, opts format.Options) err
 		return HasDiagnostics{Count: len(diags)}
 	}
 	return nil
-}
-
-// checkFile inspects one file for the checks scoped in decision D8.
-//
-// namingOnly replaces the syntax and analysis checks with the naming-convention check, which
-// is what golens check --naming does. The two are separate because a caller validating syntax
-// should not receive naming opinions, and a caller enforcing a convention should not be
-// blocked by an unrelated parse warning.
-func checkFile(engine domain.Engine, path string, namingOnly bool, pkg *packageSymbols) ([]Diagnostic, error) {
-	doc, err := engine.Parse(path)
-	if err != nil {
-		// A parse failure is itself the finding: check must report it as a diagnostic and
-		// continue with other files rather than aborting the run.
-		var pe interface{ Diagnostics() []string }
-		if errors.As(err, &pe) {
-			out := make([]Diagnostic, 0, len(pe.Diagnostics()))
-			for _, msg := range pe.Diagnostics() {
-				out = append(out, Diagnostic{
-					Severity: "error",
-					Path:     path,
-					Line:     1,
-					Column:   1,
-					Message:  msg,
-				})
-			}
-			return out, nil
-		}
-		return nil, err
-	}
-
-	if namingOnly {
-		return namingViolations(doc), nil
-	}
-
-	var diags []Diagnostic
-	diags = append(diags, invalidImportPaths(doc)...)
-	diags = append(diags, unusedImports(doc)...)
-
-	// Hand the symbols to the package-level pass, which owns cross-file conflicts.
-	pkg.add(filepath.ToSlash(filepath.Dir(doc.Path)), doc)
-	return diags, nil
 }
 
 // packageSymbols accumulates package-level declarations across files, keyed by namespace.

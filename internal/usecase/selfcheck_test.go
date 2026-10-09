@@ -30,7 +30,6 @@ func TestExternalTestPackageIsNotAConflict(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{}, false)
-
 	if err != nil {
 		t.Errorf("a helper in both p and p_test must not be a conflict:\n%s", stderr.String())
 	}

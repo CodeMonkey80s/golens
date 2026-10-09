@@ -121,7 +121,7 @@ func TestSpecSchemaVersionIsFirstField(t *testing.T) {
 
 			// check exits 3 because the file has an unused import; its payload is still
 			// required by the spec.
-			if code != 0 && !(args[0] == "check" && code == 3) {
+			if code != 0 && (args[0] != "check" || code != 3) {
 				t.Fatalf("exit = %d (stderr: %s)", code, stderr)
 			}
 			if stderr != "" {

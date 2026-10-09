@@ -96,14 +96,14 @@ func Execute(root *cobra.Command) int {
 	// the caller reads the diagnostics that were already written there. Every other code
 	// means the command did not do its job and the message explains why.
 	if code != int(domain.ExitDiagnostics) {
-		fmt.Fprintln(root.ErrOrStderr(), "golens: "+classified.Error())
+		fmt.Fprintln(root.ErrOrStderr(), "golens: "+classified.Error()) //nolint:errcheck // diagnostic write; a failure here is not actionable
 	}
 	if amb, ok := classified.(AmbiguousError); ok {
 		for _, candidate := range amb.Candidates() {
-			fmt.Fprintln(root.ErrOrStderr(), "  "+candidate)
+			fmt.Fprintln(root.ErrOrStderr(), "  "+candidate) //nolint:errcheck // diagnostic write
 		}
 		if advised, ok := classified.(interface{ Advice() string }); ok {
-			fmt.Fprintln(root.ErrOrStderr(), advised.Advice())
+			fmt.Fprintln(root.ErrOrStderr(), advised.Advice()) //nolint:errcheck // diagnostic write
 		}
 	}
 

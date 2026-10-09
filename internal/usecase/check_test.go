@@ -414,7 +414,6 @@ func TestCheckAcrossFixtureClasses(t *testing.T) {
 
 			var stdout, stderr bytes.Buffer
 			err := usecase.Check(goast.New(), path, &stdout, &stderr, format.Options{}, false)
-
 			if err != nil {
 				t.Errorf("unexpected diagnostics: %v\n%s", err, stderr.String())
 			}
