@@ -157,6 +157,31 @@ src[start_byte:end_byte]   // exactly the declaration
 `start_byte` is its first byte; `end_byte` is one past its last. The terminating newline falls
 *outside* the span, so overwriting `[start, end)` leaves the file's line structure intact.
 
+### The span starts at the name, not the keyword
+
+For a **function** the span starts at `func`. For a **type, var or const** it starts at the
+*name*, so the `type` / `var` / `const` keyword is outside the range:
+
+```go
+type User struct{ ... }   // start_byte points at 'U' in User, not at 'type'
+func NewUser() *User {}    // start_byte points at 'func'
+```
+
+This is deliberate. `const ( A = 1; B = 2 )` is a single declaration clause, and spanning the
+whole clause would give `A` and `B` identical bounds — editing one would overwrite the other.
+Starting at the name is what keeps every name in a grouped declaration independently
+addressable.
+
+**The practical consequence:** replacement text must start at the name too. Writing back what
+`get` returned is always safe, because `get` returns exactly the span. Writing a fresh
+declaration is not:
+
+```go
+// bounds ColorRGB  →  start_byte at 'C' of ColorRGB
+// WRONG: replaces the span with "type ColorRGB struct {...}" → "type type ColorRGB struct {...}"
+// RIGHT: replaces the span with "ColorRGB struct {...}"
+```
+
 `end_line` is derived from `end_byte - 1`, not from the AST end position. A declaration ending at
 column 1 of the next line reports the line it actually ends on.
 

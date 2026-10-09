@@ -194,25 +194,29 @@ func (b *builder) funcSymbol(fn *ast.FuncDecl) domain.Symbol {
 	}
 }
 
-// receiverText renders a method receiver for the declaration head, preserving the
-// pointer star and the receiver variable name: "*UserStore", "r *UserStore".
+// receiverText renders a method receiver for the declaration head, without the
+// surrounding parentheses: "s *UserStore", "g G[T]", "s sync.Locker".
 //
-// The rendered form always names the variable "s" so output is stable regardless of how
-// the source named it; the type is what carries meaning for a consumer.
+// The source spelling is preserved deliberately. An earlier version invented the variable
+// name "s" and reduced the type to its base name, which rendered "func (s Locker) Ext()"
+// for a "func (s sync.Locker) Ext()" declaration. A consumer copying a declaration head
+// into an edit needs text that compiles, so the receiver is reproduced as written,
+// including the variable name, the package qualifier and any type parameters.
 func receiverText(recv *ast.FieldList) string {
 	if recv == nil || len(recv.List) == 0 {
 		return ""
 	}
 	field := recv.List[0]
 
-	var sb strings.Builder
-	if _, ok := field.Type.(*ast.StarExpr); ok {
-		sb.WriteByte('*')
+	typ := exprString(field.Type)
+	if typ == "" {
+		return ""
 	}
-	if t := receiverTypeName(field.Type); t != "" {
-		sb.WriteString(t)
+	// An unnamed receiver -- "func (T) M()" -- is just its type.
+	if len(field.Names) == 0 {
+		return typ
 	}
-	return sb.String()
+	return field.Names[0].Name + " " + typ
 }
 
 func (b *builder) genSymbols(gen *ast.GenDecl) []domain.Symbol {
@@ -232,6 +236,7 @@ func (b *builder) genSymbols(gen *ast.GenDecl) []domain.Symbol {
 				Kind:          kind,
 				Bounds:        nodeBounds(b.tf, s.Pos(), s.End()),
 				Detail:        detail,
+				TypeParams:    typeParamsText(s.TypeParams),
 			})
 		case *ast.ValueSpec:
 			for _, name := range s.Names {
@@ -308,9 +313,10 @@ func (b *builder) nodes(file *ast.File) []domain.Node {
 				switch s := spec.(type) {
 				case *ast.TypeSpec:
 					node := domain.Node{
-						Name:   s.Name.Name,
-						Kind:   kind,
-						Bounds: nodeBounds(b.tf, s.Pos(), s.End()),
+						Name:       s.Name.Name,
+						Kind:       kind,
+						TypeParams: typeParamsText(s.TypeParams),
+						Bounds:     nodeBounds(b.tf, s.Pos(), s.End()),
 					}
 					if s.Type != nil {
 						node.Detail = typeKeyword(s.Type)
@@ -384,9 +390,10 @@ func (b *builder) typeChildren(expr ast.Expr) []domain.Node {
 			Bounds: nodeBounds(b.tf, field.Pos(), field.End()),
 		}
 		if len(field.Names) == 0 {
-			// Embedded field: the type expression is the name.
+			// Embedded field: the type expression is the whole declaration, so it is
+			// the name and there is no separate type to show. Repeating it as Detail
+			// would render "sync.Mutex sync.Mutex", which is not valid Go.
 			node.Name = exprString(field.Type)
-			node.Detail = exprString(field.Type)
 		} else {
 			node.Name = field.Names[0].Name
 			node.Detail = exprString(field.Type)
@@ -450,9 +457,31 @@ func kindForToken(tok token.Token) domain.Kind {
 	}
 }
 
+// typeParamsText renders a type parameter list in the bracketed source form, "[T any]",
+// or the empty string when the declaration is not generic.
+//
+// fieldListString produces the parenthesised form used for function parameters; a type
+// parameter list is bracketed instead, so the parentheses are swapped rather than
+// re-derived. Dropping the list would render "type Stack struct" for a "type Stack[T any]
+// struct", and a consumer copying that head into an edit would produce code that does not
+// compile.
+func typeParamsText(tp *ast.FieldList) string {
+	if tp == nil || len(tp.List) == 0 {
+		return ""
+	}
+	params := fieldListString(tp)
+	if params == "" {
+		return ""
+	}
+	return "[" + strings.TrimSuffix(strings.TrimPrefix(params, "("), ")") + "]"
+}
+
 // receiverTypeName returns the base type name of a method receiver, ignoring pointers,
 // generics and package qualifiers: *UserStore, store.User, UserStore[T] all yield
 // "UserStore".
+//
+// This is for qualification only -- it builds the "UserStore.GetUser" lookup key. The
+// declaration head uses receiverText, which keeps the full source spelling.
 func receiverTypeName(expr ast.Expr) string {
 	switch t := expr.(type) {
 	case *ast.StarExpr:

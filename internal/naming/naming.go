@@ -37,14 +37,28 @@ var initialismSet = func() map[string]bool {
 }()
 
 // Violation describes one identifier that breaks the convention.
+//
+// Line is the declaration line when the caller supplied one through Identifier, and zero
+// otherwise. A zero Line means "position unknown", not "the first line".
 type Violation struct {
 	Identifier string
 	Reason     string
+	Line       int
 }
 
 func (v Violation) String() string { return v.Identifier + ": " + v.Reason }
 
-// Check reports every identifier that breaks the camelCaseId convention.
+// Identifier is an identifier together with the line it was declared on.
+//
+// A caller that already knows where a name came from -- the outline carries bounds for
+// every node -- should prefer CheckLocated, because a diagnostic that names only the file
+// leaves a reader to search for the identifier.
+type Identifier struct {
+	Name string
+	Line int
+}
+
+// Check reports every identifier that breaks the camelCaseId convention, with no position.
 //
 // The rule, stated precisely so callers do not have to infer it:
 //
@@ -57,18 +71,53 @@ func (v Violation) String() string { return v.Identifier + ": " + v.Reason }
 //   - Everything else about Go's naming is left alone. Underscores, leading capitals and
 //     all-caps words that are not initialisms are not this check's business.
 func Check(identifiers []string) []Violation {
+	located := make([]Identifier, 0, len(identifiers))
+	for _, id := range identifiers {
+		located = append(located, Identifier{Name: id})
+	}
+	return CheckLocated(located)
+}
+
+// CheckLocated is Check with a declaration line for each identifier, carried through to
+// the violation so the caller can report where the name is.
+//
+// Repeats of the same name on the same line collapse to one violation. An identifier can
+// legitimately appear more than once on a line -- a receiver and its type on a single
+// declaration -- and without the collapse the same problem would be reported twice at the
+// same position, which reads as two distinct findings.
+func CheckLocated(identifiers []Identifier) []Violation {
 	var out []Violation
 
+	seen := make(map[violationKey]bool, len(identifiers))
 	for _, id := range identifiers {
-		if reason, bad := violates(id); bad {
-			out = append(out, Violation{Identifier: id, Reason: reason})
+		reason, bad := violates(id.Name)
+		if !bad {
+			continue
 		}
+		key := violationKey{line: id.Line, name: id.Name}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, Violation{Identifier: id.Name, Reason: reason, Line: id.Line})
 	}
 
 	// Sorting makes the output deterministic, which matters because this feeds a test
-	// assertion and an agent-facing diagnostic.
-	sort.Slice(out, func(i, j int) bool { return out[i].Identifier < out[j].Identifier })
+	// assertion and an agent-facing diagnostic. The line breaks ties so that two
+	// declarations of the same name come out in source order.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Identifier != out[j].Identifier {
+			return out[i].Identifier < out[j].Identifier
+		}
+		return out[i].Line < out[j].Line
+	})
 	return out
+}
+
+// violationKey identifies a reported violation for deduplication.
+type violationKey struct {
+	line int
+	name string
 }
 
 // violates reports whether ident breaks the convention, and why.

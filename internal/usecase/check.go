@@ -251,21 +251,38 @@ func (p *packageSymbols) duplicates() []Diagnostic {
 	return diags
 }
 
+// receiverTypeIdentifier extracts the type name from a receiver rendered in source form,
+// "s *UserStore" -> "UserStore", "g G[T]" -> "G[T]", "UserStore" -> "UserStore".
+//
+// The receiver is checked rather than the declaration name because a method named "GetID"
+// can sit on a type named "UserIDType", and the type name is what the convention governs.
+// The variable name is dropped so that an ordinary receiver name such as "s" is never
+// mistaken for an identifier to check.
+func receiverTypeIdentifier(receiver string) string {
+	if _, typ, ok := strings.Cut(receiver, " "); ok {
+		receiver = typ
+	}
+	return strings.TrimPrefix(receiver, "*")
+}
+
 // namingViolations reports identifiers in doc that break the camelCaseId convention.
 //
 // The check runs over the outline's node names rather than re-parsing: every declared name
-// the engine surfaced is already there, so this needs no second parse.
+// the engine surfaced is already there, so this needs no second parse. Each name is
+// reported with the line of the node that declared it, taken from that node's bounds, so
+// the diagnostic points at a line rather than at the file.
 func namingViolations(doc domain.Document) []Diagnostic {
-	var ids []string
+	var ids []naming.Identifier
 	collect := func(n domain.Node) {
 		if n.Kind == domain.KindImport || n.Kind == domain.KindPackage {
 			return
 		}
+		line := n.Bounds.StartLine
 		if n.Name != "" && n.Name != "_" {
-			ids = append(ids, n.Name)
+			ids = append(ids, naming.Identifier{Name: n.Name, Line: line})
 		}
 		if n.Receiver != "" {
-			ids = append(ids, strings.TrimPrefix(n.Receiver, "*"))
+			ids = append(ids, naming.Identifier{Name: receiverTypeIdentifier(n.Receiver), Line: line})
 		}
 	}
 
@@ -279,11 +296,11 @@ func namingViolations(doc domain.Document) []Diagnostic {
 	walk(doc.Nodes)
 
 	var diags []Diagnostic
-	for _, v := range naming.Check(ids) {
+	for _, v := range naming.CheckLocated(ids) {
 		diags = append(diags, Diagnostic{
 			Severity: "warning",
 			Path:     doc.Path,
-			Line:     1,
+			Line:     v.Line,
 			Column:   1,
 			Message:  v.Identifier + ": " + v.Reason,
 		})

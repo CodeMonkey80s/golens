@@ -457,3 +457,52 @@ func TestCheckSkipsVendorAndHidden(t *testing.T) {
 func asDiagnostics(err error, target *usecase.HasDiagnostics) bool {
 	return errors.As(err, target)
 }
+
+// TestNamingDiagnosticsCarryDeclarationLine pins the position of a naming diagnostic.
+//
+// The check used to report every violation at line 1, which named the file but left a
+// reader to search for the identifier. Each diagnostic must now point at the line of the
+// declaration that introduced the name, including a name reached through a receiver.
+func TestNamingDiagnosticsCarryDeclarationLine(t *testing.T) {
+	dir := t.TempDir()
+	src := "package p\n" +
+		"\n" +
+		"type userID struct{}\n" +
+		"\n" +
+		"func (u userID) Get() {}\n" +
+		"\n" +
+		"var HTTPHandler = 1\n"
+
+	path := testfixture.Write(t, dir, "p.go", src)
+
+	var stdout, stderr bytes.Buffer
+	err := usecase.Check(goast.New(), path, &stdout, &stderr, format.Options{}, true)
+	var hasDiags usecase.HasDiagnostics
+	if !asDiagnostics(err, &hasDiags) {
+		t.Fatalf("Check returned an unexpected error: %v\n%s", err, stderr.String())
+	}
+
+	got := strings.TrimRight(stderr.String(), "\n")
+	if got == "" {
+		t.Fatal("expected naming diagnostics, got none")
+	}
+
+	diags := strings.Split(got, "\n")
+	if len(diags) != 3 {
+		t.Fatalf("got %d diagnostics, want 3:\n%s", len(diags), got)
+	}
+
+	// userID is declared on line 3 and used as a receiver type on line 5; HTTPHandler is
+	// declared on line 7. Sorted by identifier, then by line. Each diagnostic carries the
+	// line of the declaration that introduced the name, so none reports line 1.
+	want := []string{
+		":7:1: HTTPHandler:",
+		":3:1: userID:",
+		":5:1: userID:",
+	}
+	for i, want := range want {
+		if !strings.Contains(diags[i], want) {
+			t.Errorf("diagnostic %d:\n got: %s\nwant to contain: %s", i, diags[i], want)
+		}
+	}
+}

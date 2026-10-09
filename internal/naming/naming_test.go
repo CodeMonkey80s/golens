@@ -125,3 +125,73 @@ func TestKnownAmbiguityIsAccepted(t *testing.T) {
 		}
 	}
 }
+
+// TestCheckLocatedReportsDeclarationLine pins the position carried through to a violation,
+// and the collapse of a name repeated on one line.
+func TestCheckLocatedReportsDeclarationLine(t *testing.T) {
+	got := CheckLocated([]Identifier{
+		{Name: "userId", Line: 3},
+		{Name: "userID", Line: 7},
+		{Name: "HTTPHandler", Line: 12},
+	})
+
+	want := []Violation{
+		{Identifier: "HTTPHandler", Reason: "initialism must not be all caps per camelCaseId: HTTP should be http", Line: 12},
+		{Identifier: "userID", Reason: "initialism must not be all caps per camelCaseId: ID should be id", Line: 7},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("CheckLocated returned %d violations, want %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("violation %d:\n got: %+v\nwant: %+v", i, got[i], want[i])
+		}
+	}
+}
+
+// TestCheckLocatedCollapsesSameLineRepeats covers a receiver and its type declared on one
+// line: the same name is collected twice, and reporting it twice at one position would read
+// as two distinct findings.
+func TestCheckLocatedCollapsesSameLineRepeats(t *testing.T) {
+	got := CheckLocated([]Identifier{
+		{Name: "userID", Line: 4},
+		{Name: "userID", Line: 4},
+	})
+	if len(got) != 1 {
+		t.Errorf("got %d violations for one name on one line, want 1: %v", len(got), got)
+	}
+
+	// The same name on two lines is two declarations, so both are reported.
+	got = CheckLocated([]Identifier{
+		{Name: "userID", Line: 4},
+		{Name: "userID", Line: 9},
+	})
+	if len(got) != 2 {
+		t.Errorf("got %d violations for one name on two lines, want 2: %v", len(got), got)
+	}
+}
+
+// TestCheckLocatedIsDeterministic guards the ordering: the same input must produce the same
+// output across runs, since this feeds an agent-facing diagnostic.
+func TestCheckLocatedIsDeterministic(t *testing.T) {
+	input := []Identifier{
+		{Name: "userID", Line: 20},
+		{Name: "userID", Line: 5},
+		{Name: "HTTPHandler", Line: 9},
+	}
+
+	first := CheckLocated(input)
+	again := CheckLocated(input)
+
+	if len(first) != len(again) {
+		t.Fatalf("length changed between runs: %d then %d", len(first), len(again))
+	}
+	for i := range first {
+		if first[i] != again[i] {
+			t.Fatalf("violation %d differs between runs:\n%+v\n%+v", i, first[i], again[i])
+		}
+	}
+	if first[0].Line > first[1].Line && first[0].Identifier == first[1].Identifier {
+		t.Errorf("same name not ordered by line: %+v", first)
+	}
+}

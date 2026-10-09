@@ -101,12 +101,19 @@ func (b Bounds) Source(src []byte) string {
 // Nodes form a tree via Children. Depth-limited walks use nil Children to mean
 // "suppressed", which is distinct from an empty non-nil slice meaning "no children".
 type Node struct {
-	Name     string
-	Kind     Kind
-	Detail   string
+	Name   string
+	Kind   Kind
+	Detail string
+	// Receiver is the method receiver exactly as the source spells it, without the
+	// surrounding parentheses: "s *UserStore", "g G[T]". An unnamed receiver is just its
+	// type. It is empty for anything that is not a method.
 	Receiver string
-	Bounds   Bounds
-	Children []Node
+	// TypeParams is the bracketed type parameter list of a generic declaration, "[T any]",
+	// or empty when the declaration has none. It is kept separate from Name so that the
+	// symbol name stays the bare identifier for lookup.
+	TypeParams string
+	Bounds     Bounds
+	Children   []Node
 
 	// IsGroup marks a synthetic container the engine introduced for presentation, such as
 	// the "IMPORTS" or "TYPES & STRUCTS" headings. A group has no source text of its own; its
@@ -119,10 +126,10 @@ type Node struct {
 // Declaration renders the node as a Go declaration head, which is what the human outline
 // prints after the bullet.
 //
-// For a method the receiver is restored, so a node built from Kind Method with Name
-// "GetUser" and Receiver "*UserStore" renders as
-// "func (s *UserStore) GetUser(...)". Generics-aware engines can supply a Receiver that
-// already includes the type parameters.
+// For a method the receiver is restored verbatim, so a node built from Kind Method with
+// Name "GetUser" and Receiver "s *UserStore" renders as "func (s *UserStore) GetUser(...)".
+// Receiver carries the source spelling, type parameters included, so a generic receiver
+// renders as "func (g G[T]) Generic()" rather than dropping the "[T]".
 func (n Node) Declaration() string {
 	keyword := n.Keyword()
 
@@ -131,17 +138,19 @@ func (n Node) Declaration() string {
 		// Detail is the parenthesised parameter and result text, so it attaches directly
 		// to the name: "func NewUserStore() *UserStore".
 		if n.Kind == KindMethod && n.Receiver != "" {
-			return keyword + " (s " + n.Receiver + ") " + n.Name + n.Detail
+			return keyword + " (" + n.Receiver + ") " + n.Name + n.Detail
 		}
 		return keyword + " " + n.Name + n.Detail
 
 	default:
-		// Detail is the underlying type or literal, separated by a space:
-		// "type User struct".
+		// TypeParams attaches to the name with no separating space, as in the source:
+		// "type Stack[T any] struct". Detail is the underlying type or literal, separated
+		// by a space.
+		head := keyword + " " + n.Name + n.TypeParams
 		if n.Detail != "" {
-			return keyword + " " + n.Name + " " + n.Detail
+			return head + " " + n.Detail
 		}
-		return keyword + " " + n.Name
+		return head
 	}
 }
 
@@ -169,12 +178,13 @@ type Symbol struct {
 	File          string
 	Detail        string
 	Receiver      string
+	TypeParams    string
 }
 
 // Declaration renders the symbol as a Go declaration head, using the same form as
 // Node.Declaration.
 func (s Symbol) Declaration() string {
-	return Node{Name: s.Name, Kind: s.Kind, Detail: s.Detail, Receiver: s.Receiver}.Declaration()
+	return Node{Name: s.Name, Kind: s.Kind, Detail: s.Detail, Receiver: s.Receiver, TypeParams: s.TypeParams}.Declaration()
 }
 
 // Document is the result of parsing one source file.

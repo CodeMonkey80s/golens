@@ -436,6 +436,78 @@ func F(a int, b string) {}
 	}
 }
 
+// TestDeclarationHeadsMatchSource pins the rendered declaration head for the three
+// constructs where it previously diverged from the source: generic type parameters,
+// receiver spelling, and embedded struct fields.
+//
+// Each of these produced text that does not compile when copied into an edit --
+// "type Stack struct" for "type Stack[T any] struct", "func (s Locker) Ext()" for
+// "func (s sync.Locker) Ext()", and "sync.Mutex sync.Mutex" for an embedded field.
+func TestDeclarationHeadsMatchSource(t *testing.T) {
+	src := `package p
+
+import "sync"
+
+type Stack[T any] struct {
+	sync.Mutex
+	items []T
+}
+
+func (s *Stack[T]) Push(v T) {}
+func (s Stack[T]) Len() int   { return len(s.items) }
+func (l sync.Locker) Lock()   {}
+func (s Stack[T]) Pop() (T, bool) { var z T; return z, false }
+`
+
+	engine := New()
+	doc, err := engine.ParseSource("p.go", []byte(src))
+	if err != nil {
+		t.Fatalf("ParseSource: %v", err)
+	}
+
+	wantHeads := map[string]string{
+		"Stack.Push":  "func (s *Stack[T]) Push(v T)",
+		"Stack.Len":   "func (s Stack[T]) Len() int",
+		"Locker.Lock": "func (l sync.Locker) Lock()",
+		"Stack.Pop":   "func (s Stack[T]) Pop() (T, bool)",
+	}
+	for qualified, want := range wantHeads {
+		sym, ok := doc.Symbol(qualified)
+		if !ok {
+			t.Errorf("symbol %q not found; have %v", qualified, names(doc))
+			continue
+		}
+		if got := sym.Declaration(); got != want {
+			t.Errorf("%s declaration head:\n got: %s\nwant: %s", qualified, got, want)
+		}
+	}
+
+	typeSym, ok := doc.Symbol("Stack")
+	if !ok {
+		t.Fatalf("symbol \"Stack\" not found")
+	}
+	if got, want := typeSym.Declaration(), "type Stack[T any] struct"; got != want {
+		t.Errorf("Stack declaration head:\n got: %s\nwant: %s", got, want)
+	}
+
+	// The embedded field is the whole declaration: its name, with no type repeated.
+	fields := findChildren(doc.Nodes, "Stack")
+	var embedded *domain.Node
+	for i, f := range fields {
+		if f.Kind == domain.KindField && f.Name == "sync.Mutex" {
+			embedded = &fields[i]
+			break
+		}
+	}
+	if embedded == nil {
+		t.Fatalf("no struct field found under Stack")
+	}
+	if embedded.Name != "sync.Mutex" || embedded.Detail != "" {
+		t.Errorf("embedded field: Name = %q, Detail = %q; want Name \"sync.Mutex\", Detail \"\"",
+			embedded.Name, embedded.Detail)
+	}
+}
+
 func findChildren(nodes []domain.Node, name string) []domain.Node {
 	for _, node := range nodes {
 		if node.Name == name {

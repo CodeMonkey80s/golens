@@ -92,6 +92,8 @@ golens get <symbol> <file|dir> [flags]
 
 **Offsets are half-open.** `start_byte` is the first byte of the symbol and `end_byte` is one past its last byte, so `file[start_byte:end_byte]` is exactly the extracted source. Line numbers are inclusive at both ends, matching the `(9 lines)` count in the example below. The span is derived purely from the AST node, so the terminating newline is excluded and an overwrite of `[start_byte, end_byte)` preserves line structure. When `--bounds-only` is combined with `--json`, the payload is identical to `golens bounds`.
 
+**The span starts at the name, not the keyword.** For a func the span starts at `func`; for a type, var or const it starts at the declared name, leaving the `type` / `var` / `const` keyword outside the range. Grouped declarations make this unavoidable — `const ( A = 1; B = 2 )` is one clause, so a clause-wide span would give `A` and `B` identical offsets and an edit to one would overwrite the other. A consumer writing replacement text must therefore begin at the name; writing back the text `golens get` returned for the same symbol always satisfies this.
+
 **Symbol ambiguity.** A bare method name is accepted when it is unique in the package. Any ambiguity exits `2` and lists the candidates on stderr rather than guessing.
 
 **Human Output Format (`golens get UserStore.GetUser user.go`)**

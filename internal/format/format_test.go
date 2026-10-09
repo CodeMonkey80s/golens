@@ -47,7 +47,7 @@ func sampleDoc() domain.Document {
 						Bounds: domain.Bounds{StartLine: 12, EndLine: 15},
 					},
 					{
-						Name: "GetUser", Kind: domain.KindMethod, Receiver: "*UserStore",
+						Name: "GetUser", Kind: domain.KindMethod, Receiver: "s *UserStore",
 						Detail: "(ctx context.Context, id int) (*User, error)",
 						Bounds: domain.Bounds{StartLine: 17, EndLine: 25},
 					},
@@ -62,7 +62,7 @@ func sampleSym() domain.Symbol {
 		Name:          "GetUser",
 		QualifiedName: "UserStore.GetUser",
 		Kind:          domain.KindMethod,
-		Receiver:      "*UserStore",
+		Receiver:      "s *UserStore",
 		Bounds:        domain.Bounds{StartLine: 17, EndLine: 25, StartByte: 430, EndByte: 612},
 	}
 }
