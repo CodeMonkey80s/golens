@@ -15,6 +15,7 @@
 | Branch | `s5-harden-ship` (tip `43ae86d`) |
 | Tests | 136 top-level, 7 packages, all passing |
 | Test count by package | arch 7 · cli 26 · domain 7 · goast 16 · format 19 · naming 8 · usecase 53 |
+| Licence | MIT, `LICENSE` at repo root, copyright holder from git config |
 | Verify with | **`go test -count=1 ./...`** — see caching note |
 | Binary | 3.92 MB (budget 15 MB) |
 | Parse budget | ~13 µs typical, 282 µs largest file (budget 5 ms) |
@@ -105,9 +106,8 @@ The plan is finished. These are optional, none blocking.
 
 | Item | Notes |
 |---|---|
-| **Merge branches to `main`** | Five branches, none merged. `main` holds S1 only |
-| `LICENSE` | README says "not yet specified" — deliberately, rather than claiming MIT without a file |
-| GoReleaser or CI workflow | Not in scope; a `.github/workflows` with the `-count=1` command would be the minimum |
+| **Merge branches to `main`** | Six branches, none merged. `main` holds S1 only |
+| GoReleaser or CI workflow | Not in scope; a `.github/workflows` running `go test -count=1 ./...` would be the minimum |
 | Tag / publish | No remote configured |
 | `var x = 5` shows no `= 5` in outline | Cosmetic; `KindVar`/`KindConst` `Detail` carries the type only |
 | `type X = Y` renders `type Alias User`, losing `=` | Cosmetic |

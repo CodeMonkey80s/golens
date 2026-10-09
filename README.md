@@ -285,4 +285,4 @@ which is tested by rendering with `GOMAXPROCS` pinned to 1 and comparing.
 
 ## Licence
 
-Not yet specified. Add a `LICENSE` file before publishing or redistributing.
+MIT — see [LICENSE](LICENSE).
