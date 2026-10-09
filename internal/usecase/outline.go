@@ -116,23 +116,27 @@ func Outline(engine domain.Engine, target string, depth int, w io.Writer, opts f
 		return errNoGoFiles(target)
 	}
 
+	// Parsing is concurrent for directories and sequential for a single file; see parse.go for
+	// why. Either way the documents come back in path order, so the output below is identical
+	// either way.
+	docs, errs := parseAll(engine, paths)
+	for _, e := range errs {
+		if e.Err != nil {
+			// outline reports the first failure in path order, so a run over a tree with
+			// several broken files always fails the same way.
+			return e
+		}
+	}
+
 	if opts.Json {
-		payloads := make([]format.OutlineFile, 0, len(paths))
-		for _, path := range paths {
-			doc, err := engine.Parse(path)
-			if err != nil {
-				return err
-			}
+		payloads := make([]format.OutlineFile, 0, len(docs))
+		for _, doc := range docs {
 			payloads = append(payloads, format.Outline(doc, normalizeDepth(depth)))
 		}
 		return format.WriteJson(w, payloads, opts.Compact)
 	}
 
-	for _, path := range paths {
-		doc, err := engine.Parse(path)
-		if err != nil {
-			return err
-		}
+	for _, doc := range docs {
 		if err := format.WriteOutlineHuman(w, doc, normalizeDepth(depth), opts.Compact); err != nil {
 			return err
 		}

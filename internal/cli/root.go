@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -116,22 +117,50 @@ func exitCodeFor(err error) int {
 // classifyUsage tags cobra's own errors as usage mistakes.
 //
 // Cobra reports a wrong argument count and an unknown flag through plain error values, so
-// without this they would fall through to exit 4 and report a parse failure for what is
-// really a typo in the invocation.
+// without this they would fall through to exit 4 and report a parse failure for what is really
+// a typo in the invocation.
+//
+// Only errors that already carry a classification pass through unchanged, and only errors that
+// are recognisably cobra's get wrapped. Everything else is a genuine parse or I/O failure and
+// must keep exit 4: this function used to wrap *any* unrecognised error as a usage error, which
+// turned `outline` on an unparseable file from exit 4 into exit 1 and told a caller it had
+// invoked the tool wrongly when the file was at fault.
 func classifyUsage(err error) error {
 	if err == nil {
 		return nil
 	}
-	if _, ok := err.(interface{ IsUsage() bool }); ok {
+	var usage interface{ IsUsage() bool }
+	if errors.As(err, &usage) {
 		return err
 	}
-	if _, ok := err.(interface{ IsNotFound() bool }); ok {
+	var notFound interface{ IsNotFound() bool }
+	if errors.As(err, &notFound) {
 		return err
 	}
-	if _, ok := err.(interface{ IsDiagnostics() bool }); ok {
+	var diags interface{ IsDiagnostics() bool }
+	if errors.As(err, &diags) {
 		return err
 	}
-	return usageError{err}
+	if isCobraError(err) {
+		return usageError{err}
+	}
+	return err
+}
+
+// isCobraError reports whether err came from cobra's own flag and argument handling.
+//
+// Cobra's messages are stable enough to recognise, and there is no exported error type to match
+// on. The check is deliberately narrow: misclassifying a real failure as a usage error is worse
+// than leaving a cobra error to exit 4, because exit 4 at least tells the caller the input
+// could not be processed.
+func isCobraError(err error) bool {
+	msg := err.Error()
+	return strings.HasPrefix(msg, "unknown command ") ||
+		strings.HasPrefix(msg, "unknown flag: ") ||
+		strings.HasPrefix(msg, "unknown shorthand flag: ") ||
+		strings.Contains(msg, "accepts ") && strings.Contains(msg, "arg(s)") ||
+		strings.Contains(msg, "requires at least ") ||
+		strings.Contains(msg, "flag needs an argument")
 }
 
 // usageError wraps an error so it maps to exit 1.

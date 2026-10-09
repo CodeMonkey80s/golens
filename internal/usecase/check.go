@@ -70,23 +70,47 @@ func Check(engine domain.Engine, target string, stdout, stderr io.Writer, opts f
 		return errNoGoFiles(target)
 	}
 
-	var diags []Diagnostic
-
-	// Package-level symbols are collected across files, because a duplicate declaration is a
-	// package-scope conflict: two files of one package declaring the same name is exactly the
-	// error this check exists to find, and a per-file pass cannot see it.
 	var pkg packageSymbols
 
-	for _, p := range paths {
-		found, err := checkFile(engine, p, namingOnly, &pkg)
-		if err != nil {
-			return err
+	// A parse failure is a finding, not an abort: check reports diagnostics and keeps going, so
+	// one unparseable file must not stop the others from being checked. parseAll therefore
+	// returns partial results alongside every error, letting this loop analyse what parsed and
+	// report what did not, in a single pass.
+	docs, parseErrs := parseAll(engine, paths)
+
+	var diags []Diagnostic
+	for _, doc := range docs {
+		diags = append(diags, analyse(doc, namingOnly, &pkg)...)
+	}
+	for _, pe := range parseErrs {
+		// A zero ParseError means the parse succeeded; only real errors become diagnostics.
+		if pe.Err != nil {
+			diags = append(diags, pe.Diagnostics()...)
 		}
-		diags = append(diags, found...)
 	}
 
 	diags = append(diags, pkg.duplicates()...)
 
+	return emit(diags, stdout, stderr, opts)
+}
+
+// analyse runs the per-document checks. Package-level symbols are handed to pkg, which owns
+// cross-file conflicts.
+func analyse(doc domain.Document, namingOnly bool, pkg *packageSymbols) []Diagnostic {
+	if namingOnly {
+		return namingViolations(doc)
+	}
+
+	var diags []Diagnostic
+	diags = append(diags, invalidImportPaths(doc)...)
+	diags = append(diags, unusedImports(doc)...)
+
+	pkg.add(filepath.ToSlash(filepath.Dir(doc.Path)), doc)
+	return diags
+}
+
+// emit writes diagnostics in the requested form and reports whether any were found.
+func emit(diags []Diagnostic, stdout, stderr io.Writer, opts format.Options) error {
 	if opts.Json {
 		payload := checkPayload{SchemaVersion: format.SchemaVersion}
 		for _, d := range diags {
@@ -285,9 +309,24 @@ func invalidImportPaths(doc domain.Document) []Diagnostic {
 			diags = append(diags, warning(doc.Path, 1, "empty import path"))
 		case strings.ContainsAny(raw, " \t\n"):
 			diags = append(diags, warning(doc.Path, 1, fmt.Sprintf("invalid import path %q: contains whitespace", raw)))
+		case containsEscape(imp):
+			// A literal tab in a path is written "\t" in the source, so after decoding the
+			// path text no longer contains a tab. Checking the quoted literal is what catches
+			// a path the module system would reject for an embedded control character.
+			diags = append(diags, warning(doc.Path, 1,
+				fmt.Sprintf("invalid import path %s: contains an escape sequence", imp)))
 		}
 	}
 	return diags
+}
+
+// containsEscape reports whether a quoted import literal holds a backslash escape.
+//
+// Go interprets \t, \n, \\ and friends inside an interpreted string literal, so a path containing
+// a real control character arrives here already decoded and looks clean. The module system
+// rejects such paths, so the check inspects the literal rather than the decoded text.
+func containsEscape(literal string) bool {
+	return strings.Contains(literal, `\`)
 }
 
 // unusedImports reports imports whose local name is never referenced in the file.

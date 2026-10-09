@@ -138,7 +138,10 @@ func WriteGetHuman(w io.Writer, sym domain.Symbol, file, source string, compact 
 	var sb strings.Builder
 	sb.WriteString("File: " + file + "\n")
 	sb.WriteString("Symbol: " + sym.QualifiedName + "\n")
-	sb.WriteString("Lines: " + lineRange(sym.Bounds) + " (" + strconv.Itoa(sym.Bounds.LineCount()) + " lines)\n")
+	// The specification's sample reads "Lines: 17-25 (9 lines)" -- a bare range, since the
+	// label already says "Lines". lineCountPhrase also handles the singular, so a one-line
+	// declaration does not read "1 lines".
+	sb.WriteString("Lines: " + spanRange(sym.Bounds) + " (" + lineCountPhrase(sym.Bounds.LineCount()) + ")\n")
 	sb.WriteString("\n")
 	sb.WriteString(source)
 	if !strings.HasSuffix(source, "\n") {
@@ -167,6 +170,24 @@ func unquotePath(path string) string {
 		return path[1 : len(path)-1]
 	}
 	return path
+}
+
+// spanRange renders just the numbers, "17-25" or "12" for a single line.
+//
+// Used after a label that already names the span, where repeating "lines" would stutter.
+func spanRange(b domain.Bounds) string {
+	if b.EndLine == b.StartLine {
+		return strconv.Itoa(b.StartLine)
+	}
+	return strconv.Itoa(b.StartLine) + "-" + strconv.Itoa(b.EndLine)
+}
+
+// lineCountPhrase renders a count with a correctly pluralised noun.
+func lineCountPhrase(n int) string {
+	if n == 1 {
+		return "1 line"
+	}
+	return strconv.Itoa(n) + " lines"
 }
 
 func lineRange(b domain.Bounds) string {

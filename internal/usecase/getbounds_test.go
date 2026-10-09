@@ -224,7 +224,7 @@ func TestGetHumanMatchesSpecificationSample(t *testing.T) {
 	want := []string{
 		"File: " + filepath.ToSlash(path),
 		"Symbol: UserStore.GetUser",
-		"Lines: lines 28-35 (8 lines)",
+		"Lines: 28-35 (8 lines)",
 		"",
 		"func (s *UserStore) GetUser(ctx context.Context, id int) (*User, error) {",
 	}
@@ -241,6 +241,27 @@ func TestGetHumanMatchesSpecificationSample(t *testing.T) {
 	// The block must end with the closing brace, with no trailing blank line.
 	if !strings.HasSuffix(buf.String(), "}\n") {
 		t.Errorf("output should end with the closing brace:\n%q", buf.String())
+	}
+
+	// A one-line declaration must not read "1 lines". The specification's sample shows
+	// "Lines: 17-25 (9 lines)" -- a bare range after the label, pluralised correctly.
+	single := filepath.Join(dir, "one.go")
+	if err := os.WriteFile(single, []byte("package p\n\ntype T struct{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var oneBuf bytes.Buffer
+	if err := usecase.Get(goast.New(), "T", single, true, &oneBuf, format.Options{}); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !strings.Contains(oneBuf.String(), "(1 line)") {
+		t.Errorf("a one-line declaration should read \"(1 line)\":\n%s", oneBuf.String())
+	}
+	if strings.Contains(oneBuf.String(), "(1 lines)") {
+		t.Errorf("plural noun used for a single line:\n%s", oneBuf.String())
+	}
+	if strings.Contains(oneBuf.String(), "Lines: lines ") {
+		t.Errorf("the label already says Lines; the range should be bare:\n%s", oneBuf.String())
 	}
 }
 

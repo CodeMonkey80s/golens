@@ -93,7 +93,7 @@ func TestWriteGetHuman(t *testing.T) {
 	for _, want := range []string{
 		"File: user.go",
 		"Symbol: UserStore.GetUser",
-		"Lines: lines 17-25 (9 lines)",
+		"Lines: 17-25 (9 lines)",
 		"func (s *UserStore) GetUser() {",
 	} {
 		if !strings.Contains(got, want) {
