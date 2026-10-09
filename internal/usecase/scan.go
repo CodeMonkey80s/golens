@@ -18,6 +18,24 @@ func isIdentPart(b byte) bool { return isIdentStart(b) || (b >= '0' && b <= '9')
 
 const utf8Self = 0x80
 
+// isIdentifier reports whether s is shaped like a Go identifier.
+//
+// It decides whether a derived import name could ever appear in source. "go-runewidth" has
+// a dash and cannot; "runewidth" can. Bytes at or above utf8Self are accepted for the same
+// reason isIdentStart accepts them: a multi-byte rune cannot be the punctuation that
+// disqualifies a name.
+func isIdentifier(s string) bool {
+	if s == "" || !isIdentStart(s[0]) {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		if !isIdentPart(s[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // atWordStart reports whether index i begins a word rather than sitting inside one. It
 // exists because the selector scan needs to avoid re-reading the tail of an identifier.
 func atWordStart(src []byte, i int) bool {

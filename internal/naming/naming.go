@@ -126,8 +126,17 @@ type violationKey struct {
 // boundary is either the start of the identifier or the position after a lowercase letter,
 // digit or underscore. At each boundary the uppercase run is matched against the dictionary
 // case-sensitively; a match means the initialism was not lowercased.
+//
+// A SCREAMING_SNAKE_CASE name is exempt. camelCaseId cannot be satisfied by an identifier with
+// no lowercase letters, so applying the rule to one reports every such constant by
+// construction: RAMFS_MAGIC contains RAM and would be reported as "RAM should be ram",
+// VMHGFS_SUPER_MAGIC as "VM should be vm". Those names follow a different convention
+// altogether, so this one does not govern them.
+//
+// The exemption is deliberately narrow. A bare all-caps name such as OK or ID has no
+// underscore and stays subject to the rule, which the specification requires.
 func violates(ident string) (string, bool) {
-	if ident == "" {
+	if ident == "" || isScreamingSnake(ident) {
 		return "", false
 	}
 	for _, start := range wordStarts(ident) {
@@ -221,3 +230,19 @@ func violation(word, lower string) string {
 func isUpper(b byte) bool { return b >= 'A' && b <= 'Z' }
 func isLower(b byte) bool { return b >= 'a' && b <= 'z' }
 func isDigit(b byte) bool { return b >= '0' && b <= '9' }
+
+// isScreamingSnake reports whether ident is written entirely in upper case with at least one
+// underscore, which is the shape of a Go constant block such as RAMFS_MAGIC.
+func isScreamingSnake(ident string) bool {
+	var underscore bool
+	for i := 0; i < len(ident); i++ {
+		c := ident[i]
+		switch {
+		case c == '_':
+			underscore = true
+		case c >= 'a' && c <= 'z':
+			return false
+		}
+	}
+	return underscore
+}

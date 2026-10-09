@@ -506,3 +506,183 @@ func TestNamingDiagnosticsCarryDeclarationLine(t *testing.T) {
 		}
 	}
 }
+
+// runCheckDir invokes check against a whole directory and collects the stderr diagnostics.
+func runCheckDir(t *testing.T, dir string) checkResult {
+	t.Helper()
+
+	var stdout, stderr bytes.Buffer
+	err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{}, false)
+
+	var out checkResult
+	out.diags = strings.Split(strings.TrimRight(stderr.String(), "\n"), "\n")
+	if len(out.diags) == 1 && out.diags[0] == "" {
+		out.diags = nil
+	}
+	if err != nil {
+		var hasDiags usecase.HasDiagnostics
+		if !asDiagnostics(err, &hasDiags) {
+			t.Fatalf("Check returned an unexpected error: %v", err)
+		}
+		out.code = 3
+	}
+	return out
+}
+
+// TestDuplicateDeclarationRespectsBuildConstraints covers the distinction that separates a
+// real conflict from a platform variant.
+//
+// A repository that declares isFuseFs in filesystems_linux.go, filesystems_darwin.go and
+// filesystems_windows.go compiles one of them, never two. Reporting those as redeclarations
+// is noise, and on duf it was 23 diagnostics against a repository the Go compiler accepts
+// cleanly on every platform. The converse matters just as much: an untagged file and a tagged
+// one really can collide, and that must still be reported or the check has been silenced
+// rather than fixed.
+func TestDuplicateDeclarationRespectsBuildConstraints(t *testing.T) {
+	const body = "func isFuseFs() bool { return true }\n"
+
+	tests := []struct {
+		name    string
+		files   map[string]string
+		want    bool
+		comment string
+	}{
+		{
+			name: "mutually exclusive platforms",
+			files: map[string]string{
+				"a_linux.go":   "//go:build linux\n\npackage p\n\n" + body,
+				"a_darwin.go":  "//go:build darwin\n\npackage p\n\n" + body,
+				"a_windows.go": "//go:build windows\n\npackage p\n\n" + body,
+			},
+			want:    false,
+			comment: "no build compiles two of these",
+		},
+		{
+			name: "legacy plus-build syntax",
+			files: map[string]string{
+				"a_linux.go":  "// +build linux\n\npackage p\n\n" + body,
+				"a_darwin.go": "// +build darwin\n\npackage p\n\n" + body,
+			},
+			want:    false,
+			comment: "the pre-1.17 spelling must be honoured too",
+		},
+		{
+			name: "overlapping tags really do conflict",
+			files: map[string]string{
+				"a.go":       "package p\n\n" + body,
+				"b_linux.go": "//go:build linux\n\npackage p\n\n" + body,
+			},
+			want:    true,
+			comment: "an untagged file and a linux one are compiled together",
+		},
+		{
+			name: "two files sharing a tag really do conflict",
+			files: map[string]string{
+				"a_linux.go": "//go:build linux\n\npackage p\n\n" + body,
+				"b_linux.go": "//go:build linux\n\npackage p\n\n" + body,
+			},
+			want:    true,
+			comment: "both are built on linux",
+		},
+		{
+			name: "disjoint platforms and a shared one",
+			files: map[string]string{
+				"a_linux.go":  "//go:build linux || darwin\n\npackage p\n\n" + body,
+				"b_darwin.go": "//go:build darwin\n\npackage p\n\n" + body,
+			},
+			want:    true,
+			comment: "darwin satisfies both",
+		},
+		{
+			name: "two untagged files",
+			files: map[string]string{
+				"a.go": "package p\n\n" + body,
+				"b.go": "package p\n\n" + body,
+			},
+			want:    true,
+			comment: "always compiled together",
+		},
+		{
+			name: "cgo and non-cgo variants",
+			files: map[string]string{
+				"a_cgo.go":   "//go:build cgo\n\npackage p\n\n" + body,
+				"b_nocgo.go": "//go:build !cgo\n\npackage p\n\n" + body,
+			},
+			want:    false,
+			comment: "cgo is a build tag and the two are exclusive",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for name, src := range tt.files {
+				testfixture.Write(t, dir, name, src)
+			}
+
+			res := runCheckDir(t, dir)
+			got := res.contains("redeclared")
+			if got != tt.want {
+				t.Errorf("%s: redeclared = %v, want %v (diagnostics: %v)", tt.comment, got, tt.want, res.diags)
+			}
+		})
+	}
+}
+
+// TestUnusedImportStaysSilentWhenNameIsUnknowable covers the import whose local name cannot be
+// derived from its path.
+//
+// golens takes the local name from the last path element and does not resolve modules, so
+// "github.com/mattn/go-runewidth" yields "go-runewidth" -- not an identifier, and absent from
+// the source however the import is used. Reporting it as unused would tell an agent to delete
+// a live import, which is the one outcome the check must never produce.
+func TestUnusedImportStaysSilentWhenNameIsUnknowable(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		wantDiag bool
+		comment  string
+	}{
+		{
+			name:     "used import behind a dashed path",
+			src:      "package p\n\nimport \"github.com/mattn/go-runewidth\"\n\nfunc W(r rune) int { return runewidth.RuneWidth(r) }\n",
+			wantDiag: false,
+			comment:  "the real package name is runewidth, which golens cannot know",
+		},
+		{
+			name:     "genuinely unused dashed import",
+			src:      "package p\n\nimport \"github.com/mattn/go-runewidth\"\n\nfunc F() {}\n",
+			wantDiag: false,
+			comment:  "still unknowable, so still silent rather than wrong",
+		},
+		{
+			name:     "ordinary unused import is still reported",
+			src:      "package p\n\nimport \"strings\"\n\nfunc F() {}\n",
+			wantDiag: true,
+			comment:  "a name that can be derived is still checked",
+		},
+		{
+			name:     "ordinary used import is still silent",
+			src:      "package p\n\nimport \"strings\"\n\nfunc F() string { return strings.TrimSpace(\" \") }\n",
+			wantDiag: false,
+			comment:  "no false positive on a resolvable name",
+		},
+		{
+			name:     "alias makes the name derivable",
+			src:      "package p\n\nimport rw \"github.com/mattn/go-runewidth\"\n\nfunc F() {}\n",
+			wantDiag: true,
+			comment:  "an explicit alias is a real identifier, so the check applies",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := runCheck(t, t.TempDir(), "p.go", tt.src)
+			got := res.contains("imported and not used")
+			if got != tt.wantDiag {
+				t.Errorf("%s: unused-import diagnostic = %v, want %v (diagnostics: %v)",
+					tt.comment, got, tt.wantDiag, res.diags)
+			}
+		})
+	}
+}

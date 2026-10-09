@@ -190,6 +190,9 @@ func checkFile(engine domain.Engine, path string, namingOnly bool, pkg *packageS
 // directory is part of the key too.
 type packageSymbols struct {
 	byNamespace map[string]map[string][]symbolSite
+	// builtIn caches, per namespace and file path, the build configurations that include
+	// the file. Two declarations only conflict if their files can be compiled together.
+	builtIn map[string]map[string][]bool
 }
 
 // symbolSite records one declaration of a name.
@@ -204,9 +207,14 @@ func (p *packageSymbols) add(dir string, doc domain.Document) {
 
 	if p.byNamespace == nil {
 		p.byNamespace = make(map[string]map[string][]symbolSite)
+		p.builtIn = make(map[string]map[string][]bool)
 	}
 	if p.byNamespace[ns] == nil {
 		p.byNamespace[ns] = make(map[string][]symbolSite, len(doc.Symbols))
+		p.builtIn[ns] = make(map[string][]bool)
+	}
+	if _, seen := p.builtIn[ns][doc.Path]; !seen {
+		p.builtIn[ns][doc.Path] = constraintVector(parseBuildConstraint(doc.Source))
 	}
 
 	for _, sym := range doc.Symbols {
@@ -224,19 +232,28 @@ func (p *packageSymbols) add(dir string, doc domain.Document) {
 // one diagnostic rather than two, and the message names the earlier site so the reader can find
 // it. Results are sorted by path then line, because map iteration order is random and an agent
 // may diff or cache the output.
+//
+// A pair is reported only when both files could be compiled into the same binary. Files
+// guarded by mutually exclusive build constraints never are, so the platform variants of a
+// declaration are not conflicts and stay silent. The earlier site named in the message is the
+// first one that can actually co-build with this site, not merely the previous line of input.
 func (p *packageSymbols) duplicates() []Diagnostic {
 	var diags []Diagnostic
 
-	for _, names := range p.byNamespace {
+	for ns, names := range p.byNamespace {
 		for name, sites := range names {
 			for i := 1; i < len(sites); i++ {
+				first, ok := p.firstConflict(ns, sites, i)
+				if !ok {
+					continue
+				}
 				diags = append(diags, Diagnostic{
 					Severity: "error",
 					Path:     sites[i].path,
 					Line:     sites[i].line,
 					Column:   1,
 					Message: fmt.Sprintf("%s redeclared in this package (first declared at %s:%d)",
-						name, sites[i-1].path, sites[i-1].line),
+						name, sites[first].path, sites[first].line),
 				})
 			}
 		}
@@ -249,6 +266,23 @@ func (p *packageSymbols) duplicates() []Diagnostic {
 		return diags[i].Line < diags[j].Line
 	})
 	return diags
+}
+
+// firstConflict returns the index of the earliest earlier site that could be compiled into
+// the same binary as sites[i], and whether such a site exists.
+//
+// Scanning from the start rather than testing only sites[i-1] matters once constraints are
+// honoured. Sites arrive in file-walk order, so the previous entry may be a mutually
+// exclusive platform variant that shares no configuration with this one, while an untagged
+// file earlier in the walk is the real conflict.
+func (p *packageSymbols) firstConflict(ns string, sites []symbolSite, i int) (int, bool) {
+	here := p.builtIn[ns][sites[i].path]
+	for j := 0; j < i; j++ {
+		if couldCoBuild(here, p.builtIn[ns][sites[j].path]) {
+			return j, true
+		}
+	}
+	return 0, false
 }
 
 // receiverTypeIdentifier extracts the type name from a receiver rendered in source form,
@@ -368,6 +402,17 @@ func unusedImports(doc domain.Document) []Diagnostic {
 		// Blank and dot imports bind no local name to test: "_" is a deliberate discard and
 		// "." contributes the imported names directly.
 		if decl.name == "_" || decl.name == "." || decl.name == "" {
+			continue
+		}
+		// The local name is derived from the last path element, which is not always the name
+		// the package declares. "github.com/mattn/go-runewidth" declares "package runewidth",
+		// so the derived name is "go-runewidth" -- not a Go identifier, and therefore never
+		// present in the source no matter how the import is used.
+		//
+		// Resolving the real name needs module resolution, which is out of scope, so the
+		// check cannot decide. Silence is the only safe answer: accusing an import that is in
+		// use would have an agent delete working code.
+		if !isIdentifier(decl.name) {
 			continue
 		}
 		if !used[decl.name] {

@@ -195,3 +195,33 @@ func TestCheckLocatedIsDeterministic(t *testing.T) {
 		t.Errorf("same name not ordered by line: %+v", first)
 	}
 }
+
+// TestScreamingSnakeConstantsAreExempt covers the exemption for constants, which follow a
+// different naming convention and cannot satisfy camelCaseId at all.
+//
+// Applying the rule to them reported every such constant by construction: RAMFS_MAGIC
+// contains RAM and became "RAM should be ram", VMHGFS_SUPER_MAGIC "VM should be vm". Three
+// of seven diagnostics on duf were of this kind.
+func TestScreamingSnakeConstantsAreExempt(t *testing.T) {
+	for _, id := range []string{
+		"RAMFS_MAGIC",
+		"VMHGFS_SUPER_MAGIC",
+		"RPC_PIPEFS_SUPER_MAGIC",
+		"A",
+		"MAX_SIZE_2",
+	} {
+		if v := Check([]string{id}); len(v) != 0 {
+			t.Errorf("Check(%q) = %q, want no violation: all-caps constants are not camelCase", id, v[0])
+		}
+	}
+}
+
+// TestBareAllCapsNamesStillBanned guards the exemption from swallowing the cases the
+// specification calls out. OK and ID have no underscore, so the rule still applies to them.
+func TestBareAllCapsNamesStillBanned(t *testing.T) {
+	for _, id := range []string{"OK", "ID", "URL", "HTTP"} {
+		if v := Check([]string{id}); len(v) == 0 {
+			t.Errorf("Check(%q) reported nothing, want a violation", id)
+		}
+	}
+}
