@@ -32,10 +32,10 @@ func New(env Env) *cobra.Command {
 		Long: `golens provides structural AST queries (outline, get, bounds, check) so agents
 can read targeted source instead of whole files, and edit using byte-accurate bounds.
 
-A typical sequence: outline to locate a symbol, get to read it, bounds to
-place an edit, check to validate the result. Run "golens <command> --help" for
-the conventions of one command -- they differ, and two of them will corrupt a
-file if guessed.
+  outline  what is in this file or directory
+  get      the exact source of one symbol -- safe to write back verbatim
+  bounds   where to splice a replacement
+  check    is this valid, and are these imports used
 
 Exit codes:
   0  success
@@ -44,11 +44,14 @@ Exit codes:
   3  check ran successfully and found diagnostics
   4  parse or I/O failure
 
-Output streams:
-  outline, get and bounds write their result to stdout.
-  check writes diagnostics to stderr and nothing at all to stdout, so capture
-  both streams: "golens check . 2>&1". Redirecting only stdout yields empty
-  output and looks like a clean result.`,
+Streams:
+  outline, get and bounds write to stdout.
+  check writes to stderr and nothing to stdout. Capture both:
+  "golens check . 2>&1". Reading only stdout yields empty output and looks like
+  a clean result.
+
+Run "golens <command> --help" before the first use of a command. The conventions
+differ between them, and bounds in particular will corrupt a file if guessed.`,
 		// Errors are reported by Execute, which owns the exit code mapping.
 		SilenceErrors: true,
 		SilenceUsage:  true,

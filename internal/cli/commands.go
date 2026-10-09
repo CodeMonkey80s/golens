@@ -20,18 +20,19 @@ func newOutlineCmd(env Env) *cobra.Command {
 		Short: "Generate a structural hierarchy map of a file or directory",
 		Long: `Generate a structural hierarchy map of a file or directory.
 
-The outline is structural, not semantic: imports, types, functions, methods,
-vars and consts. Struct fields and parameters appear from depth 2 downward, and
---depth defaults to unlimited, so a plain run shows everything.
+  Depth   1 = declarations only
+          2 = adds struct fields and parameters
+          default -1 (unlimited); --depth 3 and above add nothing further
+  Lists   every .go file in a directory, including platform variants
+  Hides   a file's build constraint -- the output does not show it
 
-Build constraints are ignored. Every .go file in a directory is parsed and
-listed, including platform variants, because the question is what the tree
-contains rather than what this machine would compile. A directory holding
-filesystems_linux.go and filesystems_darwin.go lists both.
+Structural, not semantic: imports, types, functions, methods, vars and consts.
 
-That also means the output does not show a file's build constraint. Read the
-//go:build line in the file itself before editing it: a change to a variant that
-the current GOOS excludes will not be compiled, so it will appear to do nothing.`,
+Build constraints are ignored on purpose -- the question is what the tree
+contains, not what this machine compiles. The cost is that the output cannot
+tell you which files apply to the current platform. Read the //go:build line in
+the file before editing it: a change to an excluded variant is never compiled,
+so it will appear to have done nothing.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			depth, _ := cmd.Flags().GetInt("depth")
@@ -49,17 +50,15 @@ func newGetCmd(env Env) *cobra.Command {
 		Short: "Extract the exact source of a specific AST symbol",
 		Long: `Extract the exact source of a specific AST symbol.
 
-The result is the file's own bytes for that declaration, so it is safe to write
-back verbatim. That is the most reliable round trip available: the text get
-returns is exactly the span bounds reports, so replacing one with the other
-cannot corrupt the file.
+  Safe    the result is the file's own bytes -- write it back verbatim
+  Method  address it as Type.Method
+  Miss    symbol not found OR ambiguous -- both exit 2
 
-A method is addressed as Type.Method.
+Safest round trip available: the text get returns is exactly the span bounds
+reports, so replacing one with the other cannot corrupt the file.
 
-A symbol may be ambiguous when several files declare it, which is common for the
-platform variants of one method. Ambiguity exits 2, writes nothing to stdout and
-lists the candidates on stderr. Pass a specific file rather than a directory to
-disambiguate:
+Ambiguity is common for the platform variants of one method. It exits 2, writes
+nothing to stdout, and lists candidates on stderr. Pass a file, not a directory:
 
   golens get Mount.Stat mounts_linux.go`,
 		Args: cobra.ExactArgs(2),
@@ -79,24 +78,24 @@ func newBoundsCmd(env Env) *cobra.Command {
 		Short: "Calculate precise byte offsets and line bounds for targeted edits",
 		Long: `Calculate precise byte offsets and line bounds for targeted edits.
 
-Byte ranges are half-open: src[start_byte:end_byte] is exactly the declaration.
-Line ranges are inclusive at both ends. The terminating newline falls outside the
-span, so an overwrite leaves the file's line structure intact.
+  Bytes   half-open: src[start_byte:end_byte] is exactly the declaration
+  Lines   inclusive at both ends; trailing newline is outside the span
+  Starts  at the declaration's NAME, not its keyword
+  Edit    your replacement text must start at the name too
+  Miss    symbol not found OR ambiguous -- both exit 2
 
-The span starts at the declaration's name, not its keyword. For a func that is
-"func"; for a type, var or const, the keyword is outside the range:
+  type User struct { ... }      bounds start at "User",  "type" is outside
+  func NewUser() *User { ... }  bounds start at "func"
 
-  type User struct{ ... }     bounds start at "User", not at "type"
-  func NewUser() *User { ... } bounds start at "func"
+Writing a fresh "type User struct { ... }" into that span produces
+"type type User struct { ... }".
 
-Replacement text must therefore begin at the name as well. Writing a fresh
-"type User struct{ ... }" into that span yields "type type User struct{ ... }".
+The span is name-scoped so that grouped declarations stay independently
+addressable: in "const ( A = 1; B = 2 )" each name needs its own bounds, or
+editing one would overwrite the other. That is deliberate -- do not work around it.
 
-Grouped declarations are why it works this way. In "const ( A = 1; B = 2 )" each
-name needs its own bounds, so that editing one does not overwrite the other.
-
-The safest round trip is to write back the text "golens get" returned for the
-same symbol.`,
+To edit safely: take the text "golens get" returned for the same symbol and write
+it back.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return usecase.Bounds(env.Engine, args[0], args[1], env.Stdout, flagOptions(cmd))
@@ -110,22 +109,20 @@ func newCheckCmd(env Env) *cobra.Command {
 		Short: "Validate source syntax and detect unused imports or duplicate declarations",
 		Long: `Validate source syntax and detect unused imports or duplicate declarations.
 
-Diagnostics go to stderr and stdout stays empty, so capture both streams:
+  Output   stderr only; stdout stays empty
+  Capture  golens check . 2>&1    -- stdout alone looks like a clean result
+  Exit     3 = ran and found diagnostics, 0 = found none
+  Limits   build constraints ignored; unused-import check is best-effort
 
-  golens check . 2>&1
+Duplicate declarations are reported only when both files could be compiled
+together, so mutually exclusive platform variants stay silent. Syntax and import
+checks still run on files the current platform excludes.
 
-Exit 3 means the check ran and found problems. Exit 0 means it found none.
+The unused-import check may miss an import used only in a comment or shadowed by
+a local. It never reports one that is genuinely in use.
 
---naming reports camelCaseId naming-convention violations instead of the syntax
-checks. SCREAMING_SNAKE_CASE constants are exempt, since camelCaseId cannot
-apply to them.
-
-Two limits worth knowing before acting on the output. Build constraints are
-ignored, so the syntax and import checks run on files this platform would
-exclude; duplicate declarations are only reported when both files could be
-compiled together. And the unused-import check is best-effort: it may miss an
-import used only in a comment or shadowed by a local, but it never reports an
-import that is genuinely in use.`,
+--naming reports camelCaseId violations instead of the syntax checks.
+SCREAMING_SNAKE_CASE constants are exempt; the convention cannot apply to them.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// --naming is off by default: the check is AST-level validation, and a caller
