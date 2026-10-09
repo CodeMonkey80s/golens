@@ -29,8 +29,26 @@ func New(env Env) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "golens",
 		Short: "Structural AST queries for AI coding agents",
-		Long: "golens provides structural AST queries (outline, get, bounds, check) so agents\n" +
-			"can read targeted source instead of whole files, and edit using byte-accurate bounds.",
+		Long: `golens provides structural AST queries (outline, get, bounds, check) so agents
+can read targeted source instead of whole files, and edit using byte-accurate bounds.
+
+A typical sequence: outline to locate a symbol, get to read it, bounds to
+place an edit, check to validate the result. Run "golens <command> --help" for
+the conventions of one command -- they differ, and two of them will corrupt a
+file if guessed.
+
+Exit codes:
+  0  success
+  1  usage error -- wrong flags or arguments
+  2  symbol or file not found, or the symbol is ambiguous
+  3  check ran successfully and found diagnostics
+  4  parse or I/O failure
+
+Output streams:
+  outline, get and bounds write their result to stdout.
+  check writes diagnostics to stderr and nothing at all to stdout, so capture
+  both streams: "golens check . 2>&1". Redirecting only stdout yields empty
+  output and looks like a clean result.`,
 		// Errors are reported by Execute, which owns the exit code mapping.
 		SilenceErrors: true,
 		SilenceUsage:  true,

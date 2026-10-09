@@ -60,16 +60,16 @@ matching, no re-reading the file to find out where you ended up.
 
 ## Install
 
-```console
-$ go install github.com/CodeMonkey80s/golens/cmd/golens@latest
-```
-
-Or build from a checkout:
+Build from a checkout:
 
 ```console
 $ git clone https://github.com/CodeMonkey80s/golens
 $ cd golens && go build -o golens ./cmd/golens
 ```
+
+Once the module is published to a public proxy, `go install
+github.com/CodeMonkey80s/golens/cmd/golens@latest` will work too. It does not yet: this
+repository has no remote, so the install path fails at the fetch.
 
 Requires Go 1.20 or newer. Builds with `CGO_ENABLED=0`.
 

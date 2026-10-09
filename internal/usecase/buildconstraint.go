@@ -1,8 +1,9 @@
 package usecase
 
 import (
-	"go/build"
 	"go/build/constraint"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -66,13 +67,58 @@ var unixOS = map[string]bool{
 
 // releaseTags is the set of go1.N tags satisfied by the running toolchain, used to evaluate a
 // constraint such as "//go:build go1.21".
-var releaseTags = func() map[string]bool {
-	tags := make(map[string]bool, len(build.Default.ReleaseTags))
-	for _, tag := range build.Default.ReleaseTags {
-		tags[tag] = true
+//
+// The tags are derived from runtime.Version rather than read from go/build.Default.ReleaseTags.
+// go/build imports go/ast, and internal/arch forbids any package outside engine/goast from
+// doing that -- the rule that keeps a Tree-Sitter engine additive. go/build/constraint is
+// clean, so only the release-tag list is reconstructed here.
+var releaseTags = buildReleaseTags(runtime.Version())
+
+// buildReleaseTags returns the go1.N tags implied by a toolchain version string.
+//
+// "go1.27.2", "go1.27.2-X:nodwarf5 linux/amd64" and "go1.21rc1" all yield go1.1 through the
+// minor version. A version it cannot read yields no tags, which is the safe direction: an
+// unsatisfied tag suppresses a diagnostic rather than inventing one.
+func buildReleaseTags(version string) map[string]bool {
+	tags := make(map[string]bool)
+
+	v := strings.TrimPrefix(version, "go")
+	// Drop any toolchain suffix: "1.27.2-X:nodwarf5 linux/amd64" -> "1.27.2".
+	if i := strings.IndexAny(v, " -+"); i >= 0 {
+		v = v[:i]
+	}
+	parts := strings.Split(v, ".")
+	if len(parts) < 2 {
+		return tags
+	}
+
+	// Take the leading digits of the minor segment, so a prerelease such as
+	// "go1.21rc1" still yields go1.1 through go1.21.
+	minor := leadingDigits(parts[1])
+	if minor == 0 {
+		return tags
+	}
+	for i := 1; i <= minor; i++ {
+		tags["go1."+strconv.Itoa(i)] = true
 	}
 	return tags
-}()
+}
+
+// leadingDigits returns the integer prefix of s, or 0 when s does not start with a digit.
+func leadingDigits(s string) int {
+	end := 0
+	for end < len(s) && s[end] >= '0' && s[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return 0
+	}
+	n, err := strconv.Atoi(s[:end])
+	if err != nil {
+		return 0
+	}
+	return n
+}
 
 // customTags holds the -tags values this process was built with. golens does not accept a
 // -tags flag, so this is empty and any custom tag evaluates false. A file guarded by a custom
