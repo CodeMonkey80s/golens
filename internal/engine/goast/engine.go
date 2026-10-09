@@ -470,6 +470,15 @@ func receiverTypeName(expr ast.Expr) string {
 	}
 }
 
+// importName returns the local name an import binds in the file scope.
+//
+// An explicit alias wins. Otherwise the name is the package's own name, which for an
+// unversioned path is the last element: "context" for "context", "json" for "encoding/json".
+//
+// A major-version suffix is the exception. Go's convention is that "math/rand/v2" declares
+// "package rand", so the local name is "rand" and not the path's last element "v2". This is not
+// an obscure case: /v2 became common with Go 1.21, and getting it wrong both displays the wrong
+// name in an outline and makes the unused-import check report a live import as dead.
 func importName(imp *ast.ImportSpec) string {
 	if imp.Name != nil {
 		return imp.Name.Name
@@ -477,15 +486,42 @@ func importName(imp *ast.ImportSpec) string {
 	if imp.Path == nil {
 		return ""
 	}
-	// Default local name is the last path element, which is what the parser's object
-	// resolution would bind. "context" for "context", "json" for "encoding/json".
-	path := unquote(imp.Path.Value)
-	for i := len(path) - 1; i >= 0; i-- {
-		if path[i] == '/' {
-			return path[i+1:]
+	return packageNameFromPath(unquote(imp.Path.Value))
+}
+
+// packageNameFromPath derives a package's local name from its import path.
+//
+// It walks back from the end, stopping at the first element that is not a major-version suffix.
+// Only /vN with N >= 2 counts: v1 has no suffix in a module path, so "example.com/v1" is a
+// package genuinely named "v1".
+func packageNameFromPath(path string) string {
+	if path == "" {
+		return ""
+	}
+
+	elements := strings.Split(path, "/")
+	name := elements[len(elements)-1]
+
+	// Walk back over version suffixes: /v3/v2 all reduce to the first non-version element.
+	for len(elements) > 1 && isMajorVersionSuffix(name) {
+		elements = elements[:len(elements)-1]
+		name = elements[len(elements)-1]
+	}
+	return name
+}
+
+// isMajorVersionSuffix reports whether element is a major-version suffix such as "v2".
+func isMajorVersionSuffix(element string) bool {
+	if len(element) < 2 || element[0] != 'v' {
+		return false
+	}
+	// The digits must be 2 or greater, since v1 is never a suffix.
+	for i := 1; i < len(element); i++ {
+		if element[i] < '0' || element[i] > '9' {
+			return false
 		}
 	}
-	return path
+	return element != "v1"
 }
 
 func unquote(s string) string {
