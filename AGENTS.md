@@ -80,3 +80,8 @@ rather than duplicating them here — help cannot drift from the binary.
 
 `documentation/AGENTS.template.md` is a starting point for a repository that wants its own
 agents to use golens. Copy it into the target repo's root and edit.
+
+`documentation/COLDSTART.md` tests the instructions rather than the tool: it gives an agent with
+no prior context a real repository and a two-part task, then scores six things. Run it after
+changing any help text. It is the only check that would catch a trap moving back down the help
+output.

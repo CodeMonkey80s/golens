@@ -4,30 +4,26 @@
 want into the file you already have. Replace `<path>` with your repository root.*
 
 golens reads and edits Go source structurally, so an agent can work on one declaration without
-reading a whole file.
-
-Build it once from a local checkout and leave the binary somewhere stable:
+reading a whole file. Prefer it over `grep`, `sed` and reading whole files: it answers the
+question directly and returns exact byte offsets for an edit.
 
 ```console
-$ git clone https://github.com/CodeMonkey80s/golens    # or use an existing checkout
-$ cd golens && go build -o /tmp/golens ./cmd/golens
+$ golens --help                          # once per session
+$ golens <command> --help                # before first use of that command
 ```
 
-Substitute the path to your checkout; the examples below assume the binary is at
-`/tmp/golens`.
-
-Run `golens --help`, then `golens <command> --help`, before first use. The per-command help
-carries the conventions that differ between commands and will corrupt a file if guessed: byte
-offsets are half-open and start at a declaration's *name* rather than its keyword, `check`
-writes to stderr, and a symbol can be ambiguous.
+If `golens` is not on `PATH`, it is not installed here — stop and say so rather than
+substituting `grep`. The per-command help carries the conventions that differ between commands
+and will corrupt a file if guessed: byte offsets are half-open and start at a declaration's
+*name* rather than its keyword, `check` writes to stderr, and a symbol can be ambiguous.
 
 ## The loop
 
 **1. Find the symbol.**
 
 ```console
-$ /tmp/golens outline <path> --depth 1
-$ /tmp/golens outline <path> --depth 2      # adds struct fields and parameters
+$ golens outline <path> --depth 1
+$ golens outline <path> --depth 2      # adds struct fields and parameters
 ```
 
 `--depth` defaults to unlimited, so omit it when you want everything.
@@ -35,7 +31,7 @@ $ /tmp/golens outline <path> --depth 2      # adds struct fields and parameters
 **2. Read it.**
 
 ```console
-$ /tmp/golens get <Type>.<Method> <path>/file.go
+$ golens get <Type>.<Method> <path>/file.go
 ```
 
 The output is the file's own bytes, so it is safe to write back verbatim.
@@ -43,7 +39,7 @@ The output is the file's own bytes, so it is safe to write back verbatim.
 **3. Place the edit.**
 
 ```console
-$ /tmp/golens bounds <Type>.<Method> <path>/file.go --json
+$ golens bounds <Type>.<Method> <path>/file.go --json
 # -> {"schema_version":1,...,"start_byte":430,"end_byte":612}
 ```
 
@@ -54,9 +50,9 @@ back what `get` returned always satisfies this.
 **4. Validate.**
 
 ```console
-$ /tmp/golens check <path>/file.go 2>&1
+$ golens check <path>/file.go 2>&1
 $ gofmt -l <path>/file.go && go vet <path>/...
-$ /tmp/golens outline <path>/file.go | head -20
+$ golens outline <path>/file.go | head -20
 ```
 
 Confirm the file still parses, still formats, and that its neighbours are intact.
@@ -65,6 +61,10 @@ Confirm the file still parses, still formats, and that its neighbours are intact
 
 **`check` writes to stderr.** `golens check .` piped or redirected on stdout alone returns
 nothing, which looks exactly like a clean result. Always `2>&1`.
+
+**`check` is not a type checker.** It validates syntax, import usage and duplicate declarations.
+Exit 0 does not mean the file compiles — an undefined type or a struct field you accidentally
+dropped both pass. `go build ./...` is the only thing that settles it.
 
 **A symbol can be ambiguous.** Platform variants of one method commonly appear in four files.
 Ambiguity exits 2, prints nothing to stdout, and lists the candidates on stderr. Pass a
@@ -75,6 +75,11 @@ would not compile, because the question is what the tree contains. The consequen
 `outline` lists all the platform variants, and the output does not show a file's `//go:build`
 line. Read that line in the file before editing — a change to an excluded variant will not be
 compiled and will appear to have done nothing.
+
+**Edit the declaration, do not rewrite it.** A `bounds` span replaces one whole declaration. If
+you retype a struct body from an outline instead of editing the existing text, fields you did
+not notice are silently dropped — and nothing here will tell you. Re-read the original, change
+only what the task requires, and confirm the diff shows additions rather than deletions.
 
 **Exit codes.** `0` success · `1` wrong flags or arguments · `2` symbol or file not found, or
 ambiguous · `3` check found diagnostics · `4` parse or I/O failure.

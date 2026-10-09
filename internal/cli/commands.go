@@ -114,6 +114,11 @@ func newCheckCmd(env Env) *cobra.Command {
   Exit     3 = ran and found diagnostics, 0 = found none
   Limits   build constraints ignored; unused-import check is best-effort
 
+This is NOT a type checker. It validates syntax, import usage and duplicate
+declarations, and nothing else. Exit 0 does not mean the file compiles: an
+undefined type, a dropped struct field or a wrong argument count all pass.
+Run "go build ./..." to verify compilation.
+
 Duplicate declarations are reported only when both files could be compiled
 together, so mutually exclusive platform variants stay silent. Syntax and import
 checks still run on files the current platform excludes.
