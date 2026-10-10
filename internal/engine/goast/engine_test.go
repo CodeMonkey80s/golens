@@ -307,10 +307,16 @@ func TestCrlfSource(t *testing.T) {
 	}
 }
 
-// TestParseErrorDiagnostics covers the exit-4 path and the file:line:col: format.
+// TestParseErrorDiagnostics covers the exit-4 path and the located-error shape.
+//
+// It asserts the reported line and column, not just that a filename appears. The previous version
+// checked only the filename, which is why a hardcoded 1:1 survived: every assertion passed while
+// the position was wrong, and check reported line 1 for an error anywhere in the file.
 func TestParseErrorDiagnostics(t *testing.T) {
 	engine := New()
-	_, err := engine.ParseSource("broken.go", []byte("package p\n\nfunc f( {\n"))
+	// The bad token is on line 6; line 1 is the package clause.
+	src := "package p\n\nimport \"fmt\"\n\nfunc f( {\n\tfmt.Println(\"unreachable\")\n}\n"
+	_, err := engine.ParseSource("broken.go", []byte(src))
 	if err == nil {
 		t.Fatal("expected parse error")
 	}
@@ -323,12 +329,27 @@ func TestParseErrorDiagnostics(t *testing.T) {
 		t.Fatal("expected at least one scanner error")
 	}
 
-	diags := pe.Diagnostics()
-	if len(diags) == 0 {
-		t.Fatal("expected diagnostics")
+	located := pe.LocatedErrors()
+	if len(located) == 0 {
+		t.Fatal("expected located errors")
 	}
-	if !strings.Contains(diags[0], "broken.go:") {
-		t.Errorf("diagnostic missing filename: %q", diags[0])
+	if got := located[0].Path; got != "broken.go" {
+		t.Errorf("Path = %q, want broken.go", got)
+	}
+	if got := located[0].Line; got != 5 {
+		t.Errorf("Line = %d, want 5 -- the position must come from the parser, not be hardcoded", got)
+	}
+	if got := located[0].Column; got < 1 {
+		t.Errorf("Column = %d, want a real column", got)
+	}
+	if located[0].Message == "" {
+		t.Error("Message is empty")
+	}
+
+	// The rendered form is file:line:col: message, and must not repeat the filename the way
+	// the old string-based form did when a caller wrapped it.
+	if got, want := located[0].String(), "broken.go:5:"; !strings.HasPrefix(got, want) {
+		t.Errorf("String() = %q, want prefix %q", got, want)
 	}
 }
 

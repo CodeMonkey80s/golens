@@ -284,3 +284,23 @@ const (
 )
 
 func (e ErrorExit) Code() int { return int(e) }
+
+// LocatedError is a source-level problem with its position already resolved to a file, line and
+// column.
+//
+// The engine produces these and usecase turns them into diagnostics. They are structured rather
+// than pre-formatted because a formatted "file:line:col: message" string invites a consumer to
+// either parse the position back out or drop it, and dropping it reports every parse error at
+// line 1.
+type LocatedError struct {
+	Path    string
+	Line    int
+	Column  int
+	Message string
+}
+
+// String renders the error in the file:line:col: message form the specification's check output
+// uses. It exists for display; a caller that needs the position should read the fields.
+func (e LocatedError) String() string {
+	return fmt.Sprintf("%s:%d:%d: %s", e.Path, e.Line, e.Column, e.Message)
+}

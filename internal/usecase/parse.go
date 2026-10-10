@@ -33,21 +33,46 @@ type ParseError struct {
 	Err  error
 }
 
-func (e ParseError) Error() string { return e.Path + ": " + e.Err.Error() }
+// Error names the file once.
+//
+// A parse failure already names its file inside the engine's message, so prepending e.Path would
+// print it twice -- "/a.go: /a.go:3:9: ...". Anything else, an I/O failure say, carries no file
+// of its own, so the path is the only identifying information and is added.
+func (e ParseError) Error() string {
+	var pe interface{ LocatedErrors() []domain.LocatedError }
+	if errors.As(e.Err, &pe) {
+		return e.Err.Error()
+	}
+	return e.Path + ": " + e.Err.Error()
+}
+
 func (e ParseError) Unwrap() error { return e.Err }
 
-// Diagnostics returns the engine's own diagnostics, or a single generic one when the error is
-// not a parse error (an I/O failure, say). Each is attributed to this error's path.
+// Diagnostics returns one Diagnostic per parse error, each carrying the line and column the
+// parser reported. A failure that is not a parse error -- an I/O failure, say -- becomes a single
+// diagnostic at 1:1, since there is no position to report.
 func (e ParseError) Diagnostics() []Diagnostic {
-	var pe interface{ Diagnostics() []string }
+	var pe interface{ LocatedErrors() []domain.LocatedError }
 	if !errors.As(e.Err, &pe) {
 		return []Diagnostic{{Severity: "error", Path: e.Path, Line: 1, Column: 1, Message: e.Err.Error()}}
 	}
 
-	msgs := pe.Diagnostics()
-	out := make([]Diagnostic, 0, len(msgs))
-	for _, msg := range msgs {
-		out = append(out, Diagnostic{Severity: "error", Path: e.Path, Line: 1, Column: 1, Message: msg})
+	located := pe.LocatedErrors()
+	out := make([]Diagnostic, 0, len(located))
+	for _, l := range located {
+		// A located error names its own file, which is more precise than the path this
+		// ParseError was constructed with, so it wins when present.
+		path := l.Path
+		if path == "" {
+			path = e.Path
+		}
+		out = append(out, Diagnostic{
+			Severity: "error",
+			Path:     path,
+			Line:     l.Line,
+			Column:   l.Column,
+			Message:  l.Message,
+		})
 	}
 	return out
 }

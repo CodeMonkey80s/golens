@@ -254,19 +254,23 @@ func (p *packageSymbols) firstConflict(ns string, sites []symbolSite, i int) (in
 func invalidImportPaths(doc domain.Document) []Diagnostic {
 	var diags []Diagnostic
 
-	for _, imp := range doc.Imports {
-		raw := strings.Trim(imp, `"`)
+	// The declarations are walked rather than doc.Imports because they carry the line each import
+	// was written on. Reading the strings alone left every diagnostic pinned to line 1, which
+	// sends a reader to the package clause instead of the bad import.
+	for _, decl := range importDeclarations(doc) {
+		raw := strings.Trim(decl.detail, `"`)
 		switch {
 		case raw == "":
-			diags = append(diags, warning(doc.Path, 1, "empty import path"))
+			diags = append(diags, warning(doc.Path, decl.startLine, "empty import path"))
 		case strings.ContainsAny(raw, " \t\n"):
-			diags = append(diags, warning(doc.Path, 1, fmt.Sprintf("invalid import path %q: contains whitespace", raw)))
-		case containsEscape(imp):
+			diags = append(diags, warning(doc.Path, decl.startLine,
+				fmt.Sprintf("invalid import path %q: contains whitespace", raw)))
+		case containsEscape(decl.detail):
 			// A literal tab in a path is written "\t" in the source, so after decoding the
 			// path text no longer contains a tab. Checking the quoted literal is what catches
 			// a path the module system would reject for an embedded control character.
-			diags = append(diags, warning(doc.Path, 1,
-				fmt.Sprintf("invalid import path %s: contains an escape sequence", imp)))
+			diags = append(diags, warning(doc.Path, decl.startLine,
+				fmt.Sprintf("invalid import path %s: contains an escape sequence", decl.detail)))
 		}
 	}
 	return diags

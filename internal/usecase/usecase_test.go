@@ -366,6 +366,39 @@ func TestCheckReportsParseErrorWithoutAborting(t *testing.T) {
 	}
 }
 
+// TestCheckParseErrorsCarryRealPosition pins the line and column of a parse diagnostic.
+//
+// The engine used to return pre-formatted strings, so the position had nowhere to live and check
+// hardcoded 1:1. Every assertion in this file passed while a reader following the documented
+// "file:line:col:" format was sent to line 1 for an error on any line. The error here is on line 9,
+// and the diagnostic must say so.
+func TestCheckParseErrorsCarryRealPosition(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "broken.go", "package p\n\nimport \"fmt\"\n\ntype T struct {\n\tA int\n}\n\nfunc f( {\n\tfmt.Println(1)\n}\n")
+
+	var stdout, stderr bytes.Buffer
+	err := Check(engine(), dir, &stdout, &stderr, format.Options{})
+	var hasDiags HasDiagnostics
+	if !asHasDiags(err, &hasDiags) {
+		t.Fatalf("expected HasDiagnostics, got %v\n%s", err, stderr.String())
+	}
+
+	diags := strings.Split(strings.TrimRight(stderr.String(), "\n"), "\n")
+	if len(diags) == 0 || diags[0] == "" {
+		t.Fatal("expected a parse diagnostic")
+	}
+	// ".../broken.go:9:9: expected ..." -- line 9 is "func f( {". The path is whatever the
+	// walk produced, so match the position suffix rather than assuming a relative form.
+	if !strings.Contains(diags[0], "broken.go:9:9:") {
+		t.Errorf("parse diagnostic does not name the real position: %q\nwant %q",
+			diags[0], "broken.go:9:9:")
+	}
+	// The message must not repeat the filename the way the old wrapped form did.
+	if strings.Count(diags[0], "broken.go") != 1 {
+		t.Errorf("filename appears more than once in %q", diags[0])
+	}
+}
+
 func TestCheckJSONGoesToStdout(t *testing.T) {
 	dir := t.TempDir()
 	path := write(t, dir, "user.go", "package p\n\nimport \"fmt\"\n\nfunc F() {}\n")

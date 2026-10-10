@@ -307,10 +307,17 @@ fails the build.
 
 ### Performance
 
-| Budget | Measured |
+The **budgets** are the contract and are asserted in CI; the measured column is one machine and
+will differ on yours.
+
+| Budget | Measured here |
 |---|---|
-| Read + parse, single file | ~13 µs typical, 282 µs on the largest file here (budget 5 ms) |
-| Binary size | 5.3 MB stripped (budget 15 MB) |
+| Read + parse, single file — 5 ms P95 | ~15 µs typical, ~265 µs on the largest file in this repo |
+| Binary — 15 MB | 5.3 MB stripped (`-ldflags="-s -w"`) |
+
+Reproduce with `go test -run XXX -bench Parse -benchtime 500x ./internal/engine/goast`. Expect
+run-to-run variation of roughly ±20%, so treat a single figure as indicative and the budget as the
+thing to hold to.
 
 Directory parsing is concurrent above eight files and sequential below, so the single-file path
 never pays for goroutines. Concurrency is unobservable: output is byte-identical either way,

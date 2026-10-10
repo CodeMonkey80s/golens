@@ -213,6 +213,12 @@ symbol name stays the bare identifier for lookup. `Receiver` is the receiver as 
 it, `"s *UserStore"`. `IsAlias` distinguishes `type A = B` from `type A B`, which `Detail` alone
 cannot. All three are load-bearing — see the traps in `AGENTS.md`.
 
+`domain.LocatedError` carries a parse error's file, line and column. It lives in `domain` rather
+than `engine/goast` because both layers need it and `internal/arch` forbids `usecase` importing
+the engine. It exists because the engine used to return pre-formatted `"file:line:col: message"`
+strings, which left nowhere to put the position — `check` reported every parse error at `1:1`, and
+an agent following the documented format went to line 1 whatever the real position was.
+
 ## Naming is not golens' business
 
 `golens check --naming` and the `internal/naming` package are **gone**. Naming is `revive`'s job,

@@ -184,8 +184,8 @@ func TestFixtureClasses(t *testing.T) {
 		if !ok {
 			t.Fatalf("error type = %T, want *goast.ParseError", err)
 		}
-		if len(pe.Diagnostics()) == 0 {
-			t.Error("expected diagnostics")
+		if len(pe.LocatedErrors()) == 0 {
+			t.Error("expected located errors")
 		}
 	})
 
