@@ -67,7 +67,7 @@ name. When adding a check, bias toward silence and say so in the comment.
 
 ## Testing this tool
 
-`TESTING.md` is a sixteen-case manual plan to run against a real repository, not a fixture. It
+`TESTING.md` is an eighteen-case manual plan to run against a real repository, not a fixture. It
 found the declaration-head divergences, the unused-import false positive and the
 build-constraint false positives, none of which any unit test had caught. Cases 10 and 16 corrupt
 a file without raising anything, which is why they lead the short list — and case 16 fails only on

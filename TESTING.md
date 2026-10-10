@@ -1,6 +1,6 @@
 # Manual test plan — golens against a real repository
 
-Sixteen cases to run by hand against a real Go project. Written for golens v0.1 (Go sources
+Eighteen cases to run by hand against a real Go project. Written for golens v0.1 (Go sources
 only).
 
 **Cases 4, 6, 8 and 9 probe Go constructs the test fixtures do not cover.** Those are the
@@ -656,15 +656,112 @@ index by three more.
 
 ☐
 
+## 17. Implicit filename constraints
+
+Go applies two independent constraints to a file: the `//go:build` line, and the file's **name**.
+`syscall/env_windows.go` has no `//go:build` line at all — it is Windows-only purely because of
+the `_windows` suffix. A checker that reads only the comment will treat such a file as built
+everywhere and collide it with every other declaration of the same name.
+
+This is the highest-consequence case in the plan, because the failure is a false positive on
+code that compiles. Make the two files:
+
+```console
+$ mkdir -p /tmp/impl && printf 'module impl\n\ngo 1.27\n' > /tmp/impl/go.mod
+$ printf 'package p\n\nfunc F() {}\n' > /tmp/impl/a_windows.go
+$ printf 'package p\n\nfunc F() {}\n' > /tmp/impl/a_linux.go
+$ head -1 /tmp/impl/a_windows.go          # no //go:build: the name is the constraint
+$ /tmp/golens check /tmp/impl; echo "exit=$?"
+$ (cd /tmp/impl && go build ./... && echo "go build: clean")
+```
+
+Look for: **`exit=0` and no diagnostics.** `go build` accepts both files; golens must too.
+
+Then the same pair *with* explicit constraints, which is the case the earlier build-tag fix
+covered and which must keep working:
+
+```console
+$ printf '//go:build windows\n\npackage p\n\nfunc F() {}\n' > /tmp/impl/a_windows.go
+$ printf '//go:build linux\n\npackage p\n\nfunc F() {}\n' > /tmp/impl/a_linux.go
+$ /tmp/golens check /tmp/impl; echo "exit=$?"
+```
+
+Look for: `exit=0`.
+
+And the positive control, two genuinely co-buildable files:
+
+```console
+$ printf 'package p\n\nfunc F() {}\n' > /tmp/impl/a_windows.go
+$ printf 'package p\n\nfunc F() {}\n' > /tmp/impl/a_linux.go
+$ mv /tmp/impl/a_windows.go /tmp/impl/one.go && mv /tmp/impl/a_linux.go /tmp/impl/two.go
+$ /tmp/golens check /tmp/impl; echo "exit=$?"
+```
+
+Look for: **exit 3**, naming `F`. Two untagged files really do collide.
+
+On a real tree this case has far more reach than anything else here. Measured against the Go
+standard library:
+
+| Package | `golens check` | `go build` |
+|---|---|---|
+| `slices`, `maps`, `cmp` | 0 | clean |
+| `net/url` | 2 | clean |
+| `mime` | 10 | clean |
+| `os` | 321 | clean |
+| `runtime` | 5,147 | clean |
+| `syscall` | 61,287 | clean |
+
+Every one of those is a false positive. If a single package in a small repository reports
+redeclarations that `go build` calls clean, this is the cause.
+
+☐
+
+## 18. A tree containing one unparseable file
+
+`outline` aborts on the first file it cannot parse and writes **nothing**, even though every other
+file is fine. `check` does the opposite: it reports the failure as one diagnostic and carries on.
+The asymmetry is deliberate — an outline entry without its source is not useful — but on a large tree
+it means one malformed fixture hides 8,000 files.
+
+The standard library is the natural subject: it holds 8,088 `.go` files and exactly one of them does
+not parse, `cmd/compile/internal/syntax/testdata/issue20789.go`, which is compiler test data
+containing deliberate syntax errors.
+
+```console
+$ GOROOT=$(go env GOROOT)
+$ find $GOROOT/src -name '*.go' | wc -l                       # 8088
+$ /tmp/golens outline $GOROOT/src > /dev/null; echo "exit=$?"  # 4, and no output
+$ /tmp/golens check    $GOROOT/src > /dev/null; echo "exit=$?"  # 3, and every other file still checked
+```
+
+Look for: `exit=4` with empty stdout from `outline`, and `exit=3` with the parse diagnostic plus
+everything else from `check`.
+
+**An agent that hits this concludes the tool cannot read Go.** Work out how to scope around the
+damaged file before reporting a defect — outlining a package subtree works:
+
+```console
+$ /tmp/golens outline $GOROOT/src/slices > /dev/null; echo "exit=$?"
+```
+
+Expect `exit=0`.
+
+Whether one bad file should cost the whole traversal is a design question worth answering
+deliberately rather than discovering in the field. Note that `golens` does **not** skip `testdata`
+directories, which is what puts the broken fixture in scope.
+
+☐
+
 ---
 
 ## If time is short
 
-Run **10, 16, 13, 6, 9** in that order.
+Run **10, 17, 16, 13, 6, 9** in that order.
 
 | Case | Why it ranks here |
 |---|---|
 | 10 | Offsets that round-trip but address the wrong span silently corrupt files |
+| 17 | Implicit filename constraints. 70,854 false positives on the standard library; every cross-platform package is affected |
 | 16 | Byte offsets applied to characters. Triggers on ordinary multi-byte content, and on some files the mistake is completely invisible |
 | 13 | A false unused-import accusation makes an agent delete working code |
 | 6 | Generic receivers with type parameters — no fixture covers this |
