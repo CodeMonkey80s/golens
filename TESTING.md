@@ -1,6 +1,6 @@
 # Manual test plan — golens against a real repository
 
-Fifteen cases to run by hand against a real Go project. Written for golens v0.1 (Go sources
+Sixteen cases to run by hand against a real Go project. Written for golens v0.1 (Go sources
 only).
 
 **Cases 4, 6, 8 and 9 probe Go constructs the test fixtures do not cover.** Those are the
@@ -64,7 +64,20 @@ $ find . -name '*.go' | wc -l
 Look for: one `file:` header per file, in lexical order, none duplicated or skipped. The count
 should be less than `find` if the tree has `vendor/`, `node_modules/` or hidden directories.
 
-Failure: a file appears twice, or a file you know about is absent.
+**Check the ordering with `LC_ALL=C`.** golens sorts by byte value. A shell `sort` under a UTF-8
+locale uses collation, which weights punctuation differently and will interleave the names:
+
+```console
+$ /tmp/golens outline . | grep '^file: ' | sed 's/^file: //' > /tmp/order.txt
+$ LC_ALL=C sort -c /tmp/order.txt && echo "byte order, as specified"
+```
+
+On a tree containing both `filesystems.go` and `filesystems_darwin.go`, a locale-aware `sort -c`
+reports "disorder" on a perfectly correct listing, because `.` and `_` are not compared by byte.
+Without `LC_ALL=C` this case reads as a traversal bug when it is not one.
+
+Failure: a file appears twice, a file you know about is absent, or the order fails the
+`LC_ALL=C` check above.
 
 ☐
 
@@ -404,85 +417,96 @@ produces is the one that destroys files: no exception, no warning, and a parse e
 somewhere other than the cause.
 
 `start_byte` and `end_byte` count bytes. Indexing a *decoded string* with those numbers counts
-characters, and the two numbering schemes differ as soon as the file contains a non-ASCII
-identifier or a BOM. Make a file that does:
+characters, and the two numbering schemes diverge as soon as the file contains any multi-byte
+character — including one in a comment or a string literal, which is the common case and has
+nothing to do with naming.
 
 ```console
 $ mkdir -p /tmp/enc
 $ cat > /tmp/enc/e.go <<'EOF'
 package enc
 
-type Café struct{ Name string }
-func F() {}
+import "strings"
+
+// Box drawing: ╭ ╮ ╯
+func first() string { return strings.Join([]string{"╭", "╮", "╯"}, "") }
+func second() {}
 EOF
 $ printf 'module enc\n\ngo 1.27\n' > /tmp/enc/go.mod
 $ python3 -c "raw=open('/tmp/enc/e.go','rb').read(); print(len(raw),'bytes',len(raw.decode()),'chars')"
-$ /tmp/golens bounds Café /tmp/enc/e.go --json
+$ /tmp/golens bounds second /tmp/enc/e.go --json
 ```
 
-58 bytes, 57 characters. Now splice the way case 10 does — **in binary** — and confirm the file
-is intact:
+155 bytes, 143 characters — six multi-byte characters, so twelve bytes of drift. Now splice
+`second` the way case 10 does, **in binary**:
 
 ```console
 $ python3 - <<'EOF'
 import json, subprocess
-b = json.loads(subprocess.run(["/tmp/golens","bounds","Café","/tmp/enc/e.go","--json"],
+b = json.loads(subprocess.run(["/tmp/golens","bounds","second","/tmp/enc/e.go","--json"],
                               capture_output=True, text=True).stdout)
 raw = open("/tmp/enc/e.go", "rb").read()
-open("/tmp/enc/e.go","wb").write(raw[:b["start_byte"]] + b"Renamed struct{ Name string }" + raw[b["end_byte"]:])
+open("/tmp/enc/e.go","wb").write(raw[:b["start_byte"]] + b"func Renamed() {}" + raw[b["end_byte"]:])
 EOF
-$ (cd /tmp/enc && go build ./... && echo "intact")
+$ (cd /tmp/enc && go build ./... && echo intact)
 ```
 
 Look for: `intact`.
 
-Now do the same splice through a decoded string, using the **same numbers**:
+Now the same splice through a decoded string, using the **same numbers**:
 
 ```console
 $ cat > /tmp/enc/e.go <<'EOF'
 package enc
 
-type Café struct{ Name string }
-func F() {}
+import "strings"
+
+// Box drawing: ╭ ╮ ╯
+func first() string { return strings.Join([]string{"╭", "╮", "╯"}, "") }
+func second() {}
 EOF
 $ python3 - <<'EOF'
 import json, subprocess
-b = json.loads(subprocess.run(["/tmp/golens","bounds","Café","/tmp/enc/e.go","--json"],
+b = json.loads(subprocess.run(["/tmp/golens","bounds","second","/tmp/enc/e.go","--json"],
                               capture_output=True, text=True).stdout)
 text = open("/tmp/enc/e.go", encoding="utf-8").read()      # str, not bytes
 open("/tmp/enc/e.go","w",encoding="utf-8").write(
-    text[:b["start_byte"]] + "Renamed struct{ Name string }" + text[b["end_byte"]:])
+    text[:b["start_byte"]] + "func Renamed() {}" + text[b["end_byte"]:])
 EOF
-$ cat /tmp/enc/e.go
+$ tail -1 /tmp/enc/e.go
 $ (cd /tmp/enc && go build ./...)
 ```
 
-Look for: `func F` swallowed onto the end of the type line, and
+Look for:
 
 ```
-e.go:3:35: syntax error: unexpected keyword func after top level declaration
+func second(func Renamed() {}
+
+# enc
+./e.go:7:18: syntax error: unexpected name Renamed, expected (
 ```
 
-That is the whole hazard in one run. Python raised nothing. The write succeeded. The error names
-line 3 column 35, which is nowhere near the decision that caused it.
+Note *where* the damage lands. `second`'s own span is pure ASCII, so nothing is wrong with it.
+The slice simply starts twelve bytes too late, cutting through `func second(` and leaving its
+head behind. The overrun from the earlier multi-byte characters is spent before the span even
+begins.
+
+That is the whole hazard in one run. Python raised nothing, the write succeeded, and the error
+names line 7 column 18 — nowhere near the decision that caused it.
 
 **Do not file the second run as a golens defect.** The offsets were correct; the consumer applied
-them to the wrong unit. An offset-counting implementation is the fix.
+them to the wrong unit. Counting bytes is the fix.
 
-**The overrun scales with the file, so it fails only sometimes — which is the dangerous part.**
-The overrun is however many bytes the span's non-ASCII characters occupy beyond one each: `é` is
-two bytes and overruns by one character, `日` is three bytes and overruns by two. So how much
-code the splice eats depends on both the identifiers and what follows:
+**On some files the mistake is invisible, which is worse.** Take the last declaration in a file
+whose multi-byte characters come earlier, and the slice starts late and ends past the end. When
+that declaration is the last thing in the file there is nothing left to damage, and the only
+difference between a correct and an incorrect splice may be the file's trailing newline — a
+difference no check in this plan looks for. Verified against `duf`: splicing
+`style.go`'s only function wrongly produced a file that parses, compiles, and differs from the
+correct result by one byte.
 
-| What follows the declaration | Text splice result |
-|---|---|
-| A blank line | parses — the overrun ate a newline, leaving one instead of two |
-| One newline | **corrupts** — the next declaration is pulled onto this line |
-| Nothing (last in file) | parses — the overrun runs off the end |
-
-Three layouts, one bug, two silent successes. A change that passes on the file you tested it on
-is not evidence the approach is safe, which is why the run above is a positive control rather than
-an assertion that this particular file breaks.
+So a clean run of the wrong approach proves nothing about the approach. Run the splice
+programmatically on a file you know is affected.
 
 The same trap with a different offset: Python's `utf-8-sig` decode *strips* a BOM, shifting every
 index by three more.
@@ -498,7 +522,7 @@ Run **10, 16, 13, 6, 9** in that order.
 | Case | Why it ranks here |
 |---|---|
 | 10 | Offsets that round-trip but address the wrong span silently corrupt files |
-| 16 | The same corruption reached by a different route — byte offsets applied to characters — and it fails only on some layouts, so passing it once proves nothing |
+| 16 | Byte offsets applied to characters. Triggers on ordinary multi-byte content, and on some files the mistake is completely invisible |
 | 13 | A false unused-import accusation makes an agent delete working code |
 | 6 | Generic receivers with type parameters — no fixture covers this |
 | 9 | Large files, where an allocation or complexity problem would surface |
