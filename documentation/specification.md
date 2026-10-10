@@ -176,10 +176,9 @@ user.go:12: imported and not used: "fmt"
 
 ### 3.1 Codebase Standards
 
-- **Initialism Enforcements (per user AGENTS.md)**: Identifiers must adhere to Go's own initialism convention — the rule golint popularised and staticcheck carries as ST1003. An initialism from the fixed dictionary is written consistently within an identifier (`ID`, `URL`, `JSON`, `HTTP`), so `userID` and `HTTPHandler` are correct while `userId` and `HttpHandler` are reported, each with its fix named. An initialism stays lowercase only at the front of an identifier that already begins lowercase, so `urlPath` and `jsonBody` are correct. Underscores are word boundaries and are preserved rather than stripped, so `usecase_test` and `RAMFS_MAGIC` are left untouched. No per-identifier exceptions exist; the fixed initialism dictionary ships with the checker. Enforcement is a repo-wide AST test that runs under `go test`, exposed generally as `golens check --naming` (default off).
-    - Allowed: `userId`, `jsonAst`, `httpHandler`, `Ok`, `Id`
-    - Banned: `userID`, `jsonAST`, `HTTPHandler`, `OK`
-- **Package Layout**: One-way import direction `cli → usecase → domain`, with `engine/goast` and `naming` depending only on `domain`. Only `engine/goast` may import `go/parser`, `go/ast` and `go/token`.
+- **No style enforcement by the tool**: `golens` reports structural facts about a codebase and never judges style. There is no naming check, no formatting check, no idiom check. A command asked "is this file valid" or "what is in this file" must not answer "and also your identifiers are spelled wrong": that is a judgement the caller did not request, and an agent that acts on it wrongly rewrites working code. Style enforcement belongs to a linter, which a caller opts into explicitly.
+- **This repository's own naming**: golens' own source follows Go's initialism convention — the rule golint popularised and staticcheck carries as ST1003. `ID`, `URL`, `JSON` and `HTTP` are written consistently within an identifier (`userID`, `HTTPHandler`), and an initialism stays lowercase only at the front of an identifier that already begins lowercase (`urlPath`, `jsonBody`). Enforced by `revive`'s `var-naming` rule in CI, not by golens itself. The distinction is the point: golens' source follows a convention, and golens does not impose one.
+- **Package Layout**: One-way import direction `cli → usecase → domain`, with `engine/goast` depending only on `domain`. Only `engine/goast` may import `go/parser`, `go/ast` and `go/token`.
 - **Clean Architecture**: Domain entities (Symbols, Bounds, Nodes) must be decoupled from delivery mechanisms (CLI cobra commands, JSON formatters).
 - **Dependency Limitations**: Limit third-party libraries. Approved packages:
     - `spf13/cobra` (CLI routing)

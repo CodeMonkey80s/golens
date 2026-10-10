@@ -257,46 +257,39 @@ func TestHelpIsAvailable(t *testing.T) {
 	}
 }
 
-// TestCheckNamingFlag exercises golens check --naming, the CLI surface for the
-// initialism convention from specification 3.1.
+// TestCheckDoesNotJudgeStyle pins the decision that check reports structural faults only.
 //
-// The flag replaces the syntax checks rather than adding to them: a caller asking about
-// naming should not also receive unused-import warnings, and vice versa.
-func TestCheckNamingFlag(t *testing.T) {
+// golens used to ship a --naming flag. It was removed because a structural query should not
+// return style judgements the caller did not ask for: an agent that ran check to find out
+// whether a file was valid also received an opinion about its identifiers, and the cost of
+// acting on that wrongly is rewriting working code. Naming is enforced by golangci-lint's
+// revive instead, where opting in is explicit.
+//
+// This test fails if naming ever comes back through any route, including a new flag.
+func TestCheckDoesNotJudgeStyle(t *testing.T) {
 	dir := t.TempDir()
-	// HttpHandler is banned: the initialism is mixed-case. HTTPHandler is what Go
-	// wants, since the initialism opens an exported identifier.
-	bad := filepath.Join(dir, "bad.go")
-	if err := os.WriteFile(bad, []byte("package p\n\nfunc HttpHandler() {}\n"), 0o644); err != nil {
+	// Every identifier here violates Go's initialism convention. The file is otherwise
+	// valid Go and fully used, so a structural check has nothing to report about it.
+	styled := filepath.Join(dir, "styled.go")
+	src := "package p\n\ntype HttpHandler struct{}\ntype DbUrl struct{}\n\nfunc UserId() {}\n"
+	if err := os.WriteFile(styled, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Without the flag, an unused import is what gets reported.
-	withImport := filepath.Join(dir, "unused.go")
-	if err := os.WriteFile(withImport, []byte("package p\n\nimport \"fmt\"\n\nfunc F() {}\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	_, stderr, code := run(t, "check", withImport, "--naming")
+	// check exits 0 and says nothing: the file parses, nothing is unused, nothing is
+	// duplicated.
+	_, stderr, code := run(t, "check", styled)
 	if code != 0 {
-		t.Errorf("naming check should ignore unused imports, exit = %d (stderr: %s)", code, stderr)
+		t.Errorf("check reported on a valid file, exit = %d (stderr: %s)", code, stderr)
 	}
 	if stderr != "" {
-		t.Errorf("expected no naming diagnostics, got:\n%s", stderr)
+		t.Errorf("check must not judge style, but said:\n%s", stderr)
 	}
 
-	_, stderr, code = run(t, "check", bad, "--naming")
-	if code != 3 {
-		t.Errorf("exit = %d, want 3 for naming violations (stderr: %s)", code, stderr)
-	}
-	if !strings.Contains(stderr, "HttpHandler should be HTTPHandler") {
-		t.Errorf("stderr missing the offending identifier and its fix:\n%s", stderr)
-	}
-
-	// The same file is clean under the default syntax checks.
-	_, stderr, code = run(t, "check", bad)
-	if code != 0 {
-		t.Errorf("default check should not report naming, exit = %d (stderr: %s)", code, stderr)
+	// The flag is gone rather than merely ignored.
+	_, _, code = run(t, "check", styled, "--naming")
+	if code == 0 {
+		t.Error("--naming still accepted; style enforcement does not belong in this tool")
 	}
 }
 
@@ -484,28 +477,27 @@ func TestCheckFlagsAcrossCli(t *testing.T) {
 	})
 }
 
-// TestCheckNamingFlagAcrossFiles confirms the naming check works over a whole directory, which is
-// how it would run in CI.
-func TestCheckNamingFlagAcrossFiles(t *testing.T) {
+// TestCheckAcrossFilesReportsNothingStructural confirms that a directory whose only
+// irregularity is naming produces no diagnostics. It is the directory-scale companion to
+// TestCheckDoesNotJudgeStyle: the flag it once exercised walked whole trees, so a
+// regression that reintroduced style checking would show up here first.
+func TestCheckAcrossFilesReportsNothingStructural(t *testing.T) {
 	dir := t.TempDir()
 	for name, src := range map[string]string{
-		"clean.go": "package p\n\nfunc userID() int { return 1 }\n",
-		"bad.go":   "package p\n\nfunc HttpHandler() {}\n",
+		"a_clean.go":  "package p\n\nfunc userID() int { return 1 }\n",
+		"b_styled.go": "package p\n\nfunc HttpHandler() {}\nfunc DbUrl() {}\n",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	_, stderr, code := run(t, "check", dir, "--naming")
-	if code != 3 {
-		t.Errorf("exit = %d, want 3 (stderr: %s)", code, stderr)
+	_, stderr, code := run(t, "check", dir)
+	if code != 0 {
+		t.Errorf("exit = %d, want 0: nothing structural is wrong (stderr: %s)", code, stderr)
 	}
-	if !strings.Contains(stderr, "HttpHandler") {
-		t.Errorf("stderr missing the offending identifier:\n%s", stderr)
-	}
-	if strings.Contains(stderr, "userID") {
-		t.Errorf("a compliant identifier was reported:\n%s", stderr)
+	if stderr != "" {
+		t.Errorf("check must not judge style, but said:\n%s", stderr)
 	}
 }
 

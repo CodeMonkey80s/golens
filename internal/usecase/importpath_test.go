@@ -125,7 +125,7 @@ func TestCheckOnWholeRepositoryWithBadImports(t *testing.T) {
 	testfixture.Write(t, dir, "c_clean.go", "package p\n\nimport \"os\"\n\nfunc C() { _ = os.Args }\n")
 
 	var stdout, stderr bytes.Buffer
-	err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{}, false)
+	err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{})
 
 	if err == nil {
 		t.Error("expected diagnostics")

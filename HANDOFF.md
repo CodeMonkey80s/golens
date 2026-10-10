@@ -12,15 +12,15 @@ next agent starts from fact rather than from the plan.
 |---|---|
 | Branch | `main` only, working tree clean |
 | Remote | **none configured** — nothing has been or can be pushed |
-| Tests | 296 top-level (441 including subtests), 7 packages, all passing |
-| Test count by package | arch 7 · cli 64 · domain 15 · goast 45 · format 20 · naming 13 · usecase 132 |
+| Tests | 281 top-level, 6 packages, all passing |
+| Test count by package | arch 6 · cli 64 · domain 15 · goast 45 · format 20 · usecase 131 |
 | Licence | MIT, `LICENSE` at repo root |
 | Toolchain | go1.27.2, `golang.org/x` dependencies: none. Only cobra and its two indirects |
 | Verify with | **`go test -count=1 ./...`** — see caching note below |
 | Binary | 5.30 MB stripped, 8.05 MB plain (budget 15 MB) |
 | Parse budget | 14.6 µs typical, 304 µs largest file (budget 5 ms P95) |
-| Lint | `golangci-lint run ./...` — 0 issues, v2.14.0 |
-| Self-check | `golens check ./internal`, `./cmd`, and `check . --naming` all exit 0 |
+| Lint | `golangci-lint run ./...` — 0 issues, v2.14.0. Includes `revive` `var-naming` |
+| Self-check | `golens check ./internal` and `./cmd` both exit 0 |
 
 ### Verification actually run
 
@@ -32,7 +32,6 @@ gofmt -l .                      # empty
 golangci-lint run ./...         # 0 issues
 ./golens check ./internal       # exit 0
 ./golens check ./cmd            # exit 0
-./golens check . --naming       # exit 0
 ```
 
 ## History
@@ -118,14 +117,13 @@ Measured on this machine, largest non-test file. Parse dominates three of the fo
 |---|---|---|
 | Parse, hand-written fixture | 14,626 | 373 |
 | Parse, largest real file | 303,719 | 6,242 |
-| `outline` human | 367,325 | 6,735 |
-| `outline` json | 391,765 | 6,605 |
-| `outline` compact | 350,761 | 6,760 |
-| `outline` directory (25 files) | 1,774,424 | 41,131 |
-| `get` | 321,258 | 5,435 |
-| `bounds` | 300,316 | 5,436 |
-| `check` | 2,871,215 | 55,373 |
-| `check --naming` | 1,832,220 | 40,810 |
+| `outline` human | 334,167 | 6,278 |
+| `outline` json | 358,972 | 6,154 |
+| `outline` compact | 329,493 | 6,301 |
+| `outline` directory (25 files) | 1,687,859 | 39,768 |
+| `get` | 288,652 | 4,732 |
+| `bounds` | 275,134 | 4,733 |
+| `check` | 2,794,502 | 53,575 |
 
 `check` is ten times a parse because it runs several analyses. Reproduce with
 `go test -run XXX -bench . ./internal/usecase ./internal/engine/goast`.
@@ -171,7 +169,7 @@ All twelve green. Evidence is a test, not a claim.
 | A4 | JSON parses, `schema_version: 1` first | `TestSpecSchemaVersionIsFirstField`, all four commands |
 | A5 | `--compact` loses no information | `TestCompactIsLosslessSubset` |
 | A6 | `get --bounds-only` ≡ `bounds` | `TestSpecBoundsOnlyMatchesBounds`, plus format and usecase level |
-| A7 | Repo-wide naming test clean | `TestRepositoryFollowsNamingConvention` |
+| A7 | golens never reports style | `TestCheckDoesNotJudgeStyle`, `TestCheckAcrossFilesReportsNothingStructural` |
 | A8 | Parse < 5 ms P95 | `TestParseP95UnderBudget` |
 | A9 | Binary < 15 MB | 5.30 MB |
 | A10 | No cgo | `TestNoCgoDependency` |
@@ -182,36 +180,67 @@ All twelve green. Evidence is a test, not a claim.
 
 ## Caching note
 
-`go test ./...` **without `-count=1` can report a stale pass.** Four packages assert facts about the
-build graph or the source tree rather than about their own test inputs: `internal/arch`
-(`go list -deps`), `internal/naming` (scans this repo), `selfcheck_test.go` and
-`TestRepositoryPassesItsOwnCheck` (walk the tree). Go's cache does not invalidate on those.
+`go test ./...` **without `-count=1` can report a stale pass.** Three packages assert facts about
+the build graph or the source tree rather than about their own test inputs: `internal/arch`
+(`go list -deps`), and `selfcheck_test.go` and `TestRepositoryPassesItsOwnCheck` (walk the tree).
+Go's cache does not invalidate on those.
 
 This hid a real failure during S1. **Always use `go test -count=1 ./...` here.** CI enforces it, and
-`go test -short ./...` skips the repo-wide scans.
+`go test -short ./...` skips the tests that walk the repository.
 
 ## Frozen interfaces
 
-Unchanged since S1 except `Node.IsGroup` (S2) and `TypeParams` on `Node`/`Symbol` (`72c791a`). See
-`decisions.md` §2 for the canonical copy.
+Unchanged since S1 except `Node.IsGroup` (S2), and `TypeParams` plus `IsAlias` on `Node`/`Symbol`
+(`72c791a` and the alias fix below). See `decisions.md` §2 for the canonical copy.
 
 ```go
 type Bounds struct{ StartLine, EndLine, StartByte, EndByte int }
 type Node struct {
     Name, Detail, Receiver, TypeParams string
     Kind     Kind
+    IsAlias  bool
     Bounds   Bounds
     Children []Node
     IsGroup  bool
 }
-type Symbol struct{ Name, QualifiedName string; Kind Kind; Bounds Bounds; File, Detail, Receiver, TypeParams string }
+type Symbol struct{ Name, QualifiedName string; Kind Kind; Bounds Bounds; File, Detail, Receiver, TypeParams string; IsAlias bool }
 type Document struct{ Path, Package string; Bounds Bounds; Nodes []Node; Symbols []Symbol; Imports []string; Source []byte; Comments bool }
 type Engine interface{ Parse(path string) (Document, error) }
 ```
 
 `TypeParams` carries the bracketed list verbatim, `"[T any]"`, kept separate from `Name` so the
-symbol name stays the bare identifier for lookup. `Receiver` is the receiver as the source spells it,
-`"s *UserStore"`. Both are load-bearing — see the traps in `AGENTS.md`.
+symbol name stays the bare identifier for lookup. `Receiver` is the receiver as the source spells
+it, `"s *UserStore"`. `IsAlias` distinguishes `type A = B` from `type A B`, which `Detail` alone
+cannot. All three are load-bearing — see the traps in `AGENTS.md`.
+
+## Naming is not golens' business
+
+`golens check --naming` and the `internal/naming` package are **gone**. Naming is `revive`'s job,
+enforced on this repository's own source in CI via `.golangci.yml`.
+
+The reasoning, in one paragraph: `golens` answers structural questions — what is in this file,
+where is this symbol, what are its exact byte offsets, does it parse. "Should this be `ID` or
+`Id`" is a different kind of claim, and returning it unasked mixes a judgement into output the
+caller asked for. The failure is also asymmetric: a naming false positive tells an agent to
+rewrite an identifier that was correct, so code that compiled yesterday stops doing so.
+
+It took three attempts to see that, and the sequence is the useful record:
+
+1. `camelCaseId` — a local dialect lowercasing every initialism. Implemented faithfully, and it
+   produced **4,119 false positives on the Go standard library**, including `isASCII` and
+   `ensureEOF`.
+2. Go's own convention, reimplemented in-tree. Correct, and by then indistinguishable from
+   `revive`, which already ships it.
+3. Removal.
+
+Verified rather than assumed: `revive`'s `var-naming` reports the same violations golens did on
+identical inputs and catches more, and passes on this source with zero issues. Two tests pin the
+boundary so naming cannot return through a new flag: `TestCheckDoesNotJudgeStyle` and
+`TestCheckAcrossFilesReportsNothingStructural`.
+
+Net effect: −730 lines of source and tests, one acceptance criterion retargeted, one linter
+enabled. A7 now reads "golens never reports a style violation" rather than "the repo passes a
+naming test".
 
 ## Remaining work
 
@@ -226,7 +255,7 @@ misfiled as cosmetic; it was the most dangerous defect the plan ever shipped.
 | `var x = 5` shows no `= 5` in outline | Cosmetic, and unlike the alias case it is not an edit hazard: the byte span covers only the name, and writing the name back is what the specification requires |
 | `check .` exits 3 on `testdata/store/store.go` | Intentional — the unused import gives the outline golden a stable shape |
 | Unused-import false negatives | Accepted: comment-only references and shadowed locals. Never false positives, verified empirically against three repositories |
-| `userIdX` naming false positive | **Resolved by the rule change.** Under Go's convention `userIdX` correctly reports as `userIDX`; the old rule's ambiguity does not arise |
+| Naming outside a module | Accepted loss. `revive` cannot run without a `go.mod`, so a loose file handed to an agent outside any repository gets no naming check. Filling that gap with golens would make a structural tool the one that grades code; `decisions.md` D9 records the trade |
 
 ## Read first
 

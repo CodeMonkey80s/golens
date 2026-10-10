@@ -161,7 +161,7 @@ func TestCheckReportsEveryBrokenFile(t *testing.T) {
 	testfixture.Write(t, dir, "c_broken.go", testfixture.Broken)
 
 	var stdout, stderr bytes.Buffer
-	_ = usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{}, false)
+	_ = usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{})
 
 	for _, want := range []string{"a_broken.go", "b_broken.go", "c_broken.go"} {
 		if !strings.Contains(stderr.String(), want) {
@@ -245,7 +245,7 @@ func checkWithProcs(t *testing.T, dir string, procs int) string {
 	defer runtime.GOMAXPROCS(prev)
 
 	var stdout, stderr bytes.Buffer
-	_ = usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{}, false)
+	_ = usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{})
 	return stderr.String()
 }
 

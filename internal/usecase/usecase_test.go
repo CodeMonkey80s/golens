@@ -290,7 +290,7 @@ func TestCheckFindsUnusedImport(t *testing.T) {
 	path := write(t, dir, "user.go", "package p\n\nimport \"fmt\"\n\nfunc F() int { return 1 }\n")
 
 	var stdout, stderr bytes.Buffer
-	err := Check(engine(), path, &stdout, &stderr, format.Options{}, false)
+	err := Check(engine(), path, &stdout, &stderr, format.Options{})
 
 	var hasDiags HasDiagnostics
 	if !asHasDiags(err, &hasDiags) {
@@ -309,7 +309,7 @@ func TestCheckCleanFileIsSilent(t *testing.T) {
 	path := write(t, dir, "clean.go", "package p\n\nimport \"fmt\"\n\nfunc F() string { return fmt.Sprint(1) }\n")
 
 	var stdout, stderr bytes.Buffer
-	if err := Check(engine(), path, &stdout, &stderr, format.Options{}, false); err != nil {
+	if err := Check(engine(), path, &stdout, &stderr, format.Options{}); err != nil {
 		t.Errorf("expected no diagnostics, got %v", err)
 	}
 	if stderr.Len() != 0 {
@@ -324,7 +324,7 @@ func TestCheckSkipsBlankAndDotImports(t *testing.T) {
 	path := write(t, dir, "dots.go", src)
 
 	var stdout, stderr bytes.Buffer
-	err := Check(engine(), path, &stdout, &stderr, format.Options{}, false)
+	err := Check(engine(), path, &stdout, &stderr, format.Options{})
 	if err != nil {
 		t.Errorf("expected no diagnostics, got %v (stderr: %s)", err, stderr.String())
 	}
@@ -336,7 +336,7 @@ func TestCheckReportsDuplicateDeclarations(t *testing.T) {
 	path := write(t, dir, "dup.go", "package p\n\nfunc F() {}\n\nfunc F() {}\n")
 
 	var stdout, stderr bytes.Buffer
-	err := Check(engine(), path, &stdout, &stderr, format.Options{}, false)
+	err := Check(engine(), path, &stdout, &stderr, format.Options{})
 
 	var hasDiags HasDiagnostics
 	if !asHasDiags(err, &hasDiags) {
@@ -355,7 +355,7 @@ func TestCheckReportsParseErrorWithoutAborting(t *testing.T) {
 	write(t, dir, "b_clean.go", "package p\n\nimport \"fmt\"\n\nfunc F() { _ = fmt.Sprint }\n")
 
 	var stdout, stderr bytes.Buffer
-	err := Check(engine(), dir, &stdout, &stderr, format.Options{}, false)
+	err := Check(engine(), dir, &stdout, &stderr, format.Options{})
 
 	var hasDiags HasDiagnostics
 	if !asHasDiags(err, &hasDiags) {
@@ -371,7 +371,7 @@ func TestCheckJSONGoesToStdout(t *testing.T) {
 	path := write(t, dir, "user.go", "package p\n\nimport \"fmt\"\n\nfunc F() {}\n")
 
 	var stdout, stderr bytes.Buffer
-	err := Check(engine(), path, &stdout, &stderr, format.Options{JSON: true}, false)
+	err := Check(engine(), path, &stdout, &stderr, format.Options{JSON: true})
 	if err == nil {
 		t.Fatal("expected diagnostics error")
 	}

@@ -156,25 +156,15 @@ checks still run on files the current platform excludes.
 The unused-import check may miss an import used only in a comment or shadowed by
 a local. It never reports one that is genuinely in use.
 
---naming reports Go initialism violations instead of the syntax checks: an
-initialism spelled inconsistently within one identifier. Go writes ID, URL,
-JSON and HTTP; userId and dbUrl are reported.
-
-  userID, HTTPHandler, parseJSON   allowed
-  userId, dbUrl, HttpHandler       reported, with the fix named
-
-An initialism stays lowercase only at the front of an identifier that already
-begins lowercase, so urlPath and jsonBody are correct. Underscores are word
-boundaries rather than noise, so usecase_test and RAMFS_MAGIC are left alone.`,
+Check reports structural faults only. It does not judge style: no naming
+convention, no formatting, no idiom. A linter is the tool for that, and it is
+something a caller chooses to run rather than something they inherit by asking
+a structural question.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// --naming is off by default: the check is AST-level validation, and a caller
-			// asking for a syntax check should not get naming opinions unless requested.
-			namingOnly, _ := cmd.Flags().GetBool("naming")
-			return usecase.Check(env.Engine, args[0], env.Stdout, env.Stderr, flagOptions(cmd), namingOnly)
+			return usecase.Check(env.Engine, args[0], env.Stdout, env.Stderr, flagOptions(cmd))
 		},
 	}
 
-	cmd.Flags().Bool("naming", false, "report Go initialism naming-convention violations instead of syntax checks")
 	return cmd
 }

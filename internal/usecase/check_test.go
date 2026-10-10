@@ -27,7 +27,7 @@ func runCheck(t *testing.T, dir, name, src string) checkResult {
 	path := testfixture.Write(t, dir, name, src)
 
 	var stdout, stderr bytes.Buffer
-	err := usecase.Check(goast.New(), path, &stdout, &stderr, format.Options{}, false)
+	err := usecase.Check(goast.New(), path, &stdout, &stderr, format.Options{})
 
 	var out checkResult
 	out.diags = strings.Split(strings.TrimRight(stderr.String(), "\n"), "\n")
@@ -237,7 +237,7 @@ func Use(ctx context.Context, w io.Writer, s []int) string {
 	path := testfixture.Write(t, dir, "allused.go", src)
 
 	var stdout, stderr bytes.Buffer
-	if err := usecase.Check(goast.New(), path, &stdout, &stderr, format.Options{}, false); err != nil {
+	if err := usecase.Check(goast.New(), path, &stdout, &stderr, format.Options{}); err != nil {
 		t.Errorf("check reported diagnostics on a file where every import is used:\n%s", stderr.String())
 	}
 }
@@ -279,7 +279,7 @@ func TestDuplicateAcrossFiles(t *testing.T) {
 	testfixture.Write(t, dir, "b.go", "package p\n\nfunc Shared() {}\n")
 
 	var stdout, stderr bytes.Buffer
-	err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{}, false)
+	err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{})
 
 	if err == nil {
 		t.Error("expected diagnostics for a name declared in two files")
@@ -298,7 +298,7 @@ func TestCheckContinuesAfterParseError(t *testing.T) {
 	testfixture.Write(t, dir, "c_dup.go", "package p\n\nfunc G() {}\n\nfunc G() {}\n")
 
 	var stdout, stderr bytes.Buffer
-	if err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{}, false); err == nil {
+	if err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{}); err == nil {
 		t.Fatal("expected diagnostics")
 	}
 
@@ -317,7 +317,7 @@ func TestCheckJSONPayload(t *testing.T) {
 	testfixture.Write(t, dir, "p.go", "package p\n\nimport \"fmt\"\n\nfunc F() {}\n\nfunc G() {}\n\nfunc G() {}\n")
 
 	var stdout, stderr bytes.Buffer
-	_ = usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{JSON: true}, false)
+	_ = usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{JSON: true})
 
 	if stderr.Len() != 0 {
 		t.Errorf("stderr must stay clean in JSON mode:\n%s", stderr.String())
@@ -367,8 +367,8 @@ func TestCheckDeterministicOutput(t *testing.T) {
 
 	var first, second bytes.Buffer
 	var discard bytes.Buffer
-	_ = usecase.Check(goast.New(), dir, &first, &discard, format.Options{}, false)
-	_ = usecase.Check(goast.New(), dir, &second, &discard, format.Options{}, false)
+	_ = usecase.Check(goast.New(), dir, &first, &discard, format.Options{})
+	_ = usecase.Check(goast.New(), dir, &second, &discard, format.Options{})
 
 	if first.String() != second.String() {
 		t.Errorf("diagnostics not deterministic:\n%s\n---\n%s", first.String(), second.String())
@@ -382,7 +382,7 @@ func TestCheckRejectsNonGoTarget(t *testing.T) {
 	path := testfixture.Write(t, dir, "notes.txt", "hello")
 
 	var stdout, stderr bytes.Buffer
-	err := usecase.Check(goast.New(), path, &stdout, &stderr, format.Options{}, false)
+	err := usecase.Check(goast.New(), path, &stdout, &stderr, format.Options{})
 	if err == nil {
 		t.Fatal("expected an error for a non-Go file")
 	}
@@ -413,7 +413,7 @@ func TestCheckAcrossFixtureClasses(t *testing.T) {
 			path := testfixture.Write(t, dir, "p.go", tt.src)
 
 			var stdout, stderr bytes.Buffer
-			err := usecase.Check(goast.New(), path, &stdout, &stderr, format.Options{}, false)
+			err := usecase.Check(goast.New(), path, &stdout, &stderr, format.Options{})
 			if err != nil {
 				t.Errorf("unexpected diagnostics: %v\n%s", err, stderr.String())
 			}
@@ -427,7 +427,7 @@ func TestCheckHandlesUnparseableFixture(t *testing.T) {
 	path := testfixture.Write(t, dir, "broken.go", testfixture.Broken)
 
 	var stdout, stderr bytes.Buffer
-	err := usecase.Check(goast.New(), path, &stdout, &stderr, format.Options{}, false)
+	err := usecase.Check(goast.New(), path, &stdout, &stderr, format.Options{})
 	if err == nil {
 		t.Fatal("expected diagnostics for an unparseable file")
 	}
@@ -445,7 +445,7 @@ func TestCheckSkipsVendorAndHidden(t *testing.T) {
 	testfixture.Write(t, dir, "node_modules/n.go", "package n\n\nimport \"fmt\"\n\nfunc F() {}\n")
 
 	var stdout, stderr bytes.Buffer
-	if err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{}, false); err != nil {
+	if err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{}); err != nil {
 		t.Errorf("skipped directories were reported: %v\n%s", err, stderr.String())
 	}
 	if strings.Contains(stderr.String(), "fmt") {
@@ -457,61 +457,12 @@ func asDiagnostics(err error, target *usecase.HasDiagnostics) bool {
 	return errors.As(err, target)
 }
 
-// TestNamingDiagnosticsCarryDeclarationLine pins the position of a naming diagnostic.
-//
-// The check used to report every violation at line 1, which named the file but left a
-// reader to search for the identifier. Each diagnostic must now point at the line of the
-// declaration that introduced the name, including a name reached through a receiver.
-func TestNamingDiagnosticsCarryDeclarationLine(t *testing.T) {
-	dir := t.TempDir()
-	src := "package p\n" +
-		"\n" +
-		"type userId struct{}\n" +
-		"\n" +
-		"func (u userId) Get() {}\n" +
-		"\n" +
-		"var HttpHandler = 1\n"
-
-	path := testfixture.Write(t, dir, "p.go", src)
-
-	var stdout, stderr bytes.Buffer
-	err := usecase.Check(goast.New(), path, &stdout, &stderr, format.Options{}, true)
-	var hasDiags usecase.HasDiagnostics
-	if !asDiagnostics(err, &hasDiags) {
-		t.Fatalf("Check returned an unexpected error: %v\n%s", err, stderr.String())
-	}
-
-	got := strings.TrimRight(stderr.String(), "\n")
-	if got == "" {
-		t.Fatal("expected naming diagnostics, got none")
-	}
-
-	diags := strings.Split(got, "\n")
-	if len(diags) != 3 {
-		t.Fatalf("got %d diagnostics, want 3:\n%s", len(diags), got)
-	}
-
-	// userId is declared on line 3 and used as a receiver type on line 5; HttpHandler is
-	// declared on line 7. Sorted by identifier, then by line. Each diagnostic carries the
-	// line of the declaration that introduced the name, so none reports line 1.
-	want := []string{
-		":7:1: HttpHandler:",
-		":3:1: userId:",
-		":5:1: userId:",
-	}
-	for i, want := range want {
-		if !strings.Contains(diags[i], want) {
-			t.Errorf("diagnostic %d:\n got: %s\nwant to contain: %s", i, diags[i], want)
-		}
-	}
-}
-
 // runCheckDir invokes check against a whole directory and collects the stderr diagnostics.
 func runCheckDir(t *testing.T, dir string) checkResult {
 	t.Helper()
 
 	var stdout, stderr bytes.Buffer
-	err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{}, false)
+	err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{})
 
 	var out checkResult
 	out.diags = strings.Split(strings.TrimRight(stderr.String(), "\n"), "\n")

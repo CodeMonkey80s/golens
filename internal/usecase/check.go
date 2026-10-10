@@ -11,7 +11,6 @@ import (
 
 	"github.com/CodeMonkey80s/golens/internal/domain"
 	"github.com/CodeMonkey80s/golens/internal/format"
-	"github.com/CodeMonkey80s/golens/internal/naming"
 )
 
 // Diagnostic is one finding produced by check.
@@ -60,7 +59,12 @@ func (HasDiagnostics) IsDiagnostics() bool { return true }
 // Diagnostics always go to stderr in the human form so that a --json consumer reading
 // stdout receives only the payload. Findings are ordered by path then line so repeated
 // runs produce identical output.
-func Check(engine domain.Engine, target string, stdout, stderr io.Writer, opts format.Options, namingOnly bool) error {
+//
+// Check reports structural faults only: parse failures, malformed import paths, unused
+// imports and duplicate declarations. It does not judge style. A caller who wants naming
+// or any other convention enforced runs a linter, which is the tool for a judgement the
+// caller must opt into rather than one they inherit by asking a structural question.
+func Check(engine domain.Engine, target string, stdout, stderr io.Writer, opts format.Options) error {
 	paths, err := Files(target)
 	if err != nil {
 		return err
@@ -79,7 +83,7 @@ func Check(engine domain.Engine, target string, stdout, stderr io.Writer, opts f
 
 	var diags []Diagnostic
 	for _, doc := range docs {
-		diags = append(diags, analyse(doc, namingOnly, &pkg)...)
+		diags = append(diags, analyse(doc, &pkg)...)
 	}
 	for _, pe := range parseErrs {
 		// A zero ParseError means the parse succeeded; only real errors become diagnostics.
@@ -95,11 +99,7 @@ func Check(engine domain.Engine, target string, stdout, stderr io.Writer, opts f
 
 // analyse runs the per-document checks. Package-level symbols are handed to pkg, which owns
 // cross-file conflicts.
-func analyse(doc domain.Document, namingOnly bool, pkg *packageSymbols) []Diagnostic {
-	if namingOnly {
-		return namingViolations(doc)
-	}
-
+func analyse(doc domain.Document, pkg *packageSymbols) []Diagnostic {
 	var diags []Diagnostic
 	diags = append(diags, invalidImportPaths(doc)...)
 	diags = append(diags, unusedImports(doc)...)
@@ -241,63 +241,6 @@ func (p *packageSymbols) firstConflict(ns string, sites []symbolSite, i int) (in
 		}
 	}
 	return 0, false
-}
-
-// receiverTypeIdentifier extracts the type name from a receiver rendered in source form,
-// "s *UserStore" -> "UserStore", "g G[T]" -> "G[T]", "UserStore" -> "UserStore".
-//
-// The receiver is checked rather than the declaration name because a method named "GetID"
-// can sit on a type named "UserIDType", and the type name is what the convention governs.
-// The variable name is dropped so that an ordinary receiver name such as "s" is never
-// mistaken for an identifier to check.
-func receiverTypeIdentifier(receiver string) string {
-	if _, typ, ok := strings.Cut(receiver, " "); ok {
-		receiver = typ
-	}
-	return strings.TrimPrefix(receiver, "*")
-}
-
-// namingViolations reports identifiers in doc that break the initialism convention.
-//
-// The check runs over the outline's node names rather than re-parsing: every declared name
-// the engine surfaced is already there, so this needs no second parse. Each name is
-// reported with the line of the node that declared it, taken from that node's bounds, so
-// the diagnostic points at a line rather than at the file.
-func namingViolations(doc domain.Document) []Diagnostic {
-	var ids []naming.Identifier
-	collect := func(n domain.Node) {
-		if n.Kind == domain.KindImport || n.Kind == domain.KindPackage {
-			return
-		}
-		line := n.Bounds.StartLine
-		if n.Name != "" && n.Name != "_" {
-			ids = append(ids, naming.Identifier{Name: n.Name, Line: line})
-		}
-		if n.Receiver != "" {
-			ids = append(ids, naming.Identifier{Name: receiverTypeIdentifier(n.Receiver), Line: line})
-		}
-	}
-
-	var walk func(nodes []domain.Node)
-	walk = func(nodes []domain.Node) {
-		for _, n := range nodes {
-			collect(n)
-			walk(n.Children)
-		}
-	}
-	walk(doc.Nodes)
-
-	var diags []Diagnostic
-	for _, v := range naming.CheckLocated(ids) {
-		diags = append(diags, Diagnostic{
-			Severity: "warning",
-			Path:     doc.Path,
-			Line:     v.Line,
-			Column:   1,
-			Message:  v.Identifier + ": " + v.Reason,
-		})
-	}
-	return diags
 }
 
 // duplicateDeclarations was the per-file half of the namespace check and is now subsumed by

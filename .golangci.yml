@@ -28,6 +28,13 @@ linters:
     # Already run directly in CI; listed so one config is the whole story.
     - govet
 
+    # Naming. This is golens' own house style, so it belongs to the linter and not to
+    # golens. `golens check` reports structural faults; "should this be ID or Id" is a
+    # judgement the caller did not ask for, and one an agent may act on wrongly.
+    # revive's var-naming is the rule golint popularised and staticcheck carries as
+    # ST1003, so this is the standard implementation rather than a local dialect.
+    - revive
+
   disable:
     # Style churn, not bugs. Disabled deliberately. gosimple and stylecheck are not listed:
     # they were merged into staticcheck and golangci-lint v2 rejects their names even here.
@@ -44,7 +51,6 @@ linters:
     - gochecknoinits
     - gocritic       # opinionated; overlaps with staticcheck
     - gosec          # golens reads files by path; G304 fires on every ReadFile
-    - revive         # redundant: golens check --naming enforces camelCaseId on this source
     - testpackage    # golens uses internal test packages
     - thelper
     - tparallel
@@ -54,6 +60,18 @@ linters:
     - nilnil
     - nonamedreturns
     - tagliatelle
+
+  settings:
+    revive:
+      # Only the naming rule. revive ships around twenty others, several of which restyle
+      # code this repository does not consider wrong -- exported, package-comments,
+      # indent-error-flow and the rest. Enabling them wholesale buries var-naming in churn
+      # an agent has to argue with.
+      #
+      # Naming the rule is what keeps it narrow: revive treats an absent list as all of
+      # them. Verified against this source: with only var-naming enabled the report is clean.
+      rules:
+        - name: var-naming
 
 issues:
   # Show all issues, not just the first per linter.
@@ -67,8 +85,11 @@ formatters:
 
   settings:
     gofumpt:
-      # golens targets go 1.27; the extra rules are safe.
-      extra.group-params: true
+      # golens targets go 1.27; the extra rules are safe. These nest under `extra`
+      # rather than being flat keys, and the flattened spelling `extra.group-params`
+      # fails `golangci-lint config verify` even though the linter run itself ignores it.
+      extra:
+        group-params: true
 
 run:
   timeout: 5m

@@ -33,9 +33,9 @@ jobs:
 
       # -count=1 is mandatory here, not a precaution.
       #
-      # Four packages assert facts about the build graph or the source tree rather
+      # Three packages assert facts about the build graph or the source tree rather
       # than about their own test inputs: internal/arch shells out to `go list
-      # -deps`, internal/naming scans this repository, and selfcheck_test.go plus
+      # -deps`, and selfcheck_test.go plus
       # TestRepositoryPassesItsOwnCheck walk the tree. Go keys its test cache on
       # test inputs, so editing an import does not invalidate them and a stale
       # pass is possible. That has already hidden one real failure.
@@ -96,11 +96,14 @@ jobs:
       # The tool checks itself. A checker that cannot be run on its own codebase
       # is a checker nobody trusts, and this is how the namespace check's false
       # positive on external test packages was caught.
+      #
+      # No naming pass here: naming is golens' own house style and is enforced by
+      # revive above. A tool that judged its own source would be arguing for the
+      # convention rather than following it.
       - name: golens on its own source
         run: |
           ./golens check ./internal
           ./golens check ./cmd
-          ./golens check . --naming
 
       - name: Upload the binary
         uses: actions/upload-artifact@v4

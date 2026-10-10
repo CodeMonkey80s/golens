@@ -98,43 +98,50 @@ Known limitation, documented rather than hidden: the unused-import check can rep
 false positive when an import's local name is shadowed or appears only in a comment. This
 is acceptable for a fast checker and is stated as best-effort in the spec.
 
-### D9 · Initialism convention
+### D9 · Naming is not golens' business
 
-> **Revised.** This decision originally specified a `camelCaseId` rule that lowercased every
-> initialism — `Id` not `ID`, `Http` not `HTTP`, `jsonAst` not `jsonAST`. It was implemented
-> faithfully and it was wrong. Run against the Go standard library it produced **4,119
-> diagnostics**, including names as uncontroversial as `isASCII` and `ensureEOF`, and against
-> ordinary idiomatic Go, 11. A convention check that reports correct code gets switched off,
-> which is worse than having no check: the project was enforcing a dialect no other Go tool
-> shares.
->
-> The rule is now Go's own — golint's, carried by staticcheck as ST1003 — so `golens check
-> --naming` agrees with `revive` and `staticcheck` on the same input. The same two runs now
-> yield **0** and **850**, and every one of the 850 is a genuine mixed-case initialism
-> (`Uid`, `TcId`, `Id`) in real Go code.
->
-> The rest of this decision stands.
+**golens does not enforce naming, on any codebase including its own.** The `internal/naming`
+package and the `golens check --naming` flag are gone. This repository follows Go's initialism
+convention, and `revive`'s `var-naming` rule enforces it in CI.
 
-Primary guard is an in-repo test that walks the project's own AST — it cannot be bypassed
-and fails at `go test`. A `golens check --naming` flag (default off) reuses the same engine
-for general use. A separate `lint` command is rejected: it would contradict §2.4's
-positioning.
+The reasoning has three layers, and the first is the one that matters.
 
-An initialism is written consistently within an identifier — `ID`, `URL`, `JSON`, `HTTP` —
-so `userID` and `HTTPHandler` are correct and `userId` and `HttpHandler` are reported, each
-with its fix named. An initialism stays lowercase only at the front of an identifier that
-already begins lowercase, so `urlPath` and `jsonBody` are correct; that single branch is what
-separates this rule from a blunt all-caps check.
+**A structural query should not return style judgements.** `golens` answers what is in this file,
+where is this symbol, what are its exact byte offsets, does it parse. "Should this identifier be
+`ID` or `Id`" is a different kind of claim, and returning it unasked makes the caller filter
+before they can trust the output. Worse, the failure is not symmetric: a naming false positive
+tells an agent to rewrite an identifier that was correct, and code that compiled yesterday stops
+doing so. The tool's own bias toward silence argues the same way -- better to under-report than
+to have an agent act on a wrong claim.
 
-The initialism dictionary is golint's, fixed and shipped with the checker: ACL, API, ASCII,
-CPU, CSS, DNS, EOF, GUID, HTML, HTTP, HTTPS, ID, IP, JSON, LHS, QPS, RAM, RHS, RPC, SLA,
-SMTP, SQL, SSH, TCP, TLS, TTL, UDP, UI, UID, URI, URL, UTF8, UUID, VM, XML, XSRF, XSS. No
-per-identifier escape hatch; rename the field instead.
+**The convention already has a home, and it is a better one.** `revive` ships `var-naming`,
+which is the rule golint popularised and staticcheck carries as ST1003. Enforcing it means
+opting into a linter, which is the right shape for an opt-in judgement: a caller who wants
+naming checked runs a linter. Measured on identical inputs, `revive` and the deleted golens rule
+reported the same violations, and `revive` caught more.
 
-Underscores are treated as word boundaries and **preserved**, which is a deliberate
-divergence from golint. golint strips them outright, which would rewrite `usecase_test` to
-`usecasetest` and `RAMFS_MAGIC` to `RAMFSMAGIC` — both wrong, and the latter would fire on
-every constant block in the standard library. `TestUnderscoresArePreserved` pins this.
+**The three attempts are the evidence.** This went wrong twice before landing, and the sequence
+is the useful part.
+
+1. `camelCaseId`, a local dialect where every initialism is lowercased. Implemented faithfully;
+   **4,119 diagnostics on the Go standard library**, including `isASCII` and `ensureEOF`, and 11
+   on ordinary idiomatic Go. Every one wrong. A convention check that reports correct code gets
+   switched off, which is worse than having none.
+2. Go's convention, implemented in-tree. Correct -- 0 on idiomatic Go, 850 on the standard
+   library, all genuine -- and by then indistinguishable from `revive`. Keeping a second
+   implementation of a rule the ecosystem already ships is a maintenance liability with no
+   user-visible benefit.
+3. Removal. Naming is `revive`'s; golens is not a linter.
+
+The one capability genuinely lost: `revive` cannot run outside a module (`directory prefix .
+does not contain main module`), so for a loose file handed to an agent outside any repository,
+golens was the only thing that could answer the naming question. That is a real gap, and it is
+the wrong tool to fill it -- a tool whose subject is structural facts about code should not
+become the one that grades it.
+
+`TestCheckDoesNotJudgeStyle` and `TestCheckAcrossFilesReportsNothingStructural` pin the
+boundary, so naming cannot quietly return through a new flag.
+
 
 ### D10 · Engine interface
 
@@ -191,7 +198,6 @@ internal/engine/goast/    the only package importing go/parser, go/ast, go/token
 internal/usecase/         outline, get, bounds, check orchestration
 internal/cli/             cobra wiring only
 internal/format/          human, json, compact encoders
-internal/naming/          initialism dictionary + convention check
 ```
 
 Import direction is one-way (`cli → usecase → domain`, `engine/goast → domain`), so the
@@ -232,7 +238,7 @@ convention.
 | A4 | Every JSON payload parses into a struct and carries `schema_version: 1`. |
 | A5 | `--compact` output contains no information absent from the full human output. |
 | A6 | `get --bounds-only --json` and `bounds --json` produce identical payloads. |
-| A7 | `go test ./...` includes a repo-wide naming-convention test; zero violations. |
+| A7 | golens never reports a style violation. A file whose only irregularity is naming produces no diagnostics and exit 0. |
 | A8 | Single-file read+parse is < 5 ms at P95 over a representative corpus (benchmark-gated). |
 | A9 | Release binary < 15 MB. |
 | A10 | `go build` with `CGO_ENABLED=0` produces no cgo dependencies. |
@@ -310,16 +316,19 @@ Replace **Checks Performed** with:
 
 ### 5.6 §3.1 Codebase Standards
 
-> **Initialism Enforcements (per user AGENTS.md)**: Identifiers must adhere to Go's own
-> initialism convention, the rule golint popularised and staticcheck carries as ST1003.
-> An initialism from the fixed dictionary is written consistently within an identifier —
-> `ID`, `URL`, `JSON`, `HTTP` — so `userID` and `HTTPHandler` are correct and `userId`
-> and `HttpHandler` are reported. An initialism stays lowercase only at the front of an
-> identifier that already begins lowercase, so `urlPath` and `jsonBody` are correct.
-> Underscores are word boundaries and are preserved rather than stripped, so
-> `usecase_test` and `RAMFS_MAGIC` are left untouched. No per-identifier exceptions exist; the fixed
-> initialism dictionary ships with the checker. Enforcement is a repo-wide AST test that runs
-> under `go test`, exposed generally as `golens check --naming` (default off).
+> **No style enforcement by the tool**: `golens` reports structural facts about a codebase and
+> never judges style — no naming check, no formatting check, no idiom check. A command asked
+> "is this file valid" or "what is in this file" must not answer "and also your identifiers are
+> spelled wrong". Style enforcement belongs to a linter, which a caller opts into explicitly.
+> See D9.
+>
+> **This repository's own naming**: golens' own source follows Go's initialism convention, the
+> rule golint popularised and staticcheck carries as ST1003. An initialism is written
+> consistently within an identifier — `ID`, `URL`, `JSON`, `HTTP` — so `userID` and
+> `HTTPHandler` are correct; it stays lowercase only at the front of an identifier that already
+> begins lowercase, so `urlPath` and `jsonBody` are correct. Enforced by `revive`'s `var-naming`
+> rule in CI, not by golens itself. The distinction is the point: golens' source follows a
+> convention, and golens does not impose one.
 >
 > **Package Layout.** One-way import direction `cli → usecase → domain`, with
 > `engine/goast` and `naming` depending only on `domain`. Only `engine/goast` may import

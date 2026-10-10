@@ -192,18 +192,6 @@ func BenchmarkCheck(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var stdout, stderr bytes.Buffer
-		_ = Check(engine, ".", &stdout, &stderr, format.Options{}, false)
-	}
-}
-
-// BenchmarkCheckNaming measures the naming check, which is the other mode of check.
-func BenchmarkCheckNaming(b *testing.B) {
-	engine := goast.New()
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		var stdout, stderr bytes.Buffer
-		_ = Check(engine, ".", &stdout, &stderr, format.Options{}, true)
+		_ = Check(engine, ".", &stdout, &stderr, format.Options{})
 	}
 }

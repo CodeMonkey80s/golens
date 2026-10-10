@@ -22,39 +22,51 @@ or grep and hope. `golens` parses the file properly and answers structurally, th
 byte offsets precise enough to edit with.
 
 ```console
-$ golens outline internal/naming/naming.go --depth 1
-file: internal/naming/naming.go
-package: naming
+$ golens outline internal/domain/domain.go --depth 1
+file: internal/domain/domain.go
+package: domain
 
 IMPORTS
-  • sort
-  • strings
+  • fmt
+  • strconv
 
-TYPES & STRUCTS (lines 40-43)
-  • type Violation struct (lines 40-43)
+TYPES & STRUCTS (lines 18-276)
+  • type Kind string (line 18)
+  • type Bounds struct (lines 42-47)
+  • type Node struct (lines 103-130)
+  • type Symbol struct (lines 185-196)
+  • type Document struct (lines 205-221)
+  • type Engine interface (lines 268-270)
 
-FUNCTIONS & METHODS (lines 45-174)
-  • func (s Violation) String() string (line 45)
-  • func Check(identifiers []string) []Violation (lines 59-72)
-  • func violates(ident string) (string, bool) (lines 80-90)
+FUNCTIONS & METHODS (lines 51-286)
+  • func (b Bounds) Valid() bool (lines 51-53)
+  • func (b Bounds) LineCount() int (lines 57-62)
+  • func (b Bounds) ByteLen() int (lines 65-70)
+  • func (n Node) Declaration() string (lines 139-167)
 ```
 
 ```console
-$ golens get Violation.String internal/naming/naming.go
-File: internal/naming/naming.go
-Symbol: Violation.String
-Lines: 45 (1 line)
+$ golens get Bounds.ByteLen internal/domain/domain.go
+File: internal/domain/domain.go
+Symbol: Bounds.ByteLen
+Lines: 65-70 (6 lines)
 
-func (v Violation) String() string { return v.Identifier + ": " + v.Reason }
+func (b Bounds) ByteLen() int {
+	if b.EndByte <= b.StartByte {
+		return 0
+	}
+	return b.EndByte - b.StartByte
+}
 ```
 
 ```console
-$ golens bounds Initialisms internal/naming/naming.go
-Initialisms  line 22  bytes 916-927
+$ golens bounds Bounds.ByteLen internal/domain/domain.go
+Bounds.ByteLen  lines 65-70  bytes 1996-2106
 ```
 
-That last line is the point. To edit `Initialisms` you seek to 916 and write 11 bytes. No fuzzy
-matching, no re-reading the file to find out where you ended up.
+That last line is the point. To edit `ByteLen` you seek to 1996 and write 110 bytes — exactly
+the length of the text `get` returned. No fuzzy matching, no re-reading the file to find out
+where you ended up.
 
 ---
 
@@ -119,8 +131,11 @@ Fast validation — no type checker, no module resolution.
 
 | Flag | Effect |
 |---|---|
-| `--naming` | Report Go initialism violations (`userId`, `dbUrl`) *instead of* the syntax checks |
 | `--json`, `--compact` | As above |
+
+`check` reports structural faults only. It does not judge style: no naming convention, no
+formatting, no idiom. Those belong to a linter, which is something a caller opts into rather
+than something they inherit by asking a structural question.
 
 Checks performed:
 
@@ -257,15 +272,18 @@ $ go vet ./...
 $ go build -o golens ./cmd/golens
 ```
 
-**Use `-count=1`.** Four packages assert facts about the build graph or the source tree rather
-than about their own test inputs — `internal/arch` shells out to `go list -deps`,
-`internal/naming` scans this repository, and `selfcheck_test.go` and
-`TestRepositoryPassesItsOwnCheck` walk the tree. Go's test cache does not invalidate on those,
-so a stale `ok` is possible. This has hidden a real failure once.
+**Use `-count=1`.** Three packages assert facts about the build graph or the source tree rather
+than about their own test inputs — `internal/arch` shells out to `go list -deps`, and
+`selfcheck_test.go` and `TestRepositoryPassesItsOwnCheck` walk the tree. Go's test cache does not
+invalidate on those, so a stale `ok` is possible. This has hidden a real failure once.
 
-`golens check ./internal` and `./cmd`, and `golens check . --naming`, all pass on this
-repository. The tool checks itself in CI, which is how a false positive in its namespace check
-was caught.
+`golens check ./internal` and `./cmd` both pass on this repository. The tool checks itself in CI,
+which is how a false positive in its namespace check was caught.
+
+`golangci-lint` runs in CI too. Among the rules it enforces is `revive`'s `var-naming`, which
+holds this repository to Go's initialism convention (`userID`, `HTTPHandler`, not `userId`,
+`HttpHandler`). Naming is the linter's job, not the tool's: `golens` describes code, it does not
+grade it.
 
 CI runs on every push and pull request: tests, the race detector, `go vet`, a `gofmt` gate, the
 15 MB binary budget, the no-cgo check, and `golens` on its own source.
@@ -279,14 +297,13 @@ internal/engine/goast/ the only package importing go/parser, go/ast, go/token
 internal/usecase/      command orchestration and error classification
 internal/cli/          cobra wiring and exit-code mapping; imports no engine
 internal/format/       human, JSON and compact renderers
-internal/naming/       Go initialism convention checker
 internal/arch/         structural tests enforcing the boundaries above
 internal/testfixture/  shared fixtures
 ```
 
-Import direction is one-way: `cli → usecase → domain`, with `engine/goast` and `naming`
-depending only on `domain`. `internal/arch` enforces this as a test rather than as a convention,
-so a violation fails the build.
+Import direction is one-way: `cli → usecase → domain`, with `engine/goast` depending only on
+`domain`. `internal/arch` enforces this as a test rather than as a convention, so a violation
+fails the build.
 
 ### Performance
 

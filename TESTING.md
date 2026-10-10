@@ -314,34 +314,54 @@ import.
 
 ☐
 
-## 14. Naming check against your own style
+## 14. `check` stays out of style
+
+`golens` reports structural faults and nothing else. This case proves the boundary holds, which
+matters because a style check that returns unasked is the kind of thing an agent acts on.
+
+Write a file that is valid Go and badly named:
 
 ```console
-$ /tmp/golens check . --naming 2>&1 | head -20
-$ /tmp/golens check . --naming 2>&1 | wc -l
+$ cat > /tmp/styled.go <<'EOF'
+package p
+
+type HttpHandler struct{}
+type DbUrl struct{}
+
+func UserId() {}
+EOF
+$ /tmp/golens check /tmp/styled.go 2>&1; echo "exit=$?"
 ```
 
-Look for: every reported identifier really is a mixed-case initialism — `userId`, `dbUrl`,
-`HttpHandler`. Each diagnostic names the fix: "userId should be userID".
-
-Two classes must **not** be reported, and either one is a defect rather than a limitation:
-
-- **All-caps constants.** `RAMFS_MAGIC` and `VMHGFS_SUPER_MAGIC` follow a different convention
-  altogether. Underscores are treated as word boundaries and preserved, so they are never
-  rewritten and never reported.
-- **Names the Go project itself uses.** `isASCII`, `ensureEOF`, `APIResponse` and `UserID` are
-  ordinary Go. Run the check over a copy of a well-known repository and confirm the count is
-  small and every finding is defensible:
+Look for: **no output, exit 0.** Every identifier there violates Go's initialism convention and
+golens must say nothing about it.
 
 ```console
-$ /tmp/golens check $(go env GOROOT)/src --naming 2>&1 | wc -l
+$ /tmp/golens check /tmp/styled.go --naming; echo "exit=$?"
 ```
 
-Note the `2>&1`: `check` writes diagnostics to stderr, so a pipe without it silently sees
-nothing and the raw lines scroll past unfiltered.
+Look for: `unknown flag: --naming`, exit 1. The flag is gone rather than merely ignored.
 
-Failure: a plain camelCase name reported as a violation, an all-caps identifier reported at
-all, or a diagnostic whose suggested fix is not valid Go.
+Confirm the structural checks still fire on the same file — this is the other half, because a tool
+that has given up on style should not have given up on parsing:
+
+```console
+$ cat > /tmp/broken.go <<'EOF'
+package p
+
+import "fmt"
+
+func F( {
+EOF
+$ /tmp/golens check /tmp/broken.go 2>&1; echo "exit=$?"
+```
+
+Look for: a parse diagnostic on stderr and exit 3.
+
+Failure: any style diagnostic from `check`, or a structural diagnostic going missing.
+
+Note the `2>&1` throughout: `check` writes diagnostics to stderr, so a pipe without it silently
+sees nothing and the raw lines scroll past unfiltered.
 
 ☐
 

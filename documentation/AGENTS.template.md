@@ -113,7 +113,9 @@ removes decoration, never information. `--json` gives a machine-readable payload
 may miss cases, but it is built never to report an import that is in use. Cross-check anything
 surprising against `go build` before acting on it.
 
-**`--naming` is Go's convention, not a local one.** It requires `ID`, `URL`, `JSON` and `HTTP` —
-the rule golint popularised and staticcheck carries as ST1003 — so `userId` and `dbUrl` are
-reported while `userID` and `HTTPHandler` are correct. It is off by default because most
-repositories already satisfy it; turn it on to catch drift.
+**`check` does not judge style.** It reports parse failures, malformed import paths, unused
+imports and duplicate declarations — nothing else. No naming convention, no formatting, no idiom.
+If you want naming checked, run a linter: `golangci-lint run` with `revive`'s `var-naming`
+enforces Go's initialism convention (`userID`, `HTTPHandler`), and `gofmt -l` covers formatting.
+That separation is deliberate: `golens` describes code, it does not grade it, so its output never
+mixes a structural fact with an opinion you did not ask for.

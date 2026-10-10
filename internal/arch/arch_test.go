@@ -103,19 +103,15 @@ func TestDomainHasNoGolensDependencies(t *testing.T) {
 	}
 }
 
-// TestUsecaseDependsOnlyOnDomainFormatAndNaming covers D20's inward direction: the usecase
-// layer may use the leaf packages domain, format and naming, but never cobra, an engine or
-// the AST packages.
+// TestUsecaseDependsOnlyOnDomainAndFormat covers D20's inward direction: the usecase layer may
+// use the leaf packages domain and format, but never cobra, an engine or the AST packages.
 //
-// naming is a leaf like format -- a pure function over identifiers with no project
-// dependencies -- so depending on it points inward, not sideways. It is listed explicitly
-// rather than loosened into a prefix rule so that adding a new sibling package still fails
-// this test and gets a deliberate decision.
-func TestUsecaseDependsOnlyOnDomainFormatAndNaming(t *testing.T) {
+// The allowed set is listed explicitly rather than loosened into a prefix rule so that adding a
+// new sibling package still fails this test and gets a deliberate decision.
+func TestUsecaseDependsOnlyOnDomainAndFormat(t *testing.T) {
 	allowed := map[string]bool{
 		modulePath + "/internal/domain":  true,
 		modulePath + "/internal/format":  true,
-		modulePath + "/internal/naming":  true,
 		modulePath + "/internal/usecase": true,
 	}
 
@@ -124,17 +120,6 @@ func TestUsecaseDependsOnlyOnDomainFormatAndNaming(t *testing.T) {
 			continue
 		}
 		t.Errorf("usecase must not import %s", dep)
-	}
-}
-
-// TestNamingIsALeaf guards the assumption behind allowing usecase to depend on naming: if it
-// ever gains a project dependency, the arrow stops pointing inward and this test says so.
-func TestNamingIsALeaf(t *testing.T) {
-	for _, dep := range deps(t, modulePath+"/internal/naming") {
-		if dep == modulePath+"/internal/naming" {
-			continue
-		}
-		t.Errorf("naming must be a leaf package, but it imports %s", dep)
 	}
 }
 

@@ -29,7 +29,7 @@ func TestExternalTestPackageIsNotAConflict(t *testing.T) {
 	testfixture.Write(t, dir, "external_test.go", "package p_test\n\nfunc helper() int { return 2 }\n")
 
 	var stdout, stderr bytes.Buffer
-	err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{}, false)
+	err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{})
 	if err != nil {
 		t.Errorf("a helper in both p and p_test must not be a conflict:\n%s", stderr.String())
 	}
@@ -43,7 +43,7 @@ func TestDistinctNamespacesDoNotConflict(t *testing.T) {
 	testfixture.Write(t, dir, "two/p.go", "package p\n\nfunc Shared() {}\n")
 
 	var stdout, stderr bytes.Buffer
-	if err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{}, false); err != nil {
+	if err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{}); err != nil {
 		t.Errorf("the same package name in two directories is legal:\n%s", stderr.String())
 	}
 }
@@ -56,7 +56,7 @@ func TestSameNamespaceInSameDirectoryConflicts(t *testing.T) {
 	testfixture.Write(t, dir, "b.go", "package p\n\nfunc Shared() {}\n")
 
 	var stdout, stderr bytes.Buffer
-	if err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{}, false); err == nil {
+	if err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{}); err == nil {
 		t.Error("two files in one package declaring the same name must conflict")
 	}
 }
@@ -81,7 +81,7 @@ func TestRepositoryPassesItsOwnCheck(t *testing.T) {
 	root = root + "/../.."
 
 	var stdout, stderr bytes.Buffer
-	err = usecase.Check(goast.New(), root, &stdout, &stderr, format.Options{}, false)
+	err = usecase.Check(goast.New(), root, &stdout, &stderr, format.Options{})
 	if err != nil {
 		for _, line := range strings.Split(strings.TrimRight(stderr.String(), "\n"), "\n") {
 			if strings.Contains(line, "/testdata/") {

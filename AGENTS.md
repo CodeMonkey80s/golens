@@ -23,21 +23,21 @@ Do not change either without reading `documentation/decisions.md` first.
 ```console
 $ go build ./...          # build
 $ go test ./...           # full suite
-$ go test -short ./...    # skips the repository-wide naming scan
+$ go test -short ./...    # skips the tests that walk this repository
 $ go vet ./...
 $ gofmt -l .              # must print nothing
+$ golangci-lint run ./... # includes revive's var-naming
 ```
 
 `internal/arch` asserts layering: the CLI must not import an engine, and the domain must not
 import `go/ast`. It fails the build if those boundaries are crossed, which is deliberate.
 
-`internal/naming/scan_test.go` checks this repository's own source against Go's initialism
-convention. It runs in CI and is what makes the convention real. The rule is golint's, now
-carried by staticcheck as ST1003, so `ID` and `JSON` are correct and `Id` and `Json` are
-violations — the same answer the rest of the Go tooling gives. An initialism stays lowercase
-only at the front of an identifier that already begins lowercase, so `urlPath` is correct
-and `userID` is required. Underscores are word boundaries rather than noise, so `usecase_test`
-and `RAMFS_MAGIC` are left alone.
+**Naming is the linter's job, not golens'.** `golens check` reports structural faults and never
+style. This repository follows Go's initialism convention — `userID` and `HTTPHandler`, not
+`userId` and `HttpHandler` — and `revive`'s `var-naming` rule enforces it in CI. An initialism
+stays lowercase only at the front of an identifier that already begins lowercase, so `urlPath`
+is correct. Do not add a naming check to the tool: `decisions.md` D9 records why, including the
+4,119 false positives an earlier version produced on the standard library.
 
 ## Layout
 
@@ -49,19 +49,17 @@ and `RAMFS_MAGIC` are left alone.
 | `internal/engine/goast` | AST to domain model |
 | `internal/domain` | shared types, including `Declaration()` |
 | `internal/format` | human and JSON rendering |
-| `internal/naming` | the initialism rule |
 
 ## Traps
 
 **`domain.Node.Receiver` is the receiver as the source spells it**, `"s *UserStore"`, not a bare
-type. It was a bare type once, and `check.go` grew a `strings.TrimPrefix(n.Receiver, "*")` that
-silently depended on that shape; changing the format again fed `"s *UserStore"` to the naming
-check as if it were an identifier. If you change it, grep for `Receiver` in `internal/usecase`.
+type. If you change it, grep for `Receiver` in `internal/usecase` — the naming check that once
+consumed it is gone, but the format is still load-bearing for `get` and `bounds`.
 
-**The naming check feeds on rendered nodes, not the AST.** A declaration head that does not
-match the source is an edit hazard: an agent copying `type Stack struct` for a real
-`type Stack[T any] struct` writes code that will not compile. `TestDeclarationHeadsMatchSource`
-in `internal/engine/goast` pins the constructs that previously diverged.
+**Declaration heads must match the source.** A rendered head that does not is an edit hazard: an
+agent copying `type Stack struct` for a real `type Stack[T any] struct` writes code that will not
+compile. `TestDeclarationHeadsMatchSource` in `internal/engine/goast` pins the constructs that
+previously diverged, including the alias `=` and the receiver variable name.
 
 **`check` deliberately under-reports.** A false positive on an import that is in use would have
 an agent delete working code, so the check stays silent whenever it cannot determine the local
