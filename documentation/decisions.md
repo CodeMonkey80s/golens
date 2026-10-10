@@ -98,21 +98,43 @@ Known limitation, documented rather than hidden: the unused-import check can rep
 false positive when an import's local name is shadowed or appears only in a comment. This
 is acceptable for a fast checker and is stated as best-effort in the spec.
 
-### D9 · `camelCaseId`
+### D9 · Initialism convention
+
+> **Revised.** This decision originally specified a `camelCaseId` rule that lowercased every
+> initialism — `Id` not `ID`, `Http` not `HTTP`, `jsonAst` not `jsonAST`. It was implemented
+> faithfully and it was wrong. Run against the Go standard library it produced **4,119
+> diagnostics**, including names as uncontroversial as `isASCII` and `ensureEOF`, and against
+> ordinary idiomatic Go, 11. A convention check that reports correct code gets switched off,
+> which is worse than having no check: the project was enforcing a dialect no other Go tool
+> shares.
+>
+> The rule is now Go's own — golint's, carried by staticcheck as ST1003 — so `golens check
+> --naming` agrees with `revive` and `staticcheck` on the same input. The same two runs now
+> yield **0** and **850**, and every one of the 850 is a genuine mixed-case initialism
+> (`Uid`, `TcId`, `Id`) in real Go code.
+>
+> The rest of this decision stands.
 
 Primary guard is an in-repo test that walks the project's own AST — it cannot be bypassed
 and fails at `go test`. A `golens check --naming` flag (default off) reuses the same engine
 for general use. A separate `lint` command is rejected: it would contradict §2.4's
 positioning.
 
-The rule is **lowercasing**, not merely de-capitalising at a word boundary — `jsonAst`,
-not `jsonAST` and not `JsonAst`. It applies uniformly to standalone identifiers too, so
-`Ok` not `OK`, `Id` not `ID`, `Http` not `HTTP`. This is surprising enough to be worth
-stating explicitly, but exceptions would require a maintained allow-list and make the check
-non-deterministic. The initialism dictionary is fixed and shipped with the checker:
-ID, AST, HTTP, JSON, URL, URI, API, CPU, GPU, UUID, SQL, TLS, SSL, XML, HTML, CLI, OS, UI,
-DB, IP, TCP, UDP, SSH, GC, EOF, RPC, TLS. No per-identifier escape hatch; rename the field
-instead.
+An initialism is written consistently within an identifier — `ID`, `URL`, `JSON`, `HTTP` —
+so `userID` and `HTTPHandler` are correct and `userId` and `HttpHandler` are reported, each
+with its fix named. An initialism stays lowercase only at the front of an identifier that
+already begins lowercase, so `urlPath` and `jsonBody` are correct; that single branch is what
+separates this rule from a blunt all-caps check.
+
+The initialism dictionary is golint's, fixed and shipped with the checker: ACL, API, ASCII,
+CPU, CSS, DNS, EOF, GUID, HTML, HTTP, HTTPS, ID, IP, JSON, LHS, QPS, RAM, RHS, RPC, SLA,
+SMTP, SQL, SSH, TCP, TLS, TTL, UDP, UI, UID, URI, URL, UTF8, UUID, VM, XML, XSRF, XSS. No
+per-identifier escape hatch; rename the field instead.
+
+Underscores are treated as word boundaries and **preserved**, which is a deliberate
+divergence from golint. golint strips them outright, which would rewrite `usecase_test` to
+`usecasetest` and `RAMFS_MAGIC` to `RAMFSMAGIC` — both wrong, and the latter would fire on
+every constant block in the standard library. `TestUnderscoresArePreserved` pins this.
 
 ### D10 · Engine interface
 
@@ -288,11 +310,14 @@ Replace **Checks Performed** with:
 
 ### 5.6 §3.1 Codebase Standards
 
-> **Initialism Enforcements (per user AGENTS.md)**: Identifiers must strictly adhere to the
-> `camelCaseId` pattern. Traditional Go rules (`camelCaseID`) are explicitly overridden. The
-> rule lowercases the initialism everywhere it appears, including at the start of an
-> identifier, and applies uniformly to standalone identifiers — `Ok` not `OK`, `Id` not
-> `ID`, `httpHandler` not `HTTPHandler`. No per-identifier exceptions exist; the fixed
+> **Initialism Enforcements (per user AGENTS.md)**: Identifiers must adhere to Go's own
+> initialism convention, the rule golint popularised and staticcheck carries as ST1003.
+> An initialism from the fixed dictionary is written consistently within an identifier —
+> `ID`, `URL`, `JSON`, `HTTP` — so `userID` and `HTTPHandler` are correct and `userId`
+> and `HttpHandler` are reported. An initialism stays lowercase only at the front of an
+> identifier that already begins lowercase, so `urlPath` and `jsonBody` are correct.
+> Underscores are word boundaries and are preserved rather than stripped, so
+> `usecase_test` and `RAMFS_MAGIC` are left untouched. No per-identifier exceptions exist; the fixed
 > initialism dictionary ships with the checker. Enforcement is a repo-wide AST test that runs
 > under `go test`, exposed generally as `golens check --naming` (default off).
 >

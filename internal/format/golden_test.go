@@ -315,9 +315,9 @@ func TestCompactHasNoDuplicateRecords(t *testing.T) {
 	}
 }
 
-// TestJsonDepthMatchesHumanDepth confirms the two renderings select the same declarations, as
+// TestJSONDepthMatchesHumanDepth confirms the two renderings select the same declarations, as
 // specification 2.1 requires.
-func TestJsonDepthMatchesHumanDepth(t *testing.T) {
+func TestJSONDepthMatchesHumanDepth(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFixture(t, dir, "store.go", storeFixture)
 	engine := goast.New()
@@ -327,11 +327,11 @@ func TestJsonDepthMatchesHumanDepth(t *testing.T) {
 		if err := usecase.Outline(engine, path, depth, &human, format.Options{}); err != nil {
 			t.Fatalf("Outline human: %v", err)
 		}
-		if err := usecase.Outline(engine, path, depth, &jsonBuf, format.Options{Json: true}); err != nil {
+		if err := usecase.Outline(engine, path, depth, &jsonBuf, format.Options{JSON: true}); err != nil {
 			t.Fatalf("Outline json: %v", err)
 		}
 
-		names := collectJsonNames(t, jsonBuf.Bytes())
+		names := collectJSONNames(t, jsonBuf.Bytes())
 
 		for name := range names {
 			if !strings.Contains(human.String(), name) {
@@ -376,7 +376,7 @@ func writeFixture(t *testing.T, dir, name, src string) string {
 	return path
 }
 
-func collectJsonNames(t *testing.T, data []byte) map[string]bool {
+func collectJSONNames(t *testing.T, data []byte) map[string]bool {
 	t.Helper()
 
 	var files []format.OutlineFile

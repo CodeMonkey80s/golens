@@ -19,7 +19,7 @@ const SchemaVersion = 1
 
 // Options controls decoration. Compact removes decoration without removing information.
 type Options struct {
-	Json    bool
+	JSON    bool
 	Compact bool
 }
 
@@ -74,8 +74,8 @@ type OutlineFile struct {
 	Nodes         []OutlineNode `json:"nodes,omitempty"`
 }
 
-// WriteJson encodes v to w, indented unless compact is set.
-func WriteJson(w io.Writer, v any, compact bool) error {
+// WriteJSON encodes v to w, indented unless compact is set.
+func WriteJSON(w io.Writer, v any, compact bool) error {
 	enc := json.NewEncoder(w)
 	if !compact {
 		enc.SetIndent("", "  ")

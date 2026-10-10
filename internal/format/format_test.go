@@ -109,8 +109,8 @@ func TestWriteGetHuman(t *testing.T) {
 // the first key to detect format drift.
 func TestSchemaVersionIsFirstField(t *testing.T) {
 	var buf bytes.Buffer
-	if err := WriteJson(&buf, Bounds(sampleSym(), "user.go"), false); err != nil {
-		t.Fatalf("WriteJson: %v", err)
+	if err := WriteJSON(&buf, Bounds(sampleSym(), "user.go"), false); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
 	}
 
 	out := buf.String()
@@ -128,15 +128,15 @@ func TestSchemaVersionIsFirstField(t *testing.T) {
 	}
 }
 
-// TestCompactJsonIsValidAndSmaller verifies --compact stays parseable while dropping
+// TestCompactJSONIsValidAndSmaller verifies --compact stays parseable while dropping
 // indentation. Compact must never change the data, only its presentation.
-func TestCompactJsonIsValidAndSmaller(t *testing.T) {
+func TestCompactJSONIsValidAndSmaller(t *testing.T) {
 	var pretty, compact bytes.Buffer
-	if err := WriteJson(&pretty, Bounds(sampleSym(), "user.go"), false); err != nil {
-		t.Fatalf("WriteJson pretty: %v", err)
+	if err := WriteJSON(&pretty, Bounds(sampleSym(), "user.go"), false); err != nil {
+		t.Fatalf("WriteJSON pretty: %v", err)
 	}
-	if err := WriteJson(&compact, Bounds(sampleSym(), "user.go"), true); err != nil {
-		t.Fatalf("WriteJson compact: %v", err)
+	if err := WriteJSON(&compact, Bounds(sampleSym(), "user.go"), true); err != nil {
+		t.Fatalf("WriteJSON compact: %v", err)
 	}
 
 	if !json.Valid(compact.Bytes()) {
@@ -166,11 +166,11 @@ func TestGetBoundsOnlyMatchesBounds(t *testing.T) {
 	getPayload := Get(sym, "user.go", "ignored", false)
 
 	var bufA, bufB bytes.Buffer
-	if err := WriteJson(&bufA, boundsPayload, true); err != nil {
-		t.Fatalf("WriteJson: %v", err)
+	if err := WriteJSON(&bufA, boundsPayload, true); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
 	}
-	if err := WriteJson(&bufB, getPayload, true); err != nil {
-		t.Fatalf("WriteJson: %v", err)
+	if err := WriteJSON(&bufB, getPayload, true); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
 	}
 
 	if bufA.String() != bufB.String() {
@@ -253,12 +253,12 @@ func TestOutlineSingleLineRange(t *testing.T) {
 	}
 }
 
-// TestOutlineJsonIsArrayShaped confirms the JSON outline is a per-file object with the
+// TestOutlineJSONIsArrayShaped confirms the JSON outline is a per-file object with the
 // documented field names and depth limiting applied.
-func TestOutlineJsonShape(t *testing.T) {
+func TestOutlineJSONShape(t *testing.T) {
 	var buf bytes.Buffer
-	if err := WriteJson(&buf, Outline(sampleDoc(), 1), false); err != nil {
-		t.Fatalf("WriteJson: %v", err)
+	if err := WriteJSON(&buf, Outline(sampleDoc(), 1), false); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
 	}
 
 	var out OutlineFile

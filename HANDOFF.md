@@ -86,7 +86,7 @@ tool against real repositories — `duf` and `GoDiabolicalDecorations` — rathe
 | `939d6fb` | `/vN` module suffixes bound as the package name | `math/rand/v2` bound as `v2`; the unused-import check would call a live import dead |
 | `16cbee9` | Redeclarations across mutually exclusive build constraints | **24 false positives on duf**, a repo that compiles cleanly on five platforms. Now evaluates constraints over a GOOS × GOARCH × cgo matrix |
 | `16cbee9` | Unused imports whose local name cannot be derived | `github.com/mattn/go-runewidth` → `go-runewidth`, not an identifier; check now stays silent rather than guessing |
-| `16cbee9` | camelCaseId applied to `SCREAMING_SNAKE_CASE` | Flagged every all-caps constant by construction. Now exempt, narrowly — an underscore is required, so a bare `OK` or `ID` is still banned |
+| `16cbee9` | camelCaseId applied to `SCREAMING_SNAKE_CASE` | Flagged every all-caps constant by construction. Superseded entirely by the initialism rule, which treats underscores as preserved boundaries |
 | `b89e0f3` | `outline` never showed a file's build constraint | An agent could edit `filesystems_windows.go` on linux and conclude the tool lied |
 
 The three `16cbee9` classes were found by testing against a real repository, and every one is a false
@@ -226,7 +226,7 @@ misfiled as cosmetic; it was the most dangerous defect the plan ever shipped.
 | `var x = 5` shows no `= 5` in outline | Cosmetic, and unlike the alias case it is not an edit hazard: the byte span covers only the name, and writing the name back is what the specification requires |
 | `check .` exits 3 on `testdata/store/store.go` | Intentional — the unused import gives the outline golden a stable shape |
 | Unused-import false negatives | Accepted: comment-only references and shadowed locals. Never false positives, verified empirically against three repositories |
-| `userIdX` naming false positive | Accepted: resolving it needs an English dictionary, not an approved dependency |
+| `userIdX` naming false positive | **Resolved by the rule change.** Under Go's convention `userIdX` correctly reports as `userIDX`; the old rule's ambiguity does not arise |
 
 ## Read first
 

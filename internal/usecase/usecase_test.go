@@ -81,14 +81,14 @@ func TestOutlineHuman(t *testing.T) {
 	}
 }
 
-// TestOutlineJsonIsAlwaysArray pins the JSON shape decision: an array of per-file objects
+// TestOutlineJSONIsAlwaysArray pins the JSON shape decision: an array of per-file objects
 // even for a single file, so the schema never varies with input type.
-func TestOutlineJsonIsAlwaysArray(t *testing.T) {
+func TestOutlineJSONIsAlwaysArray(t *testing.T) {
 	dir := t.TempDir()
 	path := write(t, dir, "user.go", userGo)
 
 	var buf bytes.Buffer
-	if err := Outline(engine(), path, DepthUnlimited, &buf, format.Options{Json: true}); err != nil {
+	if err := Outline(engine(), path, DepthUnlimited, &buf, format.Options{JSON: true}); err != nil {
 		t.Fatalf("Outline: %v", err)
 	}
 
@@ -191,7 +191,7 @@ func TestGetHumanAndBoundsAgree(t *testing.T) {
 	}
 
 	var p payload
-	if err := json.Unmarshal(mustJson(t, engine(), "UserStore.GetUser", path), &p); err != nil {
+	if err := json.Unmarshal(mustJSON(t, engine(), "UserStore.GetUser", path), &p); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
 
@@ -200,13 +200,13 @@ func TestGetHumanAndBoundsAgree(t *testing.T) {
 	}
 }
 
-// TestGetBoundsOnlyMatchesBoundsJson covers acceptance criterion A6 at the usecase level.
-func TestGetBoundsOnlyMatchesBoundsJson(t *testing.T) {
+// TestGetBoundsOnlyMatchesBoundsJSON covers acceptance criterion A6 at the usecase level.
+func TestGetBoundsOnlyMatchesBoundsJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := write(t, dir, "user.go", userGo)
 
 	var a, b bytes.Buffer
-	opts := format.Options{Json: true, Compact: true}
+	opts := format.Options{JSON: true, Compact: true}
 
 	if err := Get(engine(), "UserStore.GetUser", path, false, &a, opts); err != nil {
 		t.Fatalf("Get bounds-only: %v", err)
@@ -366,12 +366,12 @@ func TestCheckReportsParseErrorWithoutAborting(t *testing.T) {
 	}
 }
 
-func TestCheckJsonGoesToStdout(t *testing.T) {
+func TestCheckJSONGoesToStdout(t *testing.T) {
 	dir := t.TempDir()
 	path := write(t, dir, "user.go", "package p\n\nimport \"fmt\"\n\nfunc F() {}\n")
 
 	var stdout, stderr bytes.Buffer
-	err := Check(engine(), path, &stdout, &stderr, format.Options{Json: true}, false)
+	err := Check(engine(), path, &stdout, &stderr, format.Options{JSON: true}, false)
 	if err == nil {
 		t.Fatal("expected diagnostics error")
 	}
@@ -397,10 +397,10 @@ func TestCheckJsonGoesToStdout(t *testing.T) {
 	}
 }
 
-func mustJson(t *testing.T, e domain.Engine, name, path string) []byte {
+func mustJSON(t *testing.T, e domain.Engine, name, path string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := Get(e, name, path, false, &buf, format.Options{Json: true, Compact: true}); err != nil {
+	if err := Get(e, name, path, false, &buf, format.Options{JSON: true, Compact: true}); err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 	return buf.Bytes()

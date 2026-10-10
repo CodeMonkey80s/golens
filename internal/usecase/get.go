@@ -75,8 +75,8 @@ func Get(engine domain.Engine, name, target string, includeSource bool, w io.Wri
 		source = sym.Bounds.Source(doc.Source)
 	}
 
-	if opts.Json {
-		return format.WriteJson(w, format.Get(sym, filepath.ToSlash(sym.File), source, includeSource), opts.Compact)
+	if opts.JSON {
+		return format.WriteJSON(w, format.Get(sym, filepath.ToSlash(sym.File), source, includeSource), opts.Compact)
 	}
 	return format.WriteGetHuman(w, sym, filepath.ToSlash(sym.File), source, opts.Compact)
 }
@@ -95,8 +95,8 @@ func Bounds(engine domain.Engine, name, target string, w io.Writer, opts format.
 		return err
 	}
 
-	if opts.Json {
-		return format.WriteJson(w, format.Bounds(sym, filepath.ToSlash(target)), opts.Compact)
+	if opts.JSON {
+		return format.WriteJSON(w, format.Bounds(sym, filepath.ToSlash(target)), opts.Compact)
 	}
 	return format.WriteBoundsHuman(w, sym, filepath.ToSlash(target), opts.Compact)
 }

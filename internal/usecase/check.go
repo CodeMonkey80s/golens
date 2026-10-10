@@ -110,7 +110,7 @@ func analyse(doc domain.Document, namingOnly bool, pkg *packageSymbols) []Diagno
 
 // emit writes diagnostics in the requested form and reports whether any were found.
 func emit(diags []Diagnostic, stdout, stderr io.Writer, opts format.Options) error {
-	if opts.Json {
+	if opts.JSON {
 		payload := checkPayload{SchemaVersion: format.SchemaVersion}
 		for _, d := range diags {
 			payload.Diagnostics = append(payload.Diagnostics, jsonDiagnostic{
@@ -121,7 +121,7 @@ func emit(diags []Diagnostic, stdout, stderr io.Writer, opts format.Options) err
 				Message:  d.Message,
 			})
 		}
-		if err := format.WriteJson(stdout, payload, opts.Compact); err != nil {
+		if err := format.WriteJSON(stdout, payload, opts.Compact); err != nil {
 			return err
 		}
 	} else {
@@ -257,7 +257,7 @@ func receiverTypeIdentifier(receiver string) string {
 	return strings.TrimPrefix(receiver, "*")
 }
 
-// namingViolations reports identifiers in doc that break the camelCaseId convention.
+// namingViolations reports identifiers in doc that break the initialism convention.
 //
 // The check runs over the outline's node names rather than re-parsing: every declared name
 // the engine surfaced is already there, so this needs no second parse. Each name is

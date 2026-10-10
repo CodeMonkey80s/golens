@@ -2,21 +2,28 @@ package naming
 
 import "testing"
 
-// TestAllowedSpellings pins the specification's own examples. Anything here that fails is
-// a false positive, which would be the expensive error direction: a convention check that
-// cries wolf gets disabled.
+// TestAllowedSpellings pins the spellings Go's own convention requires. Anything here that
+// fails is a false positive, which would be the expensive error direction: a convention
+// check that cries wolf gets disabled.
 func TestAllowedSpellings(t *testing.T) {
 	allowed := []string{
-		// The specification's examples.
-		"userId", "jsonAst", "httpHandler", "Ok", "Id",
-		// One leading capital is ordinary camelCase, not an initialism.
-		"Ast", "Http", "Url", "Xml", "Uuid",
-		// Embedded, correctly lowercased.
-		"parseJson", "newHttpHandler", "userIdMap", "dbUrl", "astNodes",
-		// Not initialisms at all, or not dictionary words.
-		"identity", "ideas", "video", "audio", "index", "userIdX", "dbField",
-		// Acronyms Go spells as words.
-		"cpuCount", "ramUsage", "uiWidth", "okFlag",
+		// The convention's core: an initialism is capitals everywhere but the front.
+		"userID", "URL", "ID", "HTTPHandler", "parseJSON", "newHTTPClient",
+		"userIDMap", "dbURL", "IDField", "UTF8Count",
+		// Lowercase at the front of an identifier that starts lowercase. This is the
+		// branch that distinguishes the rule from a blunt all-caps check, and it is
+		// why jsonAst and httpHandler are correct here even though AST and HTTP
+		// appear in capitals nowhere.
+		"urlPath", "jsonBody", "httpClient", "idField", "jsonAst", "httpHandler",
+		// Ordinary camelCase with no initialism in it.
+		"astNodes", "IsValid", "identity", "ideas", "video", "audio", "index",
+		"cpuCount", "ramUsage", "uiWidth",
+		// Shapes this check must not touch. Underscores are word boundaries here, not
+		// something to strip, so a test package keeps its name and a constant block
+		// keeps its underscores.
+		"usecase_test", "arch_test", "RAMFS_MAGIC", "MAX_SIZE_2",
+		// Lowercase dictionary words that are not initialisms.
+		"json", "ast", "id", "valid", "least",
 	}
 
 	for _, id := range allowed {
@@ -26,16 +33,12 @@ func TestAllowedSpellings(t *testing.T) {
 	}
 }
 
-// TestBannedSpellings pins the specification's banned list plus the all-caps forms the
-// dictionary must catch.
+// TestBannedSpellings pins the mixed-case forms the dictionary must catch. These are what
+// the rule exists to report: an initialism spelled inconsistently within one identifier.
 func TestBannedSpellings(t *testing.T) {
 	banned := []string{
-		// The specification's examples.
-		"userID", "jsonAST", "HTTPHandler", "OK",
-		// Leading initialism merged with the next capital.
-		"ASTParser", "URLPath", "HTTPServer", "IDField",
-		// Embedded all-caps initialism.
-		"parseJSON", "userIDMap", "dbURL", "httpURLValue", "newHTTPClient",
+		"userId", "Url", "Uuid", "Xml", "Http", "Json", "Id",
+		"parseJson", "userIdMap", "dbUrl", "camelCaseId",
 	}
 
 	for _, id := range banned {
@@ -48,15 +51,14 @@ func TestBannedSpellings(t *testing.T) {
 // TestReasonNamesTheFix verifies a violation explains what to write instead, since the
 // output feeds a developer or agent that has to act on it.
 func TestReasonNamesTheFix(t *testing.T) {
-	v := Check([]string{"userID"})
+	v := Check([]string{"userId"})
 	if len(v) != 1 {
 		t.Fatalf("got %d violations, want 1", len(v))
 	}
-	if v[0].Identifier != "userID" {
-		t.Errorf("Identifier = %q, want userID", v[0].Identifier)
+	if v[0].Identifier != "userId" {
+		t.Errorf("Identifier = %q, want userId", v[0].Identifier)
 	}
-	// The reason names the offending word and the replacement, not the whole identifier.
-	for _, want := range []string{"ID", "id"} {
+	for _, want := range []string{"userId", "userID"} {
 		if !contains(v[0].Reason, want) {
 			t.Errorf("Reason %q should mention %q", v[0].Reason, want)
 		}
@@ -66,7 +68,7 @@ func TestReasonNamesTheFix(t *testing.T) {
 // TestOutputIsDeterministic covers ordering, which matters because this feeds both a test
 // assertion and an agent-facing diagnostic.
 func TestOutputIsDeterministic(t *testing.T) {
-	input := []string{"userID", "jsonAST", "HTTPHandler", "OK", "parseJSON"}
+	input := []string{"userId", "httpHandler", "parseJson", "dbUrl", "Json"}
 
 	first := Check(input)
 	for i := 0; i < 5; i++ {
@@ -107,21 +109,47 @@ func contains(s, sub string) bool {
 	return false
 }
 
-// TestKnownAmbiguityIsAccepted documents the one case this rule cannot resolve.
-//
-// "userIdX" is lexically identical to "userIDMap": an uppercase run followed by a lowercase
-// tail. In the second the run is ID merging into Map, which the rule reads as ID and flags;
-// in the first the run is IDX, a single token whose trailing x belongs to it. Distinguishing
-// them needs a dictionary of English words, which is not a dependency this project is
-// allowed.
-//
-// The rule resolves it toward "banned", because a false positive on a naming convention is
-// the failure that gets a check switched off, whereas a missed violation costs only a review
-// comment.
-func TestKnownAmbiguityIsAccepted(t *testing.T) {
-	for _, id := range []string{"userIdX"} {
+// TestLeadingLowercaseIsNotFlagged pins the branch that makes this rule usable rather than
+// merely strict. urlPath is correct Go, and a rule that reported it would be switched off.
+func TestLeadingLowercaseIsNotFlagged(t *testing.T) {
+	for _, id := range []string{"urlPath", "jsonBody", "httpClient", "id", "ipAddr"} {
 		if v := Check([]string{id}); len(v) != 0 {
-			t.Logf("%q reported as %s (accepted: ambiguous by design)", id, v[0].Reason)
+			t.Errorf("%q should be allowed: %s", id, v[0].Reason)
+		}
+	}
+}
+
+// TestUnderscoresArePreserved covers the deliberate divergence from golint, which strips
+// underscores outright and so would turn usecase_test into usecasetest and RAMFS_MAGIC
+// into RAMFSMAGIC. Both are names this check must leave exactly as they are.
+func TestUnderscoresArePreserved(t *testing.T) {
+	for _, id := range []string{
+		"usecase_test",
+		"arch_test",
+		"format_test",
+		"RAMFS_MAGIC",
+		"MAX_SIZE_2",
+		"VMHGFS_SUPER_MAGIC",
+	} {
+		fixed, bad := violates(id)
+		if bad {
+			t.Errorf("violates(%q) rewrote it to %q; underscores are boundaries, not noise", id, fixed)
+		}
+	}
+}
+
+// TestAllCapsConstantsAreUntouched covers the shape Go uses for constant blocks. These are
+// correct as written and the rule has nothing to say about them.
+func TestAllCapsConstantsAreUntouched(t *testing.T) {
+	for _, id := range []string{
+		"RAMFS_MAGIC",
+		"VMHGFS_SUPER_MAGIC",
+		"RPC_PIPEFS_SUPER_MAGIC",
+		"A",
+		"MAX_SIZE_2",
+	} {
+		if v := Check([]string{id}); len(v) != 0 {
+			t.Errorf("Check(%q) = %q, want no violation", id, v[0])
 		}
 	}
 }
@@ -130,14 +158,14 @@ func TestKnownAmbiguityIsAccepted(t *testing.T) {
 // and the collapse of a name repeated on one line.
 func TestCheckLocatedReportsDeclarationLine(t *testing.T) {
 	got := CheckLocated([]Identifier{
-		{Name: "userId", Line: 3},
-		{Name: "userID", Line: 7},
-		{Name: "HTTPHandler", Line: 12},
+		{Name: "userID", Line: 3},
+		{Name: "userId", Line: 7},
+		{Name: "dbUrl", Line: 12},
 	})
 
 	want := []Violation{
-		{Identifier: "HTTPHandler", Reason: "initialism must not be all caps per camelCaseId: HTTP should be http", Line: 12},
-		{Identifier: "userID", Reason: "initialism must not be all caps per camelCaseId: ID should be id", Line: 7},
+		{Identifier: "dbUrl", Reason: "initialism must be consistently cased per Go convention: dbUrl should be dbURL", Line: 12},
+		{Identifier: "userId", Reason: "initialism must be consistently cased per Go convention: userId should be userID", Line: 7},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("CheckLocated returned %d violations, want %d: %v", len(got), len(want), got)
@@ -154,8 +182,8 @@ func TestCheckLocatedReportsDeclarationLine(t *testing.T) {
 // as two distinct findings.
 func TestCheckLocatedCollapsesSameLineRepeats(t *testing.T) {
 	got := CheckLocated([]Identifier{
-		{Name: "userID", Line: 4},
-		{Name: "userID", Line: 4},
+		{Name: "userId", Line: 4},
+		{Name: "userId", Line: 4},
 	})
 	if len(got) != 1 {
 		t.Errorf("got %d violations for one name on one line, want 1: %v", len(got), got)
@@ -163,8 +191,8 @@ func TestCheckLocatedCollapsesSameLineRepeats(t *testing.T) {
 
 	// The same name on two lines is two declarations, so both are reported.
 	got = CheckLocated([]Identifier{
-		{Name: "userID", Line: 4},
-		{Name: "userID", Line: 9},
+		{Name: "userId", Line: 4},
+		{Name: "userId", Line: 9},
 	})
 	if len(got) != 2 {
 		t.Errorf("got %d violations for one name on two lines, want 2: %v", len(got), got)
@@ -175,9 +203,9 @@ func TestCheckLocatedCollapsesSameLineRepeats(t *testing.T) {
 // output across runs, since this feeds an agent-facing diagnostic.
 func TestCheckLocatedIsDeterministic(t *testing.T) {
 	input := []Identifier{
-		{Name: "userID", Line: 20},
-		{Name: "userID", Line: 5},
-		{Name: "HTTPHandler", Line: 9},
+		{Name: "userId", Line: 20},
+		{Name: "userId", Line: 5},
+		{Name: "dbUrl", Line: 9},
 	}
 
 	first := CheckLocated(input)
@@ -196,32 +224,16 @@ func TestCheckLocatedIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestScreamingSnakeConstantsAreExempt covers the exemption for constants, which follow a
-// different naming convention and cannot satisfy camelCaseId at all.
-//
-// Applying the rule to them reported every such constant by construction: RAMFS_MAGIC
-// contains RAM and became "RAM should be ram", VMHGFS_SUPER_MAGIC "VM should be vm". Three
-// of seven diagnostics on duf were of this kind.
-func TestScreamingSnakeConstantsAreExempt(t *testing.T) {
+// TestGoStdlibSpellingsAreClean is the check that decided this rule's direction. These are
+// names the Go project itself uses, and every one of them is correct Go.
+func TestGoStdlibSpellingsAreClean(t *testing.T) {
 	for _, id := range []string{
-		"RAMFS_MAGIC",
-		"VMHGFS_SUPER_MAGIC",
-		"RPC_PIPEFS_SUPER_MAGIC",
-		"A",
-		"MAX_SIZE_2",
+		"isASCII", "ensureEOF", "toASCII",
+		"APIResponse", "HTTPServer", "UserID", "GetUserByID",
+		"URL", "DefaultAPIURL", "MaxHTTPRequests",
 	} {
 		if v := Check([]string{id}); len(v) != 0 {
-			t.Errorf("Check(%q) = %q, want no violation: all-caps constants are not camelCase", id, v[0])
-		}
-	}
-}
-
-// TestBareAllCapsNamesStillBanned guards the exemption from swallowing the cases the
-// specification calls out. OK and ID have no underscore, so the rule still applies to them.
-func TestBareAllCapsNamesStillBanned(t *testing.T) {
-	for _, id := range []string{"OK", "ID", "URL", "HTTP"} {
-		if v := Check([]string{id}); len(v) == 0 {
-			t.Errorf("Check(%q) reported nothing, want a violation", id)
+			t.Errorf("%q is ordinary Go and must not be reported: %s", id, v[0].Reason)
 		}
 	}
 }

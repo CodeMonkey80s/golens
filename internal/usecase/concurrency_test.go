@@ -29,9 +29,9 @@ func TestConcurrentOutputMatchesSerial(t *testing.T) {
 
 	for _, opts := range []format.Options{
 		{},
-		{Json: true},
+		{JSON: true},
 		{Compact: true},
-		{Json: true, Compact: true},
+		{JSON: true, Compact: true},
 	} {
 		name := describeOptions(opts)
 
@@ -251,9 +251,9 @@ func checkWithProcs(t *testing.T, dir string, procs int) string {
 
 func describeOptions(opts format.Options) string {
 	switch {
-	case opts.Json && opts.Compact:
+	case opts.JSON && opts.Compact:
 		return "json-compact"
-	case opts.Json:
+	case opts.JSON:
 		return "json"
 	case opts.Compact:
 		return "compact"

@@ -258,16 +258,16 @@ func TestHelpIsAvailable(t *testing.T) {
 }
 
 // TestCheckNamingFlag exercises golens check --naming, the CLI surface for the
-// camelCaseId convention from specification 3.1.
+// initialism convention from specification 3.1.
 //
 // The flag replaces the syntax checks rather than adding to them: a caller asking about
 // naming should not also receive unused-import warnings, and vice versa.
 func TestCheckNamingFlag(t *testing.T) {
 	dir := t.TempDir()
-	// HTTPHandler is banned: the initialism is all-caps. HttpHandler would be allowed,
-	// since a single leading capital is ordinary camelCase.
+	// HttpHandler is banned: the initialism is mixed-case. HTTPHandler is what Go
+	// wants, since the initialism opens an exported identifier.
 	bad := filepath.Join(dir, "bad.go")
-	if err := os.WriteFile(bad, []byte("package p\n\nfunc HTTPHandler() {}\n"), 0o644); err != nil {
+	if err := os.WriteFile(bad, []byte("package p\n\nfunc HttpHandler() {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -289,8 +289,8 @@ func TestCheckNamingFlag(t *testing.T) {
 	if code != 3 {
 		t.Errorf("exit = %d, want 3 for naming violations (stderr: %s)", code, stderr)
 	}
-	if !strings.Contains(stderr, "HTTPHandler") {
-		t.Errorf("stderr missing the offending identifier:\n%s", stderr)
+	if !strings.Contains(stderr, "HttpHandler should be HTTPHandler") {
+		t.Errorf("stderr missing the offending identifier and its fix:\n%s", stderr)
 	}
 
 	// The same file is clean under the default syntax checks.
@@ -489,8 +489,8 @@ func TestCheckFlagsAcrossCli(t *testing.T) {
 func TestCheckNamingFlagAcrossFiles(t *testing.T) {
 	dir := t.TempDir()
 	for name, src := range map[string]string{
-		"clean.go": "package p\n\nfunc userId() int { return 1 }\n",
-		"bad.go":   "package p\n\nfunc HTTPHandler() {}\n",
+		"clean.go": "package p\n\nfunc userID() int { return 1 }\n",
+		"bad.go":   "package p\n\nfunc HttpHandler() {}\n",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
 			t.Fatal(err)
@@ -501,10 +501,10 @@ func TestCheckNamingFlagAcrossFiles(t *testing.T) {
 	if code != 3 {
 		t.Errorf("exit = %d, want 3 (stderr: %s)", code, stderr)
 	}
-	if !strings.Contains(stderr, "HTTPHandler") {
+	if !strings.Contains(stderr, "HttpHandler") {
 		t.Errorf("stderr missing the offending identifier:\n%s", stderr)
 	}
-	if strings.Contains(stderr, "userId") {
+	if strings.Contains(stderr, "userID") {
 		t.Errorf("a compliant identifier was reported:\n%s", stderr)
 	}
 }

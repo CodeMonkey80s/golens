@@ -167,6 +167,23 @@ editor or a script. Then verify:
 $ gofmt -l /tmp/test.go && go vet /tmp/test.go && /tmp/golens outline /tmp/test.go | head -20
 ```
 
+**Do the splice programmatically at least once, in binary.** An editor applies its own encoding and
+cannot demonstrate the failure below; a script can. This is the only step in this document that
+exercises the offsets the way an agent actually uses them:
+
+```console
+$ python3 - <<'EOF'
+import json, subprocess
+b = json.loads(subprocess.run(["/tmp/golens","bounds","SYMBOL","/tmp/test.go","--json"],
+                              capture_output=True, text=True).stdout)
+raw = open("/tmp/test.go","rb").read()                    # bytes, not str
+raw = raw[:b["start_byte"]] + b"NEW" + raw[b["end_byte"]:]
+open("/tmp/test.go","wb").write(raw)
+EOF
+```
+
+Look for: the file still parses, and the replacement landed inside the declaration.
+
 **The span starts at the declaration's name, not its keyword.** For a type, var or const,
 `start_byte` points at the identifier, so the `type` / `var` / `const` keyword lies *outside*
 the range. Replacement text must start at the name as well:
@@ -304,27 +321,27 @@ $ /tmp/golens check . --naming 2>&1 | head -20
 $ /tmp/golens check . --naming 2>&1 | wc -l
 ```
 
-Look for: every reported identifier really is an all-caps initialism — `userID`, `HTTPHandler`.
+Look for: every reported identifier really is a mixed-case initialism — `userId`, `dbUrl`,
+`HttpHandler`. Each diagnostic names the fix: "userId should be userID".
 
-Expect **false positives** in two situations:
+Two classes must **not** be reported, and either one is a defect rather than a limitation:
 
-- A run of capitals that is genuinely one word, such as `userIdX`. Note those separately; this
-  is a known and accepted limitation.
-- **Any identifier with no lowercase letters at all.** `camelCaseId` cannot be satisfied by an
-  identifier that is entirely upper-case, so every SCREAMING_SNAKE_CASE constant containing a
-  dictionary word is flagged by construction — `RAMFS_MAGIC` reports "RAM should be ram",
-  `VMHGFS_SUPER_MAGIC` reports "VM should be vm". Those are not camelCase names, so the rule
-  does not apply to them and reporting them is a defect, not a limitation.
+- **All-caps constants.** `RAMFS_MAGIC` and `VMHGFS_SUPER_MAGIC` follow a different convention
+  altogether. Underscores are treated as word boundaries and preserved, so they are never
+  rewritten and never reported.
+- **Names the Go project itself uses.** `isASCII`, `ensureEOF`, `APIResponse` and `UserID` are
+  ordinary Go. Run the check over a copy of a well-known repository and confirm the count is
+  small and every finding is defensible:
 
 ```console
-$ /tmp/golens check . --naming 2>&1 | grep -oP '(?<=: )[A-Z_0-9]+(?=: initialism)' | sort -u
+$ /tmp/golens check $(go env GOROOT)/src --naming 2>&1 | wc -l
 ```
 
 Note the `2>&1`: `check` writes diagnostics to stderr, so a pipe without it silently sees
 nothing and the raw lines scroll past unfiltered.
 
-Failure: a plain camelCase name reported as a violation, or an all-caps identifier reported at
-all.
+Failure: a plain camelCase name reported as a violation, an all-caps identifier reported at
+all, or a diagnostic whose suggested fix is not valid Go.
 
 ☐
 

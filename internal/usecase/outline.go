@@ -128,12 +128,12 @@ func Outline(engine domain.Engine, target string, depth int, w io.Writer, opts f
 		}
 	}
 
-	if opts.Json {
+	if opts.JSON {
 		payloads := make([]format.OutlineFile, 0, len(docs))
 		for _, doc := range docs {
 			payloads = append(payloads, format.Outline(doc, normalizeDepth(depth)))
 		}
-		return format.WriteJson(w, payloads, opts.Compact)
+		return format.WriteJSON(w, payloads, opts.Compact)
 	}
 
 	for _, doc := range docs {

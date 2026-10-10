@@ -310,14 +310,14 @@ func TestCheckContinuesAfterParseError(t *testing.T) {
 	}
 }
 
-// TestCheckJsonPayload pins the JSON shape: schema_version, a diagnostics array, and severity
+// TestCheckJSONPayload pins the JSON shape: schema_version, a diagnostics array, and severity
 // per entry.
-func TestCheckJsonPayload(t *testing.T) {
+func TestCheckJSONPayload(t *testing.T) {
 	dir := t.TempDir()
 	testfixture.Write(t, dir, "p.go", "package p\n\nimport \"fmt\"\n\nfunc F() {}\n\nfunc G() {}\n\nfunc G() {}\n")
 
 	var stdout, stderr bytes.Buffer
-	_ = usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{Json: true}, false)
+	_ = usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{JSON: true}, false)
 
 	if stderr.Len() != 0 {
 		t.Errorf("stderr must stay clean in JSON mode:\n%s", stderr.String())
@@ -466,11 +466,11 @@ func TestNamingDiagnosticsCarryDeclarationLine(t *testing.T) {
 	dir := t.TempDir()
 	src := "package p\n" +
 		"\n" +
-		"type userID struct{}\n" +
+		"type userId struct{}\n" +
 		"\n" +
-		"func (u userID) Get() {}\n" +
+		"func (u userId) Get() {}\n" +
 		"\n" +
-		"var HTTPHandler = 1\n"
+		"var HttpHandler = 1\n"
 
 	path := testfixture.Write(t, dir, "p.go", src)
 
@@ -491,13 +491,13 @@ func TestNamingDiagnosticsCarryDeclarationLine(t *testing.T) {
 		t.Fatalf("got %d diagnostics, want 3:\n%s", len(diags), got)
 	}
 
-	// userID is declared on line 3 and used as a receiver type on line 5; HTTPHandler is
+	// userId is declared on line 3 and used as a receiver type on line 5; HttpHandler is
 	// declared on line 7. Sorted by identifier, then by line. Each diagnostic carries the
 	// line of the declaration that introduced the name, so none reports line 1.
 	want := []string{
-		":7:1: HTTPHandler:",
-		":3:1: userID:",
-		":5:1: userID:",
+		":7:1: HttpHandler:",
+		":3:1: userId:",
+		":5:1: userId:",
 	}
 	for i, want := range want {
 		if !strings.Contains(diags[i], want) {

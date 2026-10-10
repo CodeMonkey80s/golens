@@ -1,4 +1,4 @@
-// Package naming_test enforces the camelCaseId convention against this repository's own
+// Package naming_test enforces the initialism convention against this repository's own
 // source, covering acceptance criterion A7.
 //
 // The test walks the module's Go files with go/parser and checks every declared identifier:
@@ -80,12 +80,12 @@ func TestRepositoryFollowsNamingConvention(t *testing.T) {
 // TestRepositoryFollowsNamingConvention means something rather than reflecting a checker
 // that never fires.
 func TestCheckDetectsRealViolations(t *testing.T) {
-	for _, id := range []string{"userID", "HTTPHandler", "parseJSON"} {
+	for _, id := range []string{"userId", "dbUrl", "parseJson"} {
 		if len(naming.Check([]string{id})) == 0 {
 			t.Errorf("%q should be reported as a violation", id)
 		}
 	}
-	for _, id := range []string{"userId", "jsonAst", "httpHandler"} {
+	for _, id := range []string{"userID", "HTTPHandler", "parseJSON", "urlPath"} {
 		if v := naming.Check([]string{id}); len(v) != 0 {
 			t.Errorf("%q should be allowed: %s", id, v[0])
 		}

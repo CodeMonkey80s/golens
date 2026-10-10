@@ -1,9 +1,16 @@
-// Package naming enforces the camelCaseId identifier convention from specification 3.1.
+// Package naming enforces Go's own initialism convention: a known initialism is written
+// consistently within an identifier -- ID, URL, JSON, HTTP -- rather than mixed-case as Id
+// or Url.
 //
-// The convention deliberately overrides Go's usual initialism handling: jsonAst rather
-// than jsonAST, httpHandler rather than HTTPHandler, Ok rather than OK. The rule
-// lowercases an initialism everywhere it appears, including at the start of an identifier,
-// and applies uniformly to standalone identifiers.
+// The rule is the one golint popularised and staticcheck now carries as ST1003, so a
+// repository that runs this check agrees with the rest of the Go tooling instead of with a
+// local dialect. Implementing it here rather than depending on either keeps golens free of
+// external dependencies, which internal/arch requires.
+//
+// Two positions are treated differently, because that is what Go actually does. At the start
+// of an unexported identifier an initialism stays lowercase -- urlPath, jsonBody, httpClient
+// -- since Go identifiers begin lowercase by convention. Anywhere else it is all capitals:
+// userID, parseJSON, newHTTPClient, ID, URL.
 //
 // The check is exposed as golens check --naming and is also what the repository's own
 // naming test calls, so the convention is enforced in CI rather than by review.
@@ -12,19 +19,19 @@ package naming
 import (
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // Initialisms is the fixed dictionary the check is defined against.
 //
 // A fixed list is what makes the check deterministic: without it, "is this an initialism"
-// becomes a judgement call and the result drifts. The list is lowercased, since the rule
-// lowercases whatever it matches.
+// becomes a judgement call and the result drifts. The list is the one golint shipped and
+// staticcheck inherited; it is keyed in upper case, since that is the correct spelling.
 var Initialisms = []string{
-	"acl", "api", "ascii", "ast", "cpu", "css", "db", "dns", "eof", "gpu",
-	"graphql", "grpc", "guid", "html", "http", "https", "id", "ip", "json",
-	"lhs", "ok", "qps", "ram", "rhs", "rpc", "sla", "smtp", "sql", "ssh",
-	"ssl", "tcp", "tls", "ttl", "udp", "ui", "uid", "uri", "url", "utf8",
-	"uuid", "vm", "xml", "xsrf",
+	"ACL", "API", "ASCII", "CPU", "CSS", "DNS", "EOF", "GUID", "HTML", "HTTP", "HTTPS",
+	"ID", "IP", "JSON", "LHS", "QPS", "RAM", "RHS", "RPC", "SLA", "SMTP", "SQL", "SSH",
+	"TCP", "TLS", "TTL", "UDP", "UI", "UID", "URI", "URL", "UTF8", "UUID", "VM", "XML",
+	"XSRF", "XSS",
 }
 
 // initialismSet is the lookup form of Initialisms.
@@ -58,18 +65,19 @@ type Identifier struct {
 	Line int
 }
 
-// Check reports every identifier that breaks the camelCaseId convention, with no position.
+// Check reports every identifier that breaks the initialism convention, with no position.
 //
 // The rule, stated precisely so callers do not have to infer it:
 //
-//   - Split the identifier into runs of uppercase letters. Each maximal run of two or more
-//     uppercase letters is an initialism and must be lowercased.
-//   - A single uppercase letter followed by another uppercase letter ("ID", "URL") is the
-//     start of an initialism, so "userID" is banned and "userId" required.
-//   - A leading run of uppercase letters is an initialism too: "HTTPHandler" must become
-//     "httpHandler".
-//   - Everything else about Go's naming is left alone. Underscores, leading capitals and
-//     all-caps words that are not initialisms are not this check's business.
+//   - Split the identifier at each lowercase-to-uppercase transition, and at underscores.
+//     Underscores are boundaries but are preserved, so usecase_test and RAMFS_MAGIC are
+//     left alone rather than rewritten.
+//   - For each word, if its upper-case form is in the dictionary, that is the spelling Go
+//     wants: ID, not Id; URL, not Url.
+//   - A word at the start of an identifier that already begins lowercase keeps its
+//     lowercase form, so urlPath and jsonBody are correct and userID is required.
+//   - Everything else is out of scope. This is not a general style linter: it says nothing
+//     about underscores in ordinary names, capitalisation of non-initialisms, or length.
 func Check(identifiers []string) []Violation {
 	located := make([]Identifier, 0, len(identifiers))
 	for _, id := range identifiers {
@@ -90,7 +98,7 @@ func CheckLocated(identifiers []Identifier) []Violation {
 
 	seen := make(map[violationKey]bool, len(identifiers))
 	for _, id := range identifiers {
-		reason, bad := violates(id.Name)
+		fixed, bad := violates(id.Name)
 		if !bad {
 			continue
 		}
@@ -99,7 +107,11 @@ func CheckLocated(identifiers []Identifier) []Violation {
 			continue
 		}
 		seen[key] = true
-		out = append(out, Violation{Identifier: id.Name, Reason: reason, Line: id.Line})
+		out = append(out, Violation{
+			Identifier: id.Name,
+			Reason:     "initialism must be consistently cased per Go convention: " + id.Name + " should be " + fixed,
+			Line:       id.Line,
+		})
 	}
 
 	// Sorting makes the output deterministic, which matters because this feeds a test
@@ -120,129 +132,75 @@ type violationKey struct {
 	name string
 }
 
-// violates reports whether ident breaks the convention, and why.
+// violates returns the corrected spelling of ident and whether it needed correcting.
 //
-// The rule is a single pass over word boundaries. Go identifiers are camelCase, so a word
-// boundary is either the start of the identifier or the position after a lowercase letter,
-// digit or underscore. At each boundary the uppercase run is matched against the dictionary
-// case-sensitively; a match means the initialism was not lowercased.
-//
-// A SCREAMING_SNAKE_CASE name is exempt. camelCaseId cannot be satisfied by an identifier with
-// no lowercase letters, so applying the rule to one reports every such constant by
-// construction: RAMFS_MAGIC contains RAM and would be reported as "RAM should be ram",
-// VMHGFS_SUPER_MAGIC as "VM should be vm". Those names follow a different convention
-// altogether, so this one does not govern them.
-//
-// The exemption is deliberately narrow. A bare all-caps name such as OK or ID has no
-// underscore and stays subject to the rule, which the specification requires.
+// The walk splits the identifier into words and rewrites any word that names an
+// initialism into its dictionary spelling. A word is only rewritten when doing so changes
+// the identifier, which is what makes the result a diff rather than a normalisation.
 func violates(ident string) (string, bool) {
-	if ident == "" || isScreamingSnake(ident) {
-		return "", false
-	}
-	for _, start := range wordStarts(ident) {
-		if reason, bad := matchInitialism(ident, start); bad {
-			return reason, true
-		}
-	}
-	return "", false
-}
-
-// wordStarts returns the positions in ident that could begin a word: the start of the
-// identifier, and every position following a lowercase letter, digit or underscore.
-//
-// Lowercase rather than uppercase is the boundary signal because in camelCase a word starts
-// with a lowercase letter: "userID" has a boundary at the "I", "userId" does not.
-func wordStarts(ident string) []int {
-	starts := []int{0}
-	for i := 1; i < len(ident); i++ {
-		if isLower(ident[i-1]) || isDigit(ident[i-1]) || ident[i-1] == '_' {
-			starts = append(starts, i)
-		}
-	}
-	return starts
-}
-
-// leadingRun returns the length of the uppercase run at the start of s.
-func leadingRun(s string) int {
-	n := 0
-	for n < len(s) && isUpper(s[n]) {
-		n++
-	}
-	return n
-}
-
-// matchInitialism reports whether a dictionary initialism begins at start written in all
-// capitals, which is what the convention bans.
-//
-// A word only counts when it opens with two or more capitals. Fewer is ordinary camelCase,
-// which the specification allows: it lists userId, Ok and Id as allowed and userID, OK,
-// jsonAST and HTTPHandler as banned, so the line is exactly all-caps versus one capital.
-//
-// Go's camelCase merges an initialism into the following capital, so a prefix search is
-// needed at both word positions:
-//
-//   - Leading: HTTPHandler has the run HTTPH, and HTTP is the entry.
-//   - Embedded: userIDMap has the run IDM, and ID is the entry.
-//
-// A prefix is accepted only when it is strictly shorter than the run, or when the run has no
-// lowercase tail. That keeps URLs legal -- its run is URL with a plural tail, so the word is
-// URLs, not URL -- while still flagging IDField, where F starts a new capitalised word.
-func matchInitialism(ident string, start int) (string, bool) {
-	rest := ident[start:]
-
-	run := leadingRun(rest)
-	if run < 2 {
+	if ident == "" {
 		return "", false
 	}
 
-	tailEnd := run
-	for tailEnd < len(rest) && isLower(rest[tailEnd]) {
-		tailEnd++
+	runes := []rune(ident)
+	firstUpper := len(runes) > 0 && unicode.IsUpper(runes[0])
+
+	for _, word := range words(runes) {
+		if !initialismSet[strings.ToUpper(string(runes[word.start:word.end]))] {
+			continue
+		}
+		// An initialism opening an identifier that already starts lowercase stays
+		// lowercase: urlPath, jsonBody, httpClient. Everywhere else it is capitals.
+		if word.start == 0 && !firstUpper {
+			continue
+		}
+		want := strings.ToUpper(string(runes[word.start:word.end]))
+		copy(runes[word.start:word.end], []rune(want))
 	}
 
-	// The run extended into its lowercase tail is one candidate: this is how jsonAST and
-	// parseJSON are caught, and how URLs is left alone.
-	if word := rest[:tailEnd]; tailEnd > run || initialismSet[strings.ToLower(word)] {
-		if lower := strings.ToLower(word); initialismSet[lower] && word != lower {
-			return violation(word, lower), true
-		}
-	}
-
-	// Prefixes of the run, longest first.
-	for n := run; n >= 2; n-- {
-		if tailEnd > run && n == run {
-			continue // the whole run followed by a tail is the plural form, not an initialism
-		}
-		word := rest[:n]
-		lower := strings.ToLower(word)
-		if initialismSet[lower] && word != lower {
-			return violation(word, lower), true
-		}
-	}
-
-	return "", false
+	fixed := string(runes)
+	return fixed, fixed != ident
 }
 
-func violation(word, lower string) string {
-	return "initialism must not be all caps per camelCaseId: " + word + " should be " + lower
+// span is one word within an identifier.
+type span struct{ start, end int }
+
+// words returns the spans of the identifier's words: bounded by the start and end of the
+// name, by each lowercase-to-uppercase transition, and by underscores.
+//
+// An underscore is a boundary and is kept in the preceding word, so the span it ends
+// carries the separator rather than dropping it. That is deliberate. golint strips
+// underscores entirely, which turns usecase_test into usecasetest and RAMFS_MAGIC into
+// RAMFSMAGIC -- both wrong, and both names this check must leave alone. Keeping the
+// separator means only the initialism itself is ever rewritten.
+func words(runes []rune) []span {
+	var out []span
+	start := 0
+	for i := 0; i < len(runes); i++ {
+		if runes[i] != '_' && !isBoundary(runes, i) {
+			continue
+		}
+		end := i
+		if runes[i] == '_' {
+			end = i + 1
+		}
+		out = append(out, span{start, end})
+		start = end
+	}
+	if start < len(runes) {
+		out = append(out, span{start, len(runes)})
+	}
+	return out
 }
 
-func isUpper(b byte) bool { return b >= 'A' && b <= 'Z' }
-func isLower(b byte) bool { return b >= 'a' && b <= 'z' }
-func isDigit(b byte) bool { return b >= '0' && b <= '9' }
-
-// isScreamingSnake reports whether ident is written entirely in upper case with at least one
-// underscore, which is the shape of a Go constant block such as RAMFS_MAGIC.
-func isScreamingSnake(ident string) bool {
-	var underscore bool
-	for i := 0; i < len(ident); i++ {
-		c := ident[i]
-		switch {
-		case c == '_':
-			underscore = true
-		case c >= 'a' && c <= 'z':
-			return false
-		}
+// isBoundary reports whether a new word starts at index i, which is the case when the
+// preceding rune is lowercase or a digit and this one is uppercase: the "rI" in userID.
+//
+// A digit does not start a word by itself, so utf8 in utf8Count stays one word rather than
+// splitting into "utf" and "8".
+func isBoundary(runes []rune, i int) bool {
+	if i == 0 {
+		return false
 	}
-	return underscore
+	return unicode.IsLower(runes[i-1]) && unicode.IsUpper(runes[i])
 }

@@ -47,6 +47,20 @@ Replace exactly `[start_byte, end_byte)`. The span starts at the declaration's n
 type or var your replacement text must not repeat the `type` / `var` / `const` keyword. Writing
 back what `get` returned always satisfies this.
 
+**Open the file in binary.** `start_byte` and `end_byte` count *bytes*, not characters. Splicing a
+decoded string with those numbers is a different operation and silently corrupts any file
+containing a non-ASCII identifier or a BOM:
+
+```python
+raw  = open(p, "rb").read()          # correct: raw[430:612]
+text = open(p, encoding="utf-8").read()   # wrong: text[430:612] indexes characters
+```
+
+`utf-8-sig` is worse — it strips the BOM, shifting every offset by a further three. The failure
+raises no exception; the span runs long, the tail of the declaration is dropped, and the parse error
+that follows points at the name rather than at the cause. Use `raw[start:end]`, `read_bytes()`, or
+`dd bs=1 skip=S count=E-S`.
+
 **4. Validate.**
 
 ```console
@@ -98,3 +112,8 @@ removes decoration, never information. `--json` gives a machine-readable payload
 **Never let a diagnostic stand alone.** `check`'s unused-import detection is best-effort and
 may miss cases, but it is built never to report an import that is in use. Cross-check anything
 surprising against `go build` before acting on it.
+
+**`--naming` is Go's convention, not a local one.** It requires `ID`, `URL`, `JSON` and `HTTP` —
+the rule golint popularised and staticcheck carries as ST1003 — so `userId` and `dbUrl` are
+reported while `userID` and `HTTPHandler` are correct. It is off by default because most
+repositories already satisfy it; turn it on to catch drift.

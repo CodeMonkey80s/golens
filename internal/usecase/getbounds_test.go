@@ -41,7 +41,7 @@ func TestByteInvariantThroughGet(t *testing.T) {
 	for _, name := range symbols {
 		t.Run(name, func(t *testing.T) {
 			var buf bytes.Buffer
-			opts := format.Options{Json: true, Compact: true}
+			opts := format.Options{JSON: true, Compact: true}
 			if err := usecase.Get(goast.New(), name, path, false, &buf, opts); err != nil {
 				t.Fatalf("Get %s: %v", name, err)
 			}
@@ -108,7 +108,7 @@ func TestOverwriteRoundTrip(t *testing.T) {
 
 	// Read the bounds the way an agent would: parse the JSON payload.
 	var buf bytes.Buffer
-	opts := format.Options{Json: true, Compact: true}
+	opts := format.Options{JSON: true, Compact: true}
 	if err := usecase.Bounds(goast.New(), "UserStore.GetUser", path, &buf, opts); err != nil {
 		t.Fatalf("Bounds: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestOverwritePreservesLineStructure(t *testing.T) {
 	beforeLines := len(strings.Split(string(before.Source), "\n"))
 
 	var buf bytes.Buffer
-	opts := format.Options{Json: true, Compact: true}
+	opts := format.Options{JSON: true, Compact: true}
 	if err := usecase.Bounds(goast.New(), "UserStore.GetUser", path, &buf, opts); err != nil {
 		t.Fatalf("Bounds: %v", err)
 	}
@@ -294,7 +294,7 @@ func TestBoundsExcludesTrailingNewline(t *testing.T) {
 	path := testfixture.Write(t, dir, "store.go", src)
 
 	var buf bytes.Buffer
-	if err := usecase.Bounds(goast.New(), "UserStore.GetUser", path, &buf, format.Options{Json: true}); err != nil {
+	if err := usecase.Bounds(goast.New(), "UserStore.GetUser", path, &buf, format.Options{JSON: true}); err != nil {
 		t.Fatalf("Bounds: %v", err)
 	}
 

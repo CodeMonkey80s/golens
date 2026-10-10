@@ -31,9 +31,13 @@ $ gofmt -l .              # must print nothing
 `internal/arch` asserts layering: the CLI must not import an engine, and the domain must not
 import `go/ast`. It fails the build if those boundaries are crossed, which is deliberate.
 
-`internal/naming/scan_test.go` checks this repository's own source against `camelCaseId`. It
-runs in CI and is what makes the convention real. `camelCaseId` is not standard Go style —
-`ID` and `JSON` are violations here, `Id` and `Json` are correct.
+`internal/naming/scan_test.go` checks this repository's own source against Go's initialism
+convention. It runs in CI and is what makes the convention real. The rule is golint's, now
+carried by staticcheck as ST1003, so `ID` and `JSON` are correct and `Id` and `Json` are
+violations — the same answer the rest of the Go tooling gives. An initialism stays lowercase
+only at the front of an identifier that already begins lowercase, so `urlPath` is correct
+and `userID` is required. Underscores are word boundaries rather than noise, so `usecase_test`
+and `RAMFS_MAGIC` are left alone.
 
 ## Layout
 
@@ -45,7 +49,7 @@ runs in CI and is what makes the convention real. `camelCaseId` is not standard 
 | `internal/engine/goast` | AST to domain model |
 | `internal/domain` | shared types, including `Declaration()` |
 | `internal/format` | human and JSON rendering |
-| `internal/naming` | the camelCaseId rule |
+| `internal/naming` | the initialism rule |
 
 ## Traps
 

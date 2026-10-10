@@ -92,8 +92,8 @@ func BenchmarkOutlineHuman(b *testing.B) {
 	}
 }
 
-// BenchmarkOutlineJson measures the JSON outline, which is the form a machine consumer parses.
-func BenchmarkOutlineJson(b *testing.B) {
+// BenchmarkOutlineJSON measures the JSON outline, which is the form a machine consumer parses.
+func BenchmarkOutlineJSON(b *testing.B) {
 	engine := goast.New()
 	path, _ := benchDoc()
 
@@ -101,7 +101,7 @@ func BenchmarkOutlineJson(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var out bytes.Buffer
-		if err := Outline(engine, path, DepthUnlimited, &out, format.Options{Json: true}); err != nil {
+		if err := Outline(engine, path, DepthUnlimited, &out, format.Options{JSON: true}); err != nil {
 			b.Fatal(err)
 		}
 	}

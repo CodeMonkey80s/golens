@@ -119,7 +119,7 @@ Fast validation — no type checker, no module resolution.
 
 | Flag | Effect |
 |---|---|
-| `--naming` | Report `camelCaseId` violations *instead of* the syntax checks |
+| `--naming` | Report Go initialism violations (`userId`, `dbUrl`) *instead of* the syntax checks |
 | `--json`, `--compact` | As above |
 
 Checks performed:
@@ -279,7 +279,7 @@ internal/engine/goast/ the only package importing go/parser, go/ast, go/token
 internal/usecase/      command orchestration and error classification
 internal/cli/          cobra wiring and exit-code mapping; imports no engine
 internal/format/       human, JSON and compact renderers
-internal/naming/       camelCaseId convention checker
+internal/naming/       Go initialism convention checker
 internal/arch/         structural tests enforcing the boundaries above
 internal/testfixture/  shared fixtures
 ```

@@ -135,9 +135,9 @@ func TestSpecSchemaVersionIsFirstField(t *testing.T) {
 	}
 }
 
-// TestSpecCompactOverridesJson verifies the precedence clause: "--compact takes precedence and
+// TestSpecCompactOverridesJSON verifies the precedence clause: "--compact takes precedence and
 // emits non-indented JSON".
-func TestSpecCompactOverridesJson(t *testing.T) {
+func TestSpecCompactOverridesJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "p.go")
 	if err := os.WriteFile(path, []byte("package p\n\ntype T struct{ Id int }\n"), 0o644); err != nil {
@@ -251,9 +251,9 @@ func TestSpecDirectoryTraversalSkips(t *testing.T) {
 	}
 }
 
-// TestSpecOutlineJsonIsAlwaysArray verifies the JSON-shape clause in specification 2.1: always an
+// TestSpecOutlineJSONIsAlwaysArray verifies the JSON-shape clause in specification 2.1: always an
 // array of per-file objects, including for a single file.
-func TestSpecOutlineJsonIsAlwaysArray(t *testing.T) {
+func TestSpecOutlineJSONIsAlwaysArray(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "p.go")
 	if err := os.WriteFile(path, []byte("package p\n\nfunc F() {}\n"), 0o644); err != nil {
@@ -294,9 +294,9 @@ func TestSpecCheckScope(t *testing.T) {
 	}
 }
 
-// TestSpecJsonIsPipeable is the practical form of the stdout/stderr clause: a caller running
+// TestSpecJSONIsPipeable is the practical form of the stdout/stderr clause: a caller running
 // golens check --json | jq must receive valid JSON on stdout no matter the outcome.
-func TestSpecJsonIsPipeable(t *testing.T) {
+func TestSpecJSONIsPipeable(t *testing.T) {
 	dir := t.TempDir()
 	cases := map[string]string{
 		"clean.go":        "package p\n\nfunc F() {}\n",
