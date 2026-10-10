@@ -141,12 +141,16 @@ func (n Node) Declaration() string {
 
 	switch n.Kind {
 	case KindFunc, KindMethod:
+		// TypeParams attaches to the name with no separating space, as in the source:
+		// "func Sort[S ~[]E, E cmp.Ordered](x S)". A method cannot declare its own -- Go
+		// forbids it -- so it is empty there and the receiver carries the parameters.
+		head := keyword + " " + n.Name + n.TypeParams
 		// Detail is the parenthesised parameter and result text, so it attaches directly
 		// to the name: "func NewUserStore() *UserStore".
 		if n.Kind == KindMethod && n.Receiver != "" {
 			return keyword + " (" + n.Receiver + ") " + n.Name + n.Detail
 		}
-		return keyword + " " + n.Name + n.Detail
+		return head + n.Detail
 
 	default:
 		// TypeParams attaches to the name with no separating space, as in the source:

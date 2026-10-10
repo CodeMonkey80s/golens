@@ -376,6 +376,35 @@ Read **every** diagnostic and judge it, then cross-check against the real compil
 
 Look for: each diagnostic is a genuine issue, and nothing real is missing.
 
+**Check that each diagnostic points at a real line, not line 1.** The position is half the
+diagnostic; a reader who follows it lands on the line named. Make a file whose error is nowhere
+near the top:
+
+```console
+$ mkdir -p /tmp/pos && cat > /tmp/pos/deep.go <<'EOF'
+package p
+
+import "fmt"
+
+type T struct {
+	A int
+}
+
+func F() {
+	fmt.Println("ok")
+	x := 1 +
+}
+EOF
+$ /tmp/golens check /tmp/pos/deep.go
+```
+
+Look for: a line and column past line 5, and the same position `go build` gives. For the file above
+both report `12:1` — the offending `}` on line 12, not the incomplete expression on line 11, because
+that is where the parser discovers it. A diagnostic reading `deep.go:1:1:` is a defect even when the
+message text contains the right position, because the documented `file:line:col:` format is what a
+caller parses. Same for an unused import on line 3 of a longer file — if it reports line 1, the
+position is being discarded somewhere.
+
 ### Cross-check per platform, not just once
 
 `go build` compiles one file per build-tag combination. `golens check` parses **every** `.go`

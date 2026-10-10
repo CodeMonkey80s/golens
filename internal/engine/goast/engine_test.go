@@ -457,13 +457,20 @@ func F(a int, b string) {}
 	}
 }
 
-// TestDeclarationHeadsMatchSource pins the rendered declaration head for the three
-// constructs where it previously diverged from the source: generic type parameters,
-// receiver spelling, embedded struct fields, and the "=" on a type alias.
+// TestDeclarationHeadsMatchSource pins the rendered declaration head for the constructs
+// where it previously diverged from the source: generic type parameters on a type, on a
+// method receiver, and on a plain function; receiver spelling; embedded struct fields; and
+// the "=" on a type alias.
 //
 // Each of these produced text that does not compile when copied into an edit --
 // "type Stack struct" for "type Stack[T any] struct", "func (s Locker) Ext()" for
-// "func (s sync.Locker) Ext()", and "sync.Mutex sync.Mutex" for an embedded field.
+// "func (s sync.Locker) Ext()", "sync.Mutex sync.Mutex" for an embedded field, and
+// "func Sort(x S)" for "func Sort[S ~[]E, E cmp.Ordered](x S)".
+//
+// The generic-function case was missed for a long time because this test covered a generic
+// type and a generic receiver but never a generic function declaration, so the field was
+// populated on one path and not the other. Found against the standard library's slices
+// package, where 84 of 84 generic declarations rendered with their parameters dropped.
 //
 // The alias case is the one that compiles anyway, which is worse: "type Alias Stack[int]"
 // is a valid declaration of a different type.
@@ -476,6 +483,9 @@ type Stack[T any] struct {
 	sync.Mutex
 	items []T
 }
+
+func Sort[S ~[]E, E cmp.Ordered](x S) { sortOrdered(x) }
+func Sorted[E cmp.Ordered](seq []E) []E { return seq }
 
 type Alias = Stack[int]
 type Defined Stack[int]
@@ -497,6 +507,8 @@ func (s Stack[T]) Pop() (T, bool) { var z T; return z, false }
 		"Stack.Len":   "func (s Stack[T]) Len() int",
 		"Locker.Lock": "func (l sync.Locker) Lock()",
 		"Stack.Pop":   "func (s Stack[T]) Pop() (T, bool)",
+		"Sort":        "func Sort[S ~[]E, E cmp.Ordered](x S)",
+		"Sorted":      "func Sorted[E cmp.Ordered](seq []E) []E",
 	}
 	for qualified, want := range wantHeads {
 		sym, ok := doc.Symbol(qualified)

@@ -47,7 +47,7 @@ golens outline <file|dir> [flags]
 
 **JSON shape.** Always an array of per-file objects, including for a single file, so the schema never varies with input type.
 
-**`--depth`.** Counts container nesting. Depth 1 emits package-level declarations only — types, funcs, methods, vars and consts — with children suppressed. Depth 2 additionally emits struct fields and method sets. The default is unlimited.
+**`--depth`.** Counts container nesting. Depth 1 emits package-level declarations only — types, funcs, methods, vars and consts — with children suppressed. Depth 2 additionally emits struct fields and method sets. The hierarchy is two levels deep in practice, so depth 3 and above produce output identical to depth 2 and to the unlimited default; a value of 0 is treated as 1.
 
 **Line ranges.** A declaration spanning several lines renders as `(lines 5-8)`; a single-line declaration renders as `(line 10)`.
 

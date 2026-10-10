@@ -193,9 +193,22 @@ func (b *builder) funcSymbol(fn *ast.FuncDecl) domain.Symbol {
 		QualifiedName: name,
 		Kind:          kind,
 		Bounds:        nodeBounds(b.tf, fn.Pos(), fn.End()),
+		TypeParams:    typeParamsText(declTypeParams(fn)),
 		Detail:        signature(fn),
 		Receiver:      receiverText(fn.Recv),
 	}
+}
+
+// declTypeParams returns a function declaration's own type parameter list.
+//
+// A FuncDecl carries its FuncType on the Type field, which may be nil for a declaration that did
+// not parse completely; the guard keeps a partial parse from panicking the way a direct
+// d.Type.TypeParams would.
+func declTypeParams(fn *ast.FuncDecl) *ast.FieldList {
+	if fn == nil || fn.Type == nil {
+		return nil
+	}
+	return fn.Type.TypeParams
 }
 
 // receiverText renders a method receiver for the declaration head, without the
@@ -304,12 +317,16 @@ func (b *builder) nodes(file *ast.File) []domain.Node {
 				receiver = receiverText(d.Recv)
 			}
 			funcs = append(funcs, domain.Node{
-				Name:     d.Name.Name,
-				Kind:     kind,
-				Detail:   signature(d),
-				Receiver: receiver,
-				Bounds:   nodeBounds(b.tf, d.Pos(), d.End()),
-				Children: b.children(d),
+				Name: d.Name.Name,
+				Kind: kind,
+				// A generic function declares its own type parameters, "Sort[S ~[]E,
+				// E cmp.Ordered]". Without them the rendered head reads "func Sort(x S)"
+				// and names two undefined identifiers.
+				TypeParams: typeParamsText(declTypeParams(d)),
+				Detail:     signature(d),
+				Receiver:   receiver,
+				Bounds:     nodeBounds(b.tf, d.Pos(), d.End()),
+				Children:   b.children(d),
 			})
 		case *ast.GenDecl:
 			kind := kindForToken(d.Tok)

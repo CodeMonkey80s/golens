@@ -305,11 +305,28 @@ Replace the introduction's "or unreachable code" with:
 
 Replace **Checks Performed** with:
 
-> - Fatal parsing errors (unclosed brackets, invalid tokens), reported in `file:line:col:` form.
-> - Unused imports, detected by AST analysis of selector base names. Best effort: a local
->   name that is shadowed or referenced only in a comment may yield a false positive.
-> - Duplicate top-level declarations within a package.
-> - Import path syntax errors (empty, whitespace, or invalid characters).
+> - Fatal parsing errors (unclosed brackets, invalid tokens), reported in `file:line:col:` form with
+>   the line and column the parser reported. A parse failure is one diagnostic among many: every
+>   other file in the tree is still checked.
+> - Unused imports, detected by AST analysis of selector base names. Best effort: a local name that
+>   is shadowed or referenced only in a comment may yield a false positive, never a false negative on
+>   an import that is genuinely unused. When the local name cannot be derived — a path whose last
+>   element is not a valid identifier — the check stays silent rather than accusing a live import.
+> - Duplicate top-level declarations within a package, **reported only when both files could be
+>   compiled into the same binary.** Each file's `//go:build` expression is evaluated over a
+>   GOOS × GOARCH × cgo matrix, and two declarations conflict only when their resulting build sets
+>   intersect. Platform variants of one function are therefore silent, which is what keeps the check
+>   usable on any repository that targets more than one OS; a build tag the tool cannot recognise
+>   evaluates false, so it assumes the narrowest reading rather than claiming a conflict it cannot
+>   demonstrate.
+> - Import path syntax errors (empty, whitespace, or invalid characters), reported at the line the
+>   import is written on.
+>
+> **`check` reports what `go build` would reject, without building.** Every diagnostic above
+> corresponds to a compiler error: an unused import, a redeclaration, a malformed import path, a
+> syntax error. That is the whole scope, and it is why the tool needs neither `go/types` nor a module
+> graph. Anything `go build` accepts is out of scope, which is why naming, formatting and idiom are
+> not checked here.
 >
 > **Out of scope.** Module-level import resolution and type-level conflict detection both
 > require `go/types` and a module graph, which conflict with the stateless < 5 ms design.
