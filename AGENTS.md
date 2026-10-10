@@ -71,9 +71,17 @@ name. When adding a check, bias toward silence and say so in the comment.
 found the declaration-head divergences, the unused-import false positive and the
 build-constraint false positives, none of which any unit test had caught. Cases 10 and 16 corrupt
 a file without raising anything, which is why they lead the short list — and case 16 fails only on
-some layouts, so one clean run is not evidence the approach is safe. Run it against a real
-Go project after any change to the engine or the checks, and treat every deviation as worth
-reporting — distinguish *wrong* from merely *ugly*, and only one of those is a bug.
+some layouts, so one clean run is not evidence the approach is safe.
+
+**Run its preflight first.** Cases 4, 6, 8 and 9 probe constructs the fixtures do not cover, so
+a repository lacking the construct cannot fail them — the case runs, passes, and tests nothing.
+The preflight prints which constructs the target actually has. A zero is not a failure, it is a
+gap in coverage: find another repository or record the case as unexercised. Never record a
+vacuous case as a pass.
+
+Run the plan against a real Go project after any change to the engine or the checks, and treat
+every deviation as worth reporting — distinguish *wrong* from merely *ugly*, and only one of
+those is a bug.
 
 ## Agent-facing docs
 

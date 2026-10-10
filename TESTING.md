@@ -5,6 +5,9 @@ only).
 
 **Cases 4, 6, 8 and 9 probe Go constructs the test fixtures do not cover.** Those are the
 places a bug is most likely, which is why they are here rather than only in the automated suite.
+They are also the easiest to skip without noticing, so **run the preflight first** — a repository
+that lacks the construct cannot fail the case, and a case that ran vacuously looks identical to
+one that passed.
 
 ## Setup
 
@@ -17,6 +20,46 @@ $ cd /path/to/your/repo     # the Go project under test
 **Ground rule:** any deviation is worth reporting. If something looks wrong, work out whether it
 is *wrong* or merely *ugly* — both are useful, but only one is a bug.
 
+## Preflight — does this repository exercise the hard cases?
+
+Cases 4, 6, 8 and 9 probe constructs the fixtures do not cover, so they are the ones most likely
+to find something. **They are also the easiest to skip without noticing**, because a repository
+that lacks the construct cannot fail the case: no cgo file means nothing to trip over, and a
+"pass" is indistinguishable from a pass that examined something.
+
+Run this first, in the repository under test:
+
+```console
+$ printf 'build tags : %s\n' "$(grep -rl '//go:build' --include='*.go' . 2>/dev/null | wc -l)"
+$ printf 'generics   : %s\n' "$(grep -rlE '^func [A-Za-z_]+\[|^type [A-Za-z_]+\[' --include='*.go' . 2>/dev/null | grep -v testdata | wc -l)"
+$ printf 'cgo        : %s\n' "$(grep -rl 'import "C"' --include='*.go' . 2>/dev/null | wc -l)"
+$ printf 'go:embed   : %s\n' "$(grep -rl '//go:embed' --include='*.go' . 2>/dev/null | wc -l)"
+$ printf 'largest    : %s\n' "$(ls -S $(find . -name '*.go' -not -path '*/testdata/*' -not -path '*/.git/*') | head -1)"
+```
+
+| Case | Needs | A zero or small result means |
+|---|---|---|
+| 4 | build tags | cannot run here |
+| 6 | generics (`func F[T]`) | cannot run here — needs a `go 1.18`+ module |
+| 8 | cgo or `go:embed` | cannot run here |
+| 9 | a genuinely large file | **check the line count**, not just the name |
+
+A zero is not a failure; it is a gap in your coverage, and it should be recorded as one. Either
+find a second repository that has the construct, or say in your report that the case went
+unexercised. Recording it as "pass" because the case ran is how a green report covers a hole.
+
+This is not hypothetical. Run against `duf`, the preflight reads:
+
+```
+build tags : 12
+generics   : 0        <- case 6 cannot run; duf is go 1.15
+cgo        : 0        <- case 8 cannot run
+go:embed   : 0        <- case 8 cannot run
+largest    : ./filesystems_linux.go   (301 lines — too small for case 9)
+```
+
+so a duf run exercises two of the four, and the other two have to come from somewhere else.
+
 ---
 
 ## 1. Smoke test
@@ -27,6 +70,17 @@ $ /tmp/golens outline main.go
 
 Look for: `file:`, `package:`, and sections for IMPORTS, TYPES & STRUCTS, FUNCTIONS & METHODS.
 The counts should roughly match what you see in the file.
+
+Before anything else, the two calls a caller tries first:
+
+```console
+$ /tmp/golens --version
+$ /tmp/golens --help | head -5
+```
+
+Look for: a version string, and a root help that names all four commands with the exit codes.
+`--version` is what an agent reaches for before reading anything, so an empty or error response
+here is the first sign of a broken build.
 
 Failure: a crash, empty output, or a missing section.
 
@@ -46,8 +100,22 @@ Note that `grep '^func '` already matches methods, because `func (c ColorRGB) St
 every method and makes the totals disagree on any repo that has methods, which reads as a
 serious traversal bug when it is not.
 
-Expect the totals to differ by a small number. `grep` also matches declarations inside `/* */`
-comments, which golens correctly ignores.
+Expect the totals to differ by a small number: `grep` also matches declarations inside `/* */`
+comments, which golens correctly ignores. **Resolve the difference rather than eyeballing it:**
+
+```console
+$ grep -rh --include='*.go' '^func ' . \
+    | sed -E 's/^func (\([^)]*\) )?([A-Za-z0-9_]+).*/\2/' | sort > /tmp/grep-funcs.txt
+$ /tmp/golens outline . | grep '• func ' \
+    | sed -E 's/.*• func (\([^)]*\) )?([A-Za-z0-9_]+).*/\2/' | sort > /tmp/golens-funcs.txt
+$ comm -23 /tmp/grep-funcs.txt /tmp/golens-funcs.txt   # grep saw, golens did not
+$ comm -13 /tmp/grep-funcs.txt /tmp/golens-funcs.txt   # golens saw, grep did not
+```
+
+The first list should hold only functions commented out in the source — grep them and confirm.
+The second must be **empty**: anything in it is a declaration golens found that a plain `grep`
+missed, which would be a real traversal problem. On `duf` the first list is exactly one entry,
+`isLocalFs`, which sits inside a `/* */` block.
 
 Failure: a gap means the traversal missed files, which would be serious.
 
@@ -239,6 +307,19 @@ $ /tmp/golens get <Symbol> <file.go> --json --compact | jq -r .source | head -3
 Look for: clean JSON, `schema_version: 1` as the first field, and `jq 'length'` returning your
 file count.
 
+`get --bounds-only` is the form a scripted edit wants, and it must be indistinguishable from
+`bounds`. Check the payloads are byte-identical rather than merely similar:
+
+```console
+$ /tmp/golens get --bounds-only <Symbol> <file.go> --json > /tmp/a.json
+$ /tmp/golens bounds <Symbol> <file.go> --json > /tmp/b.json
+$ diff /tmp/a.json /tmp/b.json && echo "IDENTICAL payloads"
+```
+
+Without `--bounds-only`, `get` adds a `source` field; with it, nothing else should change. A
+difference in the offsets means the two commands disagree about the span, which is the failure
+that matters — a caller switching between them must not get a different edit location.
+
 Failure: invalid JSON, or stderr text leaking into stdout.
 
 ☐
@@ -277,10 +358,17 @@ different file set, so a clean `go build` does not clear the diagnostics. Build 
 
 ```console
 $ for os in linux darwin windows freebsd openbsd; do
-      GOOS=$os go build ./... 2>&1 | head -3
-      echo "GOOS=$os exit=$?"
+      if out=$(GOOS=$os go build ./... 2>&1); then
+          echo "GOOS=$os: clean"
+      else
+          echo "GOOS=$os:"; echo "$out" | head -3
+      fi
   done
 ```
+
+The `if` is load-bearing. Writing `go build ./... 2>&1 | head -3` followed by `echo $?` reads
+**`head`'s** exit status, which is always 0, so the loop reports every platform as clean no
+matter what the compiler said. Capture into a variable so `$?` belongs to the build.
 
 Now group the diagnostics by kind and check each against *some* platform's verdict.
 
