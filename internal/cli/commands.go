@@ -36,10 +36,13 @@ file's constraint so you can tell which edits the current GOOS will compile:
   package: main
   build: windows
 
-A file that does not parse aborts the traversal and exits 4, even if it is one
-of thousands: an outline entry without its source is not useful. To survey a
-tree that may contain broken files, use "golens check", which reports the
-failure as one diagnostic among many and still covers every other file.`,
+A file that does not parse is left out of the outline and named on stderr,
+and the run still exits 4: one broken file in a tree of thousands must not
+hide the rest. stdout carries every file that did parse, so a --json payload
+is still complete and pipeable. Pointed at a single broken file there is
+nothing to salvage and the parse error is the whole answer. To survey a tree
+for structural problems, use "golens check", which reports a parse failure as
+one diagnostic among many.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			depth, _ := cmd.Flags().GetInt("depth")

@@ -172,16 +172,46 @@ func (p *packageSymbols) add(dir string, doc domain.Document) {
 		p.builtIn[ns] = make(map[string][]bool)
 	}
 	if _, seen := p.builtIn[ns][doc.Path]; !seen {
-		p.builtIn[ns][doc.Path] = constraintVector(parseBuildConstraint(doc.BuildConstraint))
+		p.builtIn[ns][doc.Path] = constraintVector(fileConstraint(doc.Path, doc.BuildConstraint, requiresCgo(doc)))
 	}
 
 	for _, sym := range doc.Symbols {
+		// init and the blank identifier may be declared any number of times in a package,
+		// and Go says so explicitly: "Multiple init functions may be declared in a package,
+		// even in the same file." Treating either as a name that must be unique produced
+		// 166 false positives in runtime alone, where every platform file carries its own
+		// init and its own "var _ = ..." placeholder.
+		if isRepeatableName(sym.Name) {
+			continue
+		}
 		name := sym.QualifiedName
 		p.byNamespace[ns][name] = append(p.byNamespace[ns][name], symbolSite{
 			path: doc.Path,
 			line: sym.Bounds.StartLine,
 		})
 	}
+}
+
+// isRepeatableName reports whether Go permits a package to declare this name more than once.
+//
+// Only init and the blank identifier qualify. Neither is a name a caller can resolve, so
+// neither can be redeclared in any sense that matters.
+func isRepeatableName(name string) bool {
+	return name == "init" || name == "_"
+}
+
+// requiresCgo reports whether a file imports "C", which makes it a cgo file.
+//
+// The go tool lists such files under CgoFiles rather than GoFiles and drops them entirely when
+// cgo is disabled, so a file importing "C" is not built in a cgo-less configuration even when
+// nothing in its name or its build tags says so.
+func requiresCgo(doc domain.Document) bool {
+	for _, imp := range doc.Imports {
+		if strings.Trim(imp, `"`) == "C" {
+			return true
+		}
+	}
+	return false
 }
 
 // duplicates reports names declared more than once within one directory.
@@ -307,6 +337,13 @@ func unusedImports(doc domain.Document) []Diagnostic {
 		// Blank and dot imports bind no local name to test: "_" is a deliberate discard and
 		// "." contributes the imported names directly.
 		if decl.name == "_" || decl.name == "." || decl.name == "" {
+			continue
+		}
+		// `import "C"` is cgo's marker, not a package import. The name C never appears in
+		// the source as a selector base, because cgo rewrites the file before the type
+		// checker sees it, so treating it as an ordinary import reports every cgo file in a
+		// tree as carrying an unused import. Five such diagnostics on the standard library.
+		if decl.name == "C" && strings.Trim(decl.detail, `"`) == "C" {
 			continue
 		}
 		// The local name is derived from the last path element, which is not always the name

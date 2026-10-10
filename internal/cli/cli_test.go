@@ -106,6 +106,9 @@ func TestExitCodes(t *testing.T) {
 		{"missing file", []string{"outline", missing}, 2},
 		{"bounds on directory", []string{"bounds", "GetUser", dir}, 1},
 		{"check finds diagnostics", []string{"check", unused}, 3},
+		// The directory holds a broken file, so the outline is incomplete and the run still
+		// fails. What it must not do is hide the parseable files.
+		{"outline dir with a broken file", []string{"outline", dir}, 4},
 	}
 
 	for _, tt := range tests {
@@ -115,6 +118,69 @@ func TestExitCodes(t *testing.T) {
 				t.Errorf("exit = %d, want %d", code, tt.want)
 			}
 		})
+	}
+}
+
+// TestOutlineDeliversParseableFilesBeforeFailing is the end-to-end form of the contract an
+// agent depends on: stdout carries everything that could be read, stderr names what could not,
+// and the exit code says the outline is partial.
+//
+// outline used to abort before writing anything. The Go standard library contains exactly one
+// unparseable file out of 8,088, so an outline of $GOROOT/src returned no output at all -- the
+// most common answer a caller asks for was the one that failed.
+func TestOutlineDeliversParseableFilesBeforeFailing(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a_broken.go"), []byte("package p\n\nfunc f( {\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b_good.go"), []byte("package p\n\nfunc Good() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, code := run(t, "outline", dir)
+
+	if code != 4 {
+		t.Errorf("exit = %d, want 4: a parse failure is real and must stay visible", code)
+	}
+	if !strings.Contains(stdout, "Good") {
+		t.Errorf("stdout must carry the parseable files even on exit 4:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "func f(") {
+		t.Errorf("stdout must not carry the unparseable file:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "a_broken.go") {
+		t.Errorf("stderr must name the skipped file:\n%s", stderr)
+	}
+}
+
+// TestOutlineJSONOnBrokenTreeIsPipeClean covers the machine-consumer case: stdout has to stay
+// valid JSON so `golens outline . --json | jq` works, with the failure on stderr.
+func TestOutlineJSONOnBrokenTreeIsPipeClean(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a_broken.go"), []byte("package p\n\nfunc f( {\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b_good.go"), []byte("package p\n\nfunc Good() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, _, code := run(t, "outline", dir, "--json", "--compact")
+	if code != 4 {
+		t.Errorf("exit = %d, want 4", code)
+	}
+
+	var payloads []struct {
+		File          string `json:"file"`
+		SchemaVersion int    `json:"schema_version"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &payloads); err != nil {
+		t.Fatalf("stdout is not valid JSON when a file is skipped: %v\n%s", err, stdout)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("payloads = %d, want 1", len(payloads))
+	}
+	if !strings.HasSuffix(payloads[0].File, "b_good.go") {
+		t.Errorf("outlined %q, want b_good.go", payloads[0].File)
 	}
 }
 

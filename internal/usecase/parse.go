@@ -2,7 +2,9 @@ package usecase
 
 import (
 	"errors"
+	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/CodeMonkey80s/golens/internal/domain"
@@ -47,6 +49,61 @@ func (e ParseError) Error() string {
 }
 
 func (e ParseError) Unwrap() error { return e.Err }
+
+// maxListedFailures bounds how many skipped files the message names. The count in the summary
+// line is always exact; only the enumeration is truncated, because a tree with hundreds of
+// broken files should not produce a message nobody reads to the end.
+const maxListedFailures = 5
+
+// SkippedFilesError reports an outline that is missing files.
+//
+// outline used to abort on the first file that failed to parse, having written nothing. That is
+// the right call for a single broken file and the wrong one for a tree: the Go standard library
+// holds exactly one unparseable file out of 8,088, at
+// cmd/compile/internal/syntax/testdata/issue20789.go, and asking it to outline $GOROOT/src
+// produced no output at all and said nothing about the other 8,087 files.
+//
+// So the outline is written first and the failure is reported afterwards. The exit code is still
+// 4, because the parse failure is real, but stdout now carries everything that could be read.
+// Paths is in path order, which keeps the message stable across runs regardless of the order
+// concurrent parses completed in.
+type SkippedFilesError struct {
+	// Failures names the files that could not be parsed, in path order.
+	Failures []ParseError
+	// Total is how many files the run covered, so the message can say how complete it is.
+	Total int
+}
+
+// Error reports how much is missing and why, naming at most maxListedFailures of them.
+//
+// Each entry renders the engine's own message, which carries the position for a parse failure
+// and the path alone for an I/O failure. Printing only the paths would leave the caller with no
+// way to tell a syntax error from an unreadable file without re-running golens per file.
+func (e SkippedFilesError) Error() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d of %d files could not be parsed and are missing from the outline",
+		len(e.Failures), e.Total)
+	for i, f := range e.Failures {
+		if i == maxListedFailures {
+			fmt.Fprintf(&b, ", and %d more", len(e.Failures)-maxListedFailures)
+			break
+		}
+		if i > 0 {
+			b.WriteString(";")
+		}
+		b.WriteString(": " + f.Error())
+	}
+	return b.String()
+}
+
+// Unwrap keeps the first parse failure reachable through errors.As, so a caller that wants the
+// position rather than the summary still finds it.
+func (e SkippedFilesError) Unwrap() error {
+	if len(e.Failures) == 0 {
+		return nil
+	}
+	return e.Failures[0]
+}
 
 // Diagnostics returns one Diagnostic per parse error, each carrying the line and column the
 // parser reported. A failure that is not a parse error -- an I/O failure, say -- becomes a single

@@ -34,6 +34,8 @@ the choice is the one that cannot be misread and cannot silently corrupt a file.
 | D18 | `bounds` accepts a file only | §2.3 specifies `<file>`; do not widen the contract silently. |
 | D19 | Directory inputs parse files concurrently, bounded by GOMAXPROCS | Single-file latency budget is per-file; dirs are where wall-clock hurts agents. |
 | D20 | Clean package layout enforced by import direction | §3.1 requires decoupling; layout is what makes it real. |
+| D21 | A file's build set is name ∧ tag ∧ cgo, over the 47 real GOOS/GOARCH pairs | 70,854 false positives on the standard library until all three were modelled |
+| D22 | `outline` writes every parseable file first, then reports the skips and exits 4 | One broken file must not hide 8,000 others, and exit 0 would be a lie |
 
 ---
 
@@ -90,7 +92,7 @@ The spec's three checks are re-scoped by what an AST alone can honestly support:
 |---|---|---|
 | Fatal parse errors | Full support | `scanner.ErrorList` from `parser` |
 | Unused imports | Full support (AST, best effort) | Selector-base-name analysis against declared import local names; `_` and `.` imports handled explicitly |
-| Package namespace conflicts | Narrowed to **duplicate top-level declarations** | Pure AST, genuine namespace error |
+| Package namespace conflicts | Narrowed to **duplicate top-level declarations** | Pure AST, genuine namespace error. Confined to files that could co-build — see D21 |
 | "Import resolution issues" | Narrowed to **import path syntax** (empty, whitespace, invalid chars) | Module resolution needs `go list` — subprocess, module graph, blows the budget |
 | Type-level conflicts | Out of scope | Inherently requires `go/types` |
 
@@ -204,6 +206,58 @@ Import direction is one-way (`cli → usecase → domain`, `engine/goast → dom
 Clean Architecture requirement in §3.1 is structurally enforced rather than a code-review
 convention.
 
+### D21 · A file's build set is name ∧ tag ∧ cgo, over a real GOOS × GOARCH matrix
+
+`check` only reports a redeclaration when both files could reach the same binary. Getting that
+right requires three things the first implementation missed, and missing any one of them made the
+check unusable rather than merely imprecise: on the standard library, one missing piece produced
+70,854 false positives across 8,088 files.
+
+1. **The filename is a build constraint.** `syscall/env_windows.go` carries no `//go:build` line
+   at all; it is Windows-only purely by suffix. Reading only the comment treats it as built
+   everywhere and collides it with every declaration of the same name — 61,287 of them in
+   `syscall`. The rule is `go/build`'s, including the parts that look wrong: split from the *first*
+   underscore, so `os/zero_copy_linux.go` is linux-only and `runtime/os_only_solaris.go` is
+   solaris-only; test the last two components as GOOS+GOARCH *before* the last one alone, because
+   testing the arch alone makes `zerrors_darwin_amd64.go` match every OS.
+2. **The matrix is real, not a cross product.** `go tool dist list` gives 47 GOOS/GOARCH pairs; a
+   cross product gives 210. An invented pair makes real constraints look satisfied — under a
+   fictional `freebsd/mipsle`, both `//go:build mips || mipsle` and `//go:build freebsd` hold. A
+   constraint is only ever as true as the configurations it is evaluated over.
+   Name *recognition* stays deliberately wider than the matrix: a file named for a platform Go has
+   dropped is constrained to a configuration that does not exist, so it is never built, so it is
+   suppressed rather than accused.
+3. **`import "C"` means the file requires cgo.** The go tool lists such files under `CgoFiles` and
+   drops them when cgo is off, whatever the name and tags say. The stdlib's own
+   `crypto/internal/sysrand/internal/seccomp` is this exact case.
+
+`init` and `_` are also exempt from the uniqueness rule, because Go says explicitly that a package
+may declare either any number of times. Treating `init` as an ordinary name accounted for 166 of
+the false positives in `runtime` alone.
+
+Result: **0 diagnostics** on the standard library outside `testdata` directories, which hold
+compiler fixtures written to be broken. Every remaining class was a false positive on code that
+compiles, and the bias throughout is toward silence — a tag the tool cannot parse evaluates false.
+
+### D22 · A partial outline is worth more than a clean failure
+
+`outline` used to abort on the first unparseable file and write nothing. That is right for a
+single broken file, where the parse error is the whole answer, and badly wrong for a tree. The
+standard library contains unparseable files in `testdata`; asking for an outline of `$GOROOT/src`
+returned no output at all, which is the answer an agent most often wants.
+
+So the outline is written first and the failure reported afterwards: unparseable files are omitted,
+stdout carries everything else — still a complete, parseable JSON payload under `--json` — stderr
+names what is missing and how complete the answer is, and the exit code stays **4**.
+
+Exit 4 is the load-bearing part. The alternative, exiting 0, would let an agent believe it had
+seen the whole tree. A caller that branches on `$?` learns the outline is partial; a caller that
+only reads stdout still gets every file that could be read. Those two facts are not in conflict,
+and collapsing them would lose one.
+
+The alternative worth rejecting: skipping `testdata/`. An agent asking what a directory contains
+wants all of it, and silently narrowing the traversal would be a scope decision made invisibly.
+
 ---
 
 ## 3. Resolved ambiguities at a glance
@@ -216,6 +270,8 @@ convention.
 | `--compact` shape | Rule-based, lossless, wins over pretty JSON |
 | `--json` + `--compact` | Compact wins |
 | `outline` on a directory | Recursive, lexical, array of per-file objects |
+| `outline` with an unparseable file | Skips it, writes the rest, names it on stderr, exits 4 — see D22 |
+| Which files can co-build | Name ∧ tag ∧ cgo, over real GOOS/GOARCH pairs — see D21 |
 | `--depth` counting | Container nesting; 1 = package-level decls |
 | Unreachable code | Removed from §2.4 prose, deferred to v0.2 |
 | Import resolution | Path syntax only |
@@ -244,6 +300,8 @@ convention.
 | A10 | `go build` with `CGO_ENABLED=0` produces no cgo dependencies. |
 | A11 | `domain` and `usecase` packages import nothing outside the standard library. |
 | A12 | Fixtures include: unicode identifiers, CRLF files, BOM, unparseable file, empty file, file with only comments, duplicate declarations, unused + dot + blank imports. |
+| A13 | A directory containing both a `_linux.go` and a `_windows.go` that declare the same name produces no diagnostics and exit 0, and two untagged files that declare it produce exit 3. |
+| A14 | `outline` over a directory containing an unparseable file writes every parseable file to stdout, names the skipped files on stderr, and exits 4. Under `--json` the stdout payload parses. |
 
 ---
 

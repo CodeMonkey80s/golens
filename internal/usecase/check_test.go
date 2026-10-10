@@ -537,11 +537,32 @@ func TestDuplicateDeclarationRespectsBuildConstraints(t *testing.T) {
 		{
 			name: "disjoint platforms and a shared one",
 			files: map[string]string{
-				"a_linux.go":  "//go:build linux || darwin\n\npackage p\n\n" + body,
+				"a.go":        "//go:build linux || darwin\n\npackage p\n\n" + body,
 				"b_darwin.go": "//go:build darwin\n\npackage p\n\n" + body,
 			},
 			want:    true,
 			comment: "darwin satisfies both",
+		},
+		{
+			// The _linux suffix narrows the tag rather than merely annotating it: a file
+			// named a_linux.go is never built on darwin, whatever its tags say. Reading only
+			// the comment made this pair look co-buildable on darwin.
+			name: "a filename suffix narrows a broader tag",
+			files: map[string]string{
+				"a_linux.go":  "//go:build linux || darwin\n\npackage p\n\n" + body,
+				"b_darwin.go": "//go:build darwin\n\npackage p\n\n" + body,
+			},
+			want:    false,
+			comment: "a_linux.go is linux-only by name, so darwin cannot satisfy both",
+		},
+		{
+			name: "two files differing only by filename suffix",
+			files: map[string]string{
+				"a_linux.go":  "package p\n\n" + body,
+				"b_darwin.go": "package p\n\n" + body,
+			},
+			want:    false,
+			comment: "neither carries a build tag and both are constrained by name alone",
 		},
 		{
 			name: "two untagged files",

@@ -120,26 +120,43 @@ func Outline(engine domain.Engine, target string, depth int, w io.Writer, opts f
 	// why. Either way the documents come back in path order, so the output below is identical
 	// either way.
 	docs, errs := parseAll(engine, paths)
-	for _, e := range errs {
-		if e.Err != nil {
-			// outline reports the first failure in path order, so a run over a tree with
-			// several broken files always fails the same way.
-			return e
+
+	// A file that does not parse contributes nothing to the outline, but it must not hide every
+	// other file in the tree. The failure is still reported, and still exits 4; it is just
+	// reported after the output rather than instead of it.
+	parsed := make([]domain.Document, 0, len(docs))
+	var skipped []ParseError
+	for i, doc := range docs {
+		if errs[i].Err != nil {
+			skipped = append(skipped, errs[i])
+			continue
 		}
+		parsed = append(parsed, doc)
 	}
 
 	if opts.JSON {
-		payloads := make([]format.OutlineFile, 0, len(docs))
-		for _, doc := range docs {
+		payloads := make([]format.OutlineFile, 0, len(parsed))
+		for _, doc := range parsed {
 			payloads = append(payloads, format.Outline(doc, normalizeDepth(depth)))
 		}
-		return format.WriteJSON(w, payloads, opts.Compact)
-	}
-
-	for _, doc := range docs {
-		if err := format.WriteOutlineHuman(w, doc, normalizeDepth(depth), opts.Compact); err != nil {
+		if err := format.WriteJSON(w, payloads, opts.Compact); err != nil {
 			return err
 		}
+	} else {
+		for _, doc := range parsed {
+			if err := format.WriteOutlineHuman(w, doc, normalizeDepth(depth), opts.Compact); err != nil {
+				return err
+			}
+		}
+	}
+
+	if len(skipped) > 0 {
+		// A single file has nothing partial to salvage, so the original message stands: the
+		// failure is the whole answer and "1 of 1 files" says less than the diagnostic does.
+		if len(paths) == 1 {
+			return skipped[0]
+		}
+		return SkippedFilesError{Failures: skipped, Total: len(paths)}
 	}
 	return nil
 }

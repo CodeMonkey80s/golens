@@ -88,6 +88,12 @@ IMPORTS
 FUNCTIONS & METHODS (lines 16-56)
 ```
 
+**Unparseable files.** A file that does not parse is omitted from the outline, named on stderr,
+and the run still exits `4`. Every other file is outlined first, so one broken file cannot hide
+the rest of a tree — and because stdout is still a complete JSON payload when `--json` is used, a
+machine consumer is never handed a truncated document. Pointed at a single broken file there is
+nothing partial to deliver, so the parse error is reported alone.
+
 ### 2.2 `golens get`
 
 Extracts the exact source code content for a specific AST symbol.
@@ -186,12 +192,24 @@ golens check <file|dir> [flags]
   an import that is genuinely unused. When the local name cannot be derived — a path whose last
   element is not a valid identifier — the check stays silent rather than accusing a live import.
 - Duplicate top-level declarations within a package, **reported only when both files could be
-  compiled into the same binary.** Each file's `//go:build` expression is evaluated over a
-  GOOS × GOARCH × cgo matrix, and two declarations conflict only when their resulting build sets
-  intersect. Platform variants of one function are therefore silent, which is what keeps the check
-  usable on any repository that targets more than one OS; a build tag the tool cannot recognise
-  evaluates false, so it assumes the narrowest reading rather than claiming a conflict it cannot
-  demonstrate.
+  compiled into the same binary.** A file's build set is the conjunction of three independent
+  constraints: the `//go:build` expression, the constraint Go infers from the *file name*
+  (`_windows`, `_amd64`, `_linux_amd64`), and whether the file imports `"C"` — a cgo file is
+  excluded outright when cgo is disabled, whatever its name and tags say. Each resulting
+  expression is evaluated over a GOOS × GOARCH × cgo matrix, and two declarations conflict only
+  when their build sets intersect.
+
+  The matrix enumerates the GOOS/GOARCH pairs the toolchain can actually build (`go tool dist
+  list`, 47 of them), not their cross product. An invented pair makes real constraints look
+  satisfied: under a fictional `freebsd/mipsle`, `//go:build mips || mipsle` and
+  `//go:build freebsd` both hold. Name recognition is deliberately wider than the matrix, so a
+  file named for a retired platform is constrained to a configuration that does not exist and is
+  therefore never built — suppressed rather than accused.
+
+  Platform variants of one function are therefore silent, which is what keeps the check usable on
+  any repository that targets more than one OS; a build tag the tool cannot recognise evaluates
+  false, so it assumes the narrowest reading rather than claiming a conflict it cannot demonstrate.
+  `init` and `_` are exempt: Go permits a package to declare either any number of times.
 - Import path syntax errors (empty, whitespace, or invalid characters), reported at the line the
   import is written on.
 

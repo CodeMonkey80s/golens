@@ -705,50 +705,98 @@ standard library:
 | Package | `golens check` | `go build` |
 |---|---|---|
 | `slices`, `maps`, `cmp` | 0 | clean |
-| `net/url` | 2 | clean |
-| `mime` | 10 | clean |
-| `os` | 321 | clean |
-| `runtime` | 5,147 | clean |
-| `syscall` | 61,287 | clean |
+| `mime`, `net/url`, `crypto/tls`, `runtime/pprof` | 0 | clean |
+| `net`, `os`, `internal/poll` | 0 | clean |
+| `runtime` | 0 | clean |
+| `syscall` | 0 | clean |
 
-Every one of those is a false positive. If a single package in a small repository reports
-redeclarations that `go build` calls clean, this is the cause.
+Before the fix those same packages reported 2, 10, 321, 5,147 and 61,287 redeclarations
+respectively — 70,854 across the tree, every one of them a false positive on code that compiles.
+If a single package in a small repository reports redeclarations that `go build` calls clean,
+this is the cause.
+
+The fix has three parts, and each is separately load-bearing. Probe them separately, because a
+pass here can be vacuous:
+
+```console
+$ /tmp/golens check $GOROOT/src 2>&1 | grep -v '/testdata/' | wc -l   # 0
+```
+
+- **Filename suffixes.** `_windows`, `_amd64`, `_linux_amd64`. The name is read from the first
+  underscore onward: `os/zero_copy_linux.go` is linux-only and `runtime/os_only_solaris.go` is
+  solaris-only, despite the package name prefix.
+- **A real GOOS × GOARCH matrix.** `go tool dist list` gives 47 pairs; a cross product gives 210.
+  An invented pair such as `freebsd/mipsle` makes `//go:build mips || mipsle` and
+  `//go:build freebsd` both hold, which is a false positive.
+- **cgo.** A file importing `"C"` is excluded when cgo is disabled, whatever its name and tags
+  say. `crypto/internal/sysrand/internal/seccomp` is the stdlib's own instance of this.
+
+**Preflight.** This case only exercises those paths if the target actually has platform variants
+and cgo files. Check before recording it:
+
+```console
+$ find $GOROOT/src -name '*_linux.go' | wc -l      # non-zero: filename suffixes matter
+$ grep -rl 'import "C"' $GOROOT/src --include='*.go' | wc -l
+```
+
+A zero is not a pass — it is a gap in coverage. Find another repository or record the case as
+unexercised.
 
 ☐
 
 ## 18. A tree containing one unparseable file
 
-`outline` aborts on the first file it cannot parse and writes **nothing**, even though every other
-file is fine. `check` does the opposite: it reports the failure as one diagnostic and carries on.
-The asymmetry is deliberate — an outline entry without its source is not useful — but on a large tree
-it means one malformed fixture hides 8,000 files.
+A file that does not parse is **left out of the outline, named on stderr, and the run still exits
+4** — but every other file is outlined first. `check` behaves the same way for the same reason: a
+parse failure is one finding among many, never a reason to stop looking.
 
-The standard library is the natural subject: it holds 8,088 `.go` files and exactly one of them does
-not parse, `cmd/compile/internal/syntax/testdata/issue20789.go`, which is compiler test data
-containing deliberate syntax errors.
+Ordering matters here. stdout carries everything that parsed, stderr carries the failure. A caller
+that checks `$?` learns the answer is partial; a caller that only reads stdout still gets every
+file that could be read. The reverse — exit 0, silent — would be a lie.
+
+The standard library is the natural subject: it holds 8,088 `.go` files, and its `testdata`
+trees contain compiler fixtures written to be unparseable.
 
 ```console
 $ GOROOT=$(go env GOROOT)
-$ find $GOROOT/src -name '*.go' | wc -l                       # 8088
-$ /tmp/golens outline $GOROOT/src > /dev/null; echo "exit=$?"  # 4, and no output
-$ /tmp/golens check    $GOROOT/src > /dev/null; echo "exit=$?"  # 3, and every other file still checked
+$ find $GOROOT/src -name '*.go' | wc -l                          # 8088
+$ /tmp/golens outline $GOROOT/src | grep -c '^file:'             # thousands, not zero
+$ /tmp/golens outline $GOROOT/src > /dev/null; echo "exit=$?"    # 4
+$ /tmp/golens check    $GOROOT/src > /dev/null; echo "exit=$?"    # 3
 ```
 
-Look for: `exit=4` with empty stdout from `outline`, and `exit=3` with the parse diagnostic plus
-everything else from `check`.
+Look for: **`outline` exits 4 with a populated stdout**, and stderr naming the skipped files and
+how complete the answer is:
 
-**An agent that hits this concludes the tool cannot read Go.** Work out how to scope around the
-damaged file before reporting a defect — outlining a package subtree works:
+```text
+golens: 45 of 7134 files could not be parsed and are missing from the outline: cmd/compile/...
+```
+
+The count is exact; the enumeration is capped at five entries followed by "and N more".
+
+Then the machine-consumer case, which is where a truncated payload would actually bite:
 
 ```console
-$ /tmp/golens outline $GOROOT/src/slices > /dev/null; echo "exit=$?"
+$ /tmp/golens outline $GOROOT/src --json --compact 2>/dev/null | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'
 ```
 
-Expect `exit=0`.
+Look for: **a count, not a JSON parse error.** stdout must remain valid JSON when files are
+skipped, or `golens outline . --json | jq` breaks on exactly the repositories where the agent most
+needs it.
 
-Whether one bad file should cost the whole traversal is a design question worth answering
-deliberately rather than discovering in the field. Note that `golens` does **not** skip `testdata`
-directories, which is what puts the broken fixture in scope.
+And the degenerate case, one broken file with nothing else to salvage — the message should be the
+bare diagnostic, not "1 of 1 files could not be parsed":
+
+```console
+$ printf 'package p\n\nfunc f( {\n' > /tmp/one_broken.go
+$ /tmp/golens outline /tmp/one_broken.go; echo "exit=$?"
+```
+
+Look for: `exit=4` and a message that is the parse error itself.
+
+Note that `golens` does **not** skip `testdata` directories, which is what puts the broken fixtures
+in scope. That is deliberate — an agent asking what a directory contains wants all of it — but it
+means the skipped-file count on a repository like the standard library will never be zero.
 
 ☐
 
@@ -763,6 +811,7 @@ Run **10, 17, 16, 13, 6, 9** in that order.
 | 10 | Offsets that round-trip but address the wrong span silently corrupt files |
 | 17 | Implicit filename constraints. 70,854 false positives on the standard library; every cross-platform package is affected |
 | 16 | Byte offsets applied to characters. Triggers on ordinary multi-byte content, and on some files the mistake is completely invisible |
+| 18 | A partial outline with a non-zero exit. Silent truncation corrupts an agent's map of the repository |
 | 13 | A false unused-import accusation makes an agent delete working code |
 | 6 | Generic receivers with type parameters — no fixture covers this |
 | 9 | Large files, where an allocation or complexity problem would surface |

@@ -80,6 +80,11 @@ nothing, which looks exactly like a clean result. Always `2>&1`.
 Exit 0 does not mean the file compiles — an undefined type or a struct field you accidentally
 dropped both pass. `go build ./...` is the only thing that settles it.
 
+**`outline` can come back partial.** A file that does not parse is left out, named on stderr, and
+the run exits 4 — but every other file is outlined first, so stdout is not empty and a `--json`
+payload still parses. Exit 4 with usable output means *incomplete*, not *failed*: check `$?` to
+learn whether your map of the tree is whole, but do not discard stdout on it.
+
 **A symbol can be ambiguous.** Platform variants of one method commonly appear in four files.
 Ambiguity exits 2, prints nothing to stdout, and lists the candidates on stderr. Pass a
 specific file instead of a directory to resolve it.
