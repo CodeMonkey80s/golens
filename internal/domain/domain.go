@@ -112,8 +112,14 @@ type Node struct {
 	// or empty when the declaration has none. It is kept separate from Name so that the
 	// symbol name stays the bare identifier for lookup.
 	TypeParams string
-	Bounds     Bounds
-	Children   []Node
+	// IsAlias marks a type alias, "type A = B", as opposed to a defined type, "type A B".
+	// The "=" is the only difference between the two in source, and it changes the meaning:
+	// an alias is interchangeable with B, a defined type is not. Rendering an alias as a
+	// defined type produces code that compiles and behaves wrongly, so Declaration must
+	// reproduce the "=" rather than infer the form from Detail.
+	IsAlias  bool
+	Bounds   Bounds
+	Children []Node
 
 	// IsGroup marks a synthetic container the engine introduced for presentation, such as
 	// the "IMPORTS" or "TYPES & STRUCTS" headings. A group has no source text of its own; its
@@ -147,6 +153,12 @@ func (n Node) Declaration() string {
 		// "type Stack[T any] struct". Detail is the underlying type or literal, separated
 		// by a space.
 		head := keyword + " " + n.Name + n.TypeParams
+		// An alias keeps its "=", spaced as the source spells it: "type Alias = X".
+		// Without it the head describes a defined type, which is a different program:
+		// the name stops being interchangeable with X.
+		if n.IsAlias {
+			head += " ="
+		}
 		if n.Detail != "" {
 			return head + " " + n.Detail
 		}
@@ -179,12 +191,14 @@ type Symbol struct {
 	Detail        string
 	Receiver      string
 	TypeParams    string
+	// IsAlias marks a type alias rather than a defined type. See Node.IsAlias.
+	IsAlias bool
 }
 
 // Declaration renders the symbol as a Go declaration head, using the same form as
 // Node.Declaration.
 func (s Symbol) Declaration() string {
-	return Node{Name: s.Name, Kind: s.Kind, Detail: s.Detail, Receiver: s.Receiver, TypeParams: s.TypeParams}.Declaration()
+	return Node{Name: s.Name, Kind: s.Kind, Detail: s.Detail, Receiver: s.Receiver, TypeParams: s.TypeParams, IsAlias: s.IsAlias}.Declaration()
 }
 
 // Document is the result of parsing one source file.

@@ -241,6 +241,9 @@ func (b *builder) genSymbols(gen *ast.GenDecl) []domain.Symbol {
 				Bounds:        nodeBounds(b.tf, s.Pos(), s.End()),
 				Detail:        detail,
 				TypeParams:    typeParamsText(s.TypeParams),
+				// Assign is set only for "type A = B"; token.NoPos otherwise. See
+				// domain.Node.IsAlias for why the distinction has to be carried.
+				IsAlias: s.Assign.IsValid(),
 			})
 		case *ast.ValueSpec:
 			for _, name := range s.Names {
@@ -320,6 +323,7 @@ func (b *builder) nodes(file *ast.File) []domain.Node {
 						Name:       s.Name.Name,
 						Kind:       kind,
 						TypeParams: typeParamsText(s.TypeParams),
+						IsAlias:    s.Assign.IsValid(),
 						Bounds:     nodeBounds(b.tf, s.Pos(), s.End()),
 					}
 					if s.Type != nil {

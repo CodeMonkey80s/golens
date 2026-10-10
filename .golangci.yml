@@ -68,7 +68,7 @@ formatters:
   settings:
     gofumpt:
       # golens targets go 1.27; the extra rules are safe.
-      extra-rules: true
+      extra.group-params: true
 
 run:
   timeout: 5m

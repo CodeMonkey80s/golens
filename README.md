@@ -293,7 +293,7 @@ so a violation fails the build.
 | Budget | Measured |
 |---|---|
 | Read + parse, single file | ~13 µs typical, 282 µs on the largest file here (budget 5 ms) |
-| Binary size | 3.9 MB (budget 15 MB) |
+| Binary size | 5.3 MB stripped (budget 15 MB) |
 
 Directory parsing is concurrent above eight files and sequential below, so the single-file path
 never pays for goroutines. Concurrency is unobservable: output is byte-identical either way,

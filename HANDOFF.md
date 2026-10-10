@@ -1,128 +1,241 @@
 # HANDOFF — golens
 
-**Status: S5 COMPLETE. All five sessions done.** `go test -count=1 ./...` green (136 tests),
-`go vet` clean, `gofmt` clean, clean under `-race`.
+**Status: feature-complete. The session plan is done and 12 commits of unplanned hardening landed
+after it.** Every gate below was re-run at commit `cbec81d`; all are green.
 
-**All twelve acceptance criteria (A1–A12) are green.**
-
----
+There is no next session to hand off to. This document records where the project actually is, so the
+next agent starts from fact rather than from the plan.
 
 ## Current state
 
 | Field | Value |
 |---|---|
-| Branch | `main` only — all five sessions merged fast-forward, session branches deleted |
-| Tests | 136 top-level, 7 packages, all passing |
-| Test count by package | arch 7 · cli 26 · domain 7 · goast 16 · format 19 · naming 8 · usecase 53 |
-| Licence | MIT, `LICENSE` at repo root, copyright holder from git config |
-| Verify with | **`go test -count=1 ./...`** — see caching note |
-| Binary | 3.92 MB (budget 15 MB) |
-| Parse budget | ~13 µs typical, 282 µs largest file (budget 5 ms) |
-| Self-check | `golens check ./internal`, `./cmd`, and `check . --naming` all exit 0 |
+| Branch | `main` only, working tree clean |
 | Remote | **none configured** — nothing has been or can be pushed |
+| Tests | 296 top-level (441 including subtests), 7 packages, all passing |
+| Test count by package | arch 7 · cli 64 · domain 15 · goast 45 · format 20 · naming 13 · usecase 132 |
+| Licence | MIT, `LICENSE` at repo root |
+| Toolchain | go1.27.2, `golang.org/x` dependencies: none. Only cobra and its two indirects |
+| Verify with | **`go test -count=1 ./...`** — see caching note below |
+| Binary | 5.30 MB stripped, 8.05 MB plain (budget 15 MB) |
+| Parse budget | 14.6 µs typical, 304 µs largest file (budget 5 ms P95) |
+| Lint | `golangci-lint run ./...` — 0 issues, v2.14.0 |
+| Self-check | `golens check ./internal`, `./cmd`, and `check . --naming` all exit 0 |
 
-### History
-
-Ten commits, one per session plus docs, all linear on `main`. Kept unmerged-per-session so the
-commit messages and retrospectives stay navigable — each names the bugs it fixed.
+### Verification actually run
 
 ```
+go test -count=1 ./...          # pass
+go test -race -count=1 ./...    # pass
+go vet ./...                    # clean
+gofmt -l .                      # empty
+golangci-lint run ./...         # 0 issues
+./golens check ./internal       # exit 0
+./golens check ./cmd            # exit 0
+./golens check . --naming       # exit 0
+```
+
+## History
+
+Twenty-three commits on `main`, linear. The first eleven are the five-session plan and its merge; the
+last twelve are post-plan hardening.
+
+```
+cbec81d  README: update binary size to 5.4 MB stripped
+881414f  ci: add golangci-lint with a minimal, agent-shaped linter set
+ec84025  usecase: benchmark all four commands end to end
+b89e0f3  cli: show the build constraint, advise disambiguation, add --version
+2b53ceb  check help: say it is not a type checker; add the cold-start protocol
+974f912  cli: lead each command's help with a labelled fact block
+d011d65  cli: put the per-command conventions in --help, add AGENTS.md
+16cbee9  check: drop three false-positive classes found against duf
+ea925e7  TESTING: cover the check false positives found against duf
+72c791a  Match declaration heads to the source, and locate naming violations
+939d6fb  Resolve /vN module suffixes in import local names
+da7ea2e  ci: GitHub Actions workflow
+02334de  docs: record the merge into main
 7e7089a  Add acknowledgements section
 91d5498  Add MIT LICENSE
 0b136d3  docs: final handoff, all sessions complete
 43ae86d  S5: concurrency (A3), spec conformance, and a README
 f5f85c5  docs: S4 retrospective and a current handoff
-675d0dc  S4: check test suite, cross-file conflicts, false positive fixed
-554ef6d  S3: byte invariant through get, overwrite round trip
-5963ae6  S2: outline golden tests, --compact, fix unlimited depth
+675d0dc  S4: check test suite, cross-file conflicts, and a false positive fixed
+554ef6d  S3: byte invariant through get, and the overwrite round trip
+5963ae6  S2: outline golden tests, --compact, and fix unlimited depth
 2b1889f  S2: add shared fixtures and the twelve A12 classes
 ddcd80a  S1: foundation, engine, and all four commands
 ```
 
-## Landed in S5
+The five-session plan in `documentation/implementation-plan.md` is S1–S5 and all five landed. The
+commit messages are the real record; each names the bugs it fixed, which is more useful here than any
+summary.
 
-| Item | Detail |
+## What landed after the plan
+
+Twelve commits that no document in `documentation/` accounts for. All of them came from running the
+tool against real repositories — `duf` and `GoDiabolicalDecorations` — rather than from fixtures.
+
+### Defects found and fixed
+
+| Commit | Defect | Impact |
+|---|---|---|
+| `72c791a` | Generic type parameters dropped from rendered heads | `type Stack[T any] struct` rendered as `type Stack struct`; an agent copying it writes code that will not compile |
+| `72c791a` | Receiver variable name invented | Every method rendered `(s ...)` regardless of source — all 61 in the test repo |
+| `72c791a` | Embedded fields rendered their type twice | `sync.Mutex sync.Mutex` |
+| `72c791a` | Naming diagnostics reported every violation at line 1 | Location was fabricated |
+| `939d6fb` | `/vN` module suffixes bound as the package name | `math/rand/v2` bound as `v2`; the unused-import check would call a live import dead |
+| `16cbee9` | Redeclarations across mutually exclusive build constraints | **24 false positives on duf**, a repo that compiles cleanly on five platforms. Now evaluates constraints over a GOOS × GOARCH × cgo matrix |
+| `16cbee9` | Unused imports whose local name cannot be derived | `github.com/mattn/go-runewidth` → `go-runewidth`, not an identifier; check now stays silent rather than guessing |
+| `16cbee9` | camelCaseId applied to `SCREAMING_SNAKE_CASE` | Flagged every all-caps constant by construction. Now exempt, narrowly — an underscore is required, so a bare `OK` or `ID` is still banned |
+| `b89e0f3` | `outline` never showed a file's build constraint | An agent could edit `filesystems_windows.go` on linux and conclude the tool lied |
+
+The three `16cbee9` classes were found by testing against a real repository, and every one is a false
+positive — the direction AGENTS.md says is the expensive one, because an agent that believes a
+diagnostic may delete working code. The narrowed rule still catches genuine violations; TESTING.md
+case 13 carries a positive control.
+
+### Additions
+
+| Commit | Item |
 |---|---|
-| **A3 concurrency** | `parse.go`: goroutine per file, bounded by GOMAXPROCS, positional results. Sequential below 8 files and for single files |
-| **A3 proof** | Renders with `GOMAXPROCS=1` and compares byte-for-byte, across all four output modes and tree sizes straddling the threshold. Clean under `-race` |
-| **Spec conformance suite** | `internal/cli/spec_test.go` — 12 tests, each citing the specification clause it verifies |
-| **README** | Install, four commands with real output, exit codes, byte-offset convention, agent workflow, layout, performance |
-| **Import-path check** | Verified reachable, extended to catch escape sequences |
-| **CI** | `.github/workflows/ci.yml` — tests, race, vet, gofmt gate, 15 MB budget, no-cgo, self-check. Two jobs: `verify` and a faster `quick` |
+| `da7ea2e` | `.github/workflows/ci.yml` — `verify` and `quick` jobs, on push and PR to `main` |
+| `881414f` | `.golangci.yml` — errcheck, staticcheck, unused, ineffassign, plus auto-fixable formatters. Style linters deliberately off |
+| `ec84025` | End-to-end benchmarks for all four commands |
+| `d011d65` | Per-command `Long` help carrying exit codes and the stream contract; `AGENTS.md` at root; `documentation/AGENTS.template.md` |
+| `974f912` | Each command's help now opens with a labelled fact block; destructive facts moved from paragraph four to line five |
+| `b89e0f3` | `--version`; ambiguity errors carry the remedy |
+| `2b53ceb` | `check` help states plainly that exit 0 does not mean the file compiles; `documentation/COLDSTART.md` |
+| `d011d65` | Dropped `go/build` — it imports `go/ast`, which `internal/arch` forbids outside `engine/goast`. `runtime.Version` derives the release tags instead |
 
-## Bugs found in S5
+`d011d65` is the load-bearing one for future agents: help text cannot drift from the binary, so the
+conventions live in the command definitions rather than in a file an agent may never read.
 
-| Bug | Impact |
-|---|---|
-| `parseAll` returning errors broke `check` | `check`'s contract is that a parse failure is a *diagnostic*, not an abort. Now returns partial results plus every error |
-| `classifyUsage` wrapped every unrecognised error as usage | `outline` on an unparseable file exited 1 instead of 4, telling the caller it had invoked the tool wrongly |
-| `get` printed `Lines: lines 28-35` and `1 lines` | Spec says `Lines: 17-25 (9 lines)`. **My own S3 golden test had enshrined the divergence** |
+### Performance
 
-That last one is the most useful result of the session. Four sessions had verified their own
-surfaces; the line-by-line spec review is what caught a claim that was tested, passing, and wrong.
+Measured on this machine, largest non-test file. Parse dominates three of the four commands.
 
-## Acceptance criteria — all green
+| Operation | ns/op | allocs/op |
+|---|---|---|
+| Parse, hand-written fixture | 14,626 | 373 |
+| Parse, largest real file | 303,719 | 6,242 |
+| `outline` human | 367,325 | 6,735 |
+| `outline` json | 391,765 | 6,605 |
+| `outline` compact | 350,761 | 6,760 |
+| `outline` directory (25 files) | 1,774,424 | 41,131 |
+| `get` | 321,258 | 5,435 |
+| `bounds` | 300,316 | 5,436 |
+| `check` | 2,871,215 | 55,373 |
+| `check --naming` | 1,832,220 | 40,810 |
+
+`check` is ten times a parse because it runs several analyses. Reproduce with
+`go test -run XXX -bench . ./internal/usecase ./internal/engine/goast`.
+
+## Alias fix — the last misfiled defect
+
+`outline` rendered `type Alias = X` as `type Alias X`. Every other instance of this bug class
+produced code that **failed to compile**; this one compiled and meant something else:
+
+```go
+type Alias = X        // an alias: interchangeable with X
+type Copied X         // what golens printed: a new defined type
+```
+
+Copying the rendered head gave `cannot use X{} (value of struct type X) as Copied value` and
+`a.Describe undefined`. A silently wrong declaration is worse than a loud one, so this was the
+highest-severity defect in the project — and the S5 handoff had filed it as cosmetic, which is
+probably why it survived.
+
+The cause is that `Detail` cannot distinguish the two forms: both are `Name` plus an underlying
+type. `ast.TypeSpec.Assign` is set only for an alias, so `Node.IsAlias` and `Symbol.IsAlias` carry
+it and `Declaration` reproduces the `=`. `TypeParams` set the precedent of adding a field for a
+distinction the AST has and the model dropped.
+
+Two golden expectations had recorded the bug (`TestOutlineMatchesSpecificationSample`,
+`TestCompactIsLosslessSubset`) and were updated. Neither asserts against the specification — the
+spec's sample contains no alias — so both were pinning observed output rather than required output.
+`TestDeclarationHeadsMatchSource` now covers `Alias` and `Defined` side by side, since the
+interesting property is that two declarations with the same underlying type differ.
+
+Verified the test fails without the fix rather than assuming it: removing the `IsAlias` branch in
+`Declaration` reproduces `got: type Alias Stack[int]`.
+
+## Acceptance criteria
+
+All twelve green. Evidence is a test, not a claim.
 
 | # | Criterion | Evidence |
 |---|---|---|
-| A1 | `file[start:end]` == extracted source | Property test across 12 fixture classes, plus an overwrite round trip that re-parses |
-| A2 | Two runs → byte-identical stdout | `TestOutlineDirectoryIsDeterministic` |
-| A3 | Concurrent == serial output | `TestConcurrentOutputMatchesSerial`, all 4 output modes |
-| A4 | JSON parses, `schema_version: 1` first | `TestSpecSchemaVersionIsFirstField`, all 4 commands |
+| A1 | `file[start:end]` == extracted source | `TestByteInvariantThroughGet` across 12 fixture classes, plus `TestOverwriteRoundTrip` and `TestOverwritePreservesLineStructure` |
+| A2 | Two runs → byte-identical stdout | `TestOutlineDirectoryIsDeterministic`, `TestConcurrentDeterministicAcrossRuns` |
+| A3 | Concurrent == serial output | `TestConcurrentOutputMatchesSerial`, all four output modes, random tree sizes straddling the threshold |
+| A4 | JSON parses, `schema_version: 1` first | `TestSpecSchemaVersionIsFirstField`, all four commands |
 | A5 | `--compact` loses no information | `TestCompactIsLosslessSubset` |
-| A6 | `get --bounds-only` ≡ `bounds` | Asserted at format, usecase and CLI level |
+| A6 | `get --bounds-only` ≡ `bounds` | `TestSpecBoundsOnlyMatchesBounds`, plus format and usecase level |
 | A7 | Repo-wide naming test clean | `TestRepositoryFollowsNamingConvention` |
-| A8 | Parse < 5 ms P95 | Benchmark-gated test |
-| A9 | Binary < 15 MB | 3.92 MB |
+| A8 | Parse < 5 ms P95 | `TestParseP95UnderBudget` |
+| A9 | Binary < 15 MB | 5.30 MB |
 | A10 | No cgo | `TestNoCgoDependency` |
 | A11 | `domain`/`usecase` import nothing external | `internal/arch` |
 | A12 | 12 fixture classes | `TestFixtureClasses` |
 
+`internal/cli/spec_test.go` adds 11 more, each citing the specification clause it verifies.
+
 ## Caching note
 
-`go test ./...` **without `-count=1` can report a stale pass.** Four packages assert facts about
-the build graph or the source tree rather than about their own test inputs: `internal/arch`
+`go test ./...` **without `-count=1` can report a stale pass.** Four packages assert facts about the
+build graph or the source tree rather than about their own test inputs: `internal/arch`
 (`go list -deps`), `internal/naming` (scans this repo), `selfcheck_test.go` and
 `TestRepositoryPassesItsOwnCheck` (walk the tree). Go's cache does not invalidate on those.
 
-This hid a real failure during S1. **Always use `go test -count=1 ./...` here.**
+This hid a real failure during S1. **Always use `go test -count=1 ./...` here.** CI enforces it, and
+`go test -short ./...` skips the repo-wide scans.
 
 ## Frozen interfaces
 
-Unchanged since S1 except `Node.IsGroup` (S2). See `decisions.md` §2 for the canonical copy.
+Unchanged since S1 except `Node.IsGroup` (S2) and `TypeParams` on `Node`/`Symbol` (`72c791a`). See
+`decisions.md` §2 for the canonical copy.
 
 ```go
 type Bounds struct{ StartLine, EndLine, StartByte, EndByte int }
 type Node struct {
-    Name, Detail, Receiver string
+    Name, Detail, Receiver, TypeParams string
     Kind     Kind
     Bounds   Bounds
     Children []Node
     IsGroup  bool
 }
-type Symbol struct{ Name, QualifiedName string; Kind Kind; Bounds Bounds; File, Detail, Receiver string }
+type Symbol struct{ Name, QualifiedName string; Kind Kind; Bounds Bounds; File, Detail, Receiver, TypeParams string }
 type Document struct{ Path, Package string; Bounds Bounds; Nodes []Node; Symbols []Symbol; Imports []string; Source []byte; Comments bool }
 type Engine interface{ Parse(path string) (Document, error) }
 ```
 
+`TypeParams` carries the bracketed list verbatim, `"[T any]"`, kept separate from `Name` so the
+symbol name stays the bare identifier for lookup. `Receiver` is the receiver as the source spells it,
+`"s *UserStore"`. Both are load-bearing — see the traps in `AGENTS.md`.
+
 ## Remaining work
 
-The plan is finished. These are optional, none blocking.
+Nothing blocking. The first item is the only real one.
+
+The `type X = Y` alias bug that used to be listed here is **fixed** — see "Alias fix" below. It was
+misfiled as cosmetic; it was the most dangerous defect the plan ever shipped.
 
 | Item | Notes |
 |---|---|
-| Tag / publish | No remote configured |
-| `var x = 5` shows no `= 5` in outline | Cosmetic; `KindVar`/`KindConst` `Detail` carries the type only |
-| `type X = Y` renders `type Alias User`, losing `=` | Cosmetic |
-| `check .` exits 3 on `testdata/store/store.go` | Intentional — the unused import gives the outline golden a stable shape. Worth a comment in the fixture |
-| Unused-import false negatives | Accepted: comment-only references and shadowed locals. Never false positives, verified empirically |
+| **Tag and publish** | No remote configured, so `go install ...@latest` cannot work. README leads with a checkout and says so. This is the only thing standing between the code and use |
+| `var x = 5` shows no `= 5` in outline | Cosmetic, and unlike the alias case it is not an edit hazard: the byte span covers only the name, and writing the name back is what the specification requires |
+| `check .` exits 3 on `testdata/store/store.go` | Intentional — the unused import gives the outline golden a stable shape |
+| Unused-import false negatives | Accepted: comment-only references and shadowed locals. Never false positives, verified empirically against three repositories |
 | `userIdX` naming false positive | Accepted: resolving it needs an English dictionary, not an approved dependency |
 
 ## Read first
 
-1. `README.md` — how to use the tool
-2. `documentation/retrospective-s4.md` — **error bias per check**, and why a checker must run on its own codebase
-3. `documentation/retrospective-s2.md` — sentinel values; three bugs in green tests
-4. `documentation/retrospective-s1.md` — the `go/ast` position model; why `Detail` stays a token
-5. `documentation/specification.md` — normative
-6. `documentation/decisions.md` — rationale, frozen interfaces, A1–A12
+1. `AGENTS.md` — the invariants, the layering rule, and the traps that bit twice
+2. `README.md` — how to use the tool
+3. `documentation/specification.md` — normative
+4. `documentation/decisions.md` — rationale, frozen interfaces, A1–A12
+5. `documentation/COLDSTART.md` — tests the instructions, not the tool
+6. `documentation/retrospective-s4.md` — **error bias per check**, and why a checker must run on its own codebase
+7. `documentation/retrospective-s2.md` — sentinel values; three bugs in green tests
+8. `documentation/retrospective-s1.md` — the `go/ast` position model; why `Detail` stays a token
+9. `TESTING.md` — fifteen manual cases; **run them against a real repository after any engine or check change**

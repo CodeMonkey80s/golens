@@ -438,11 +438,14 @@ func F(a int, b string) {}
 
 // TestDeclarationHeadsMatchSource pins the rendered declaration head for the three
 // constructs where it previously diverged from the source: generic type parameters,
-// receiver spelling, and embedded struct fields.
+// receiver spelling, embedded struct fields, and the "=" on a type alias.
 //
 // Each of these produced text that does not compile when copied into an edit --
 // "type Stack struct" for "type Stack[T any] struct", "func (s Locker) Ext()" for
 // "func (s sync.Locker) Ext()", and "sync.Mutex sync.Mutex" for an embedded field.
+//
+// The alias case is the one that compiles anyway, which is worse: "type Alias Stack[int]"
+// is a valid declaration of a different type.
 func TestDeclarationHeadsMatchSource(t *testing.T) {
 	src := `package p
 
@@ -452,6 +455,9 @@ type Stack[T any] struct {
 	sync.Mutex
 	items []T
 }
+
+type Alias = Stack[int]
+type Defined Stack[int]
 
 func (s *Stack[T]) Push(v T) {}
 func (s Stack[T]) Len() int   { return len(s.items) }
@@ -488,6 +494,24 @@ func (s Stack[T]) Pop() (T, bool) { var z T; return z, false }
 	}
 	if got, want := typeSym.Declaration(), "type Stack[T any] struct"; got != want {
 		t.Errorf("Stack declaration head:\n got: %s\nwant: %s", got, want)
+	}
+
+	// An alias and a defined type of the same underlying type render differently, and
+	// the difference is the whole point of both. Dropping the "=" yields "type Alias
+	// Stack[int]", which compiles as a defined type and stops Alias from being
+	// interchangeable with Stack -- so the copied code is wrong without looking wrong.
+	for qualified, want := range map[string]string{
+		"Alias":   "type Alias = Stack[int]",
+		"Defined": "type Defined Stack[int]",
+	} {
+		sym, ok := doc.Symbol(qualified)
+		if !ok {
+			t.Errorf("symbol %q not found; have %v", qualified, names(doc))
+			continue
+		}
+		if got := sym.Declaration(); got != want {
+			t.Errorf("%s declaration head:\n got: %s\nwant: %s", qualified, got, want)
+		}
 	}
 
 	// The embedded field is the whole declaration: its name, with no type repeated.

@@ -94,7 +94,9 @@ func TestOutlineMatchesSpecificationSample(t *testing.T) {
 		"TYPES & STRUCTS (lines 8-18)",
 		"  • type User struct (lines 8-11)",
 		"  • type UserStore struct (lines 13-16)",
-		"  • type Alias User (line 18)",
+		// The "=" survives. An alias head that drops it reads as a defined type, which
+		// is a different program; see TestDeclarationHeadsMatchSource.
+		"  • type Alias = User (line 18)",
 		"",
 		"FUNCTIONS & METHODS (lines 24-39)",
 		"  • func NewUserStore() *UserStore (lines 24-26)",
@@ -241,7 +243,7 @@ func TestCompactIsLosslessSubset(t *testing.T) {
 	// Every declaration in the full form must survive compaction.
 	for _, fact := range []string{
 		"context", "fmt",
-		"type User struct", "type UserStore struct", "type Alias User",
+		"type User struct", "type UserStore struct", "type Alias = User",
 		"func NewUserStore() *UserStore",
 		"func (s *UserStore) GetUser(ctx context.Context, id int) (*User, error)",
 		"func (s UserStore) Len() int",
