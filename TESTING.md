@@ -31,11 +31,21 @@ Run this first, in the repository under test:
 
 ```console
 $ printf 'build tags : %s\n' "$(grep -rl '//go:build' --include='*.go' . 2>/dev/null | wc -l)"
-$ printf 'generics   : %s\n' "$(grep -rlE '^func [A-Za-z_]+\[|^type [A-Za-z_]+\[' --include='*.go' . 2>/dev/null | grep -v testdata | wc -l)"
+$ printf 'generics   : %s\n' "$(/tmp/golens outline . --depth 1 2>/dev/null | grep -cE '^  • (type [A-Za-z_][A-Za-z0-9_]*|func [A-Za-z_][A-Za-z0-9_]*)\[[A-Za-z]|^  • func \([^)]*\[[A-Za-z]')"
 $ printf 'cgo        : %s\n' "$(grep -rl 'import "C"' --include='*.go' . 2>/dev/null | wc -l)"
 $ printf 'go:embed   : %s\n' "$(grep -rl '//go:embed' --include='*.go' . 2>/dev/null | wc -l)"
 $ printf 'largest    : %s\n' "$(ls -S $(find . -name '*.go' -not -path '*/testdata/*' -not -path '*/.git/*') | head -1)"
 ```
+
+The generics probe asks golens rather than grep, because that is the point of the tool: a `grep` for
+`^type X[` also matches **test data inside a raw string literal**, so it reports generics in a
+repository that declares none. golens reads code, not text. This is not hypothetical — run against
+golens itself the grep route reports `1` and the golens route reports `0`, because its one
+`type Stack[T any]` is fixture text inside a backtick string.
+
+The pattern matches a generic type, a generic function, and a method on a generic receiver, and
+deliberately does **not** match `type X map[K]V`, which is a map and not a type parameter list.
+Verified against four repositories that declare none and one that does.
 
 | Case | Needs | A zero or small result means |
 |---|---|---|
@@ -59,6 +69,22 @@ largest    : ./filesystems_linux.go   (301 lines — too small for case 9)
 ```
 
 so a duf run exercises two of the four, and the other two have to come from somewhere else.
+
+### Where to find each construct
+
+Recorded from a survey of the repositories available on one machine, since the cases that matter
+most are the ones a single target cannot reach:
+
+| Case | duf | Use instead |
+|---|---|---|
+| 4 — build tags | yes | — |
+| 6 — generics | no | **nothing available.** No repository on that machine declares generics; golens's only `type Stack[T any]` is fixture text inside a raw string. Case 6 stays unexercised until a generics-using module is available, and that should be reported rather than assumed |
+| 8 — cgo / `go:embed` | no | `GoDiabolicalDecorations` has a `go:embed` file (`tools/gen-font-bitmap/main.go`) |
+| 9 — large file | 301 lines, too small | `CubeRL` — `internal/game/game.go` is 1,383 lines / 37 KB |
+
+Running case 8 against GoDiabolicalDecorations and case 9 against CubeRL: both pass. The embed
+file parses cleanly and `go build` agrees; the 37 KB file outlines in under 10 ms against a 5 ms
+per-file parse budget, and `Game`'s 455-byte span is byte-exact against `get`.
 
 ---
 
