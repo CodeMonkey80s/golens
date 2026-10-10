@@ -267,4 +267,4 @@ misfiled as cosmetic; it was the most dangerous defect the plan ever shipped.
 6. `documentation/retrospective-s4.md` — **error bias per check**, and why a checker must run on its own codebase
 7. `documentation/retrospective-s2.md` — sentinel values; three bugs in green tests
 8. `documentation/retrospective-s1.md` — the `go/ast` position model; why `Detail` stays a token
-9. `TESTING.md` — fifteen manual cases; **run them against a real repository after any engine or check change**
+9. `TESTING.md` — sixteen manual cases; **run them against a real repository after any engine or check change**

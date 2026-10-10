@@ -184,6 +184,10 @@ EOF
 
 Look for: the file still parses, and the replacement landed inside the declaration.
 
+**Case 16 does the same splice on a file with a non-ASCII identifier, and then does it wrongly.**
+Do that one too — the failure is silent, and it does not reproduce on every layout, so passing
+here proves less than it looks like it does.
+
 **The span starts at the declaration's name, not its keyword.** For a type, var or const,
 `start_byte` points at the identifier, so the `type` / `var` / `const` keyword lies *outside*
 the range. Replacement text must start at the name as well:
@@ -393,15 +397,108 @@ Failure: non-deterministic output, or a wrong exit code.
 
 ☐
 
+## 16. Offsets are bytes, not characters
+
+Case 10 splices correctly. This one deliberately splices **wrongly**, because the failure it
+produces is the one that destroys files: no exception, no warning, and a parse error pointing
+somewhere other than the cause.
+
+`start_byte` and `end_byte` count bytes. Indexing a *decoded string* with those numbers counts
+characters, and the two numbering schemes differ as soon as the file contains a non-ASCII
+identifier or a BOM. Make a file that does:
+
+```console
+$ mkdir -p /tmp/enc
+$ cat > /tmp/enc/e.go <<'EOF'
+package enc
+
+type Café struct{ Name string }
+func F() {}
+EOF
+$ printf 'module enc\n\ngo 1.27\n' > /tmp/enc/go.mod
+$ python3 -c "raw=open('/tmp/enc/e.go','rb').read(); print(len(raw),'bytes',len(raw.decode()),'chars')"
+$ /tmp/golens bounds Café /tmp/enc/e.go --json
+```
+
+58 bytes, 57 characters. Now splice the way case 10 does — **in binary** — and confirm the file
+is intact:
+
+```console
+$ python3 - <<'EOF'
+import json, subprocess
+b = json.loads(subprocess.run(["/tmp/golens","bounds","Café","/tmp/enc/e.go","--json"],
+                              capture_output=True, text=True).stdout)
+raw = open("/tmp/enc/e.go", "rb").read()
+open("/tmp/enc/e.go","wb").write(raw[:b["start_byte"]] + b"Renamed struct{ Name string }" + raw[b["end_byte"]:])
+EOF
+$ (cd /tmp/enc && go build ./... && echo "intact")
+```
+
+Look for: `intact`.
+
+Now do the same splice through a decoded string, using the **same numbers**:
+
+```console
+$ cat > /tmp/enc/e.go <<'EOF'
+package enc
+
+type Café struct{ Name string }
+func F() {}
+EOF
+$ python3 - <<'EOF'
+import json, subprocess
+b = json.loads(subprocess.run(["/tmp/golens","bounds","Café","/tmp/enc/e.go","--json"],
+                              capture_output=True, text=True).stdout)
+text = open("/tmp/enc/e.go", encoding="utf-8").read()      # str, not bytes
+open("/tmp/enc/e.go","w",encoding="utf-8").write(
+    text[:b["start_byte"]] + "Renamed struct{ Name string }" + text[b["end_byte"]:])
+EOF
+$ cat /tmp/enc/e.go
+$ (cd /tmp/enc && go build ./...)
+```
+
+Look for: `func F` swallowed onto the end of the type line, and
+
+```
+e.go:3:35: syntax error: unexpected keyword func after top level declaration
+```
+
+That is the whole hazard in one run. Python raised nothing. The write succeeded. The error names
+line 3 column 35, which is nowhere near the decision that caused it.
+
+**Do not file the second run as a golens defect.** The offsets were correct; the consumer applied
+them to the wrong unit. An offset-counting implementation is the fix.
+
+**The overrun scales with the file, so it fails only sometimes — which is the dangerous part.**
+The overrun is however many bytes the span's non-ASCII characters occupy beyond one each: `é` is
+two bytes and overruns by one character, `日` is three bytes and overruns by two. So how much
+code the splice eats depends on both the identifiers and what follows:
+
+| What follows the declaration | Text splice result |
+|---|---|
+| A blank line | parses — the overrun ate a newline, leaving one instead of two |
+| One newline | **corrupts** — the next declaration is pulled onto this line |
+| Nothing (last in file) | parses — the overrun runs off the end |
+
+Three layouts, one bug, two silent successes. A change that passes on the file you tested it on
+is not evidence the approach is safe, which is why the run above is a positive control rather than
+an assertion that this particular file breaks.
+
+The same trap with a different offset: Python's `utf-8-sig` decode *strips* a BOM, shifting every
+index by three more.
+
+☐
+
 ---
 
 ## If time is short
 
-Run **10, 13, 6, 9** in that order.
+Run **10, 16, 13, 6, 9** in that order.
 
 | Case | Why it ranks here |
 |---|---|
 | 10 | Offsets that round-trip but address the wrong span silently corrupt files |
+| 16 | The same corruption reached by a different route — byte offsets applied to characters — and it fails only on some layouts, so passing it once proves nothing |
 | 13 | A false unused-import accusation makes an agent delete working code |
 | 6 | Generic receivers with type parameters — no fixture covers this |
 | 9 | Large files, where an allocation or complexity problem would surface |

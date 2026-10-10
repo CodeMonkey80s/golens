@@ -64,6 +64,12 @@ be: a dropped field is invisible to a syntax-level tool. Only `go build` caught 
 So the scoring rule for trap 5 is: does the diff show additions only? If a task adds one field
 and the diff shows deletions, the agent reconstructed instead of edited.
 
+**What a passing run does not prove.** The repository above is ASCII, so it cannot distinguish an
+agent that splices in binary from one that decodes to a string and indexes characters — the two
+produce identical results until a file contains a non-ASCII identifier or a BOM. Do not read a
+clean run as evidence that the encoding hazard is handled. `TESTING.md` case 16 covers that
+directly, by splicing wrongly on purpose and watching the file break.
+
 ## Reference result
 
 A correct run leaves this and nothing else:

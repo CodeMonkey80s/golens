@@ -67,9 +67,11 @@ name. When adding a check, bias toward silence and say so in the comment.
 
 ## Testing this tool
 
-`TESTING.md` is a fifteen-case manual plan to run against a real repository, not a fixture. It
+`TESTING.md` is a sixteen-case manual plan to run against a real repository, not a fixture. It
 found the declaration-head divergences, the unused-import false positive and the
-build-constraint false positives, none of which any unit test had caught. Run it against a real
+build-constraint false positives, none of which any unit test had caught. Cases 10 and 16 corrupt
+a file without raising anything, which is why they lead the short list — and case 16 fails only on
+some layouts, so one clean run is not evidence the approach is safe. Run it against a real
 Go project after any change to the engine or the checks, and treat every deviation as worth
 reporting — distinguish *wrong* from merely *ugly*, and only one of those is a bug.
 
