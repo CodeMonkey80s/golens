@@ -36,33 +36,46 @@ golangci-lint run ./...         # 0 issues
 
 ## History
 
-Twenty-three commits on `main`, linear. The first eleven are the five-session plan and its merge; the
-last twelve are post-plan hardening.
+Thirty-six commits on `main`, linear. The first eleven are the five-session plan and its merge; the
+rest is post-plan hardening, each batch of it found by running the tool rather than by reading it.
 
 ```
-cbec81d  README: update binary size to 5.4 MB stripped
-881414f  ci: add golangci-lint with a minimal, agent-shaped linter set
-ec84025  usecase: benchmark all four commands end to end
-b89e0f3  cli: show the build constraint, advise disambiguation, add --version
-2b53ceb  check help: say it is not a type checker; add the cold-start protocol
-974f912  cli: lead each command's help with a labelled fact block
-d011d65  cli: put the per-command conventions in --help, add AGENTS.md
-16cbee9  check: drop three false-positive classes found against duf
-ea925e7  TESTING: cover the check false positives found against duf
-72c791a  Match declaration heads to the source, and locate naming violations
-939d6fb  Resolve /vN module suffixes in import local names
-da7ea2e  ci: GitHub Actions workflow
-02334de  docs: record the merge into main
-7e7089a  Add acknowledgements section
-91d5498  Add MIT LICENSE
-0b136d3  docs: final handoff, all sessions complete
-43ae86d  S5: concurrency (A3), spec conformance, and a README
-f5f85c5  docs: S4 retrospective and a current handoff
-675d0dc  S4: check test suite, cross-file conflicts, and a false positive fixed
-554ef6d  S3: byte invariant through get, and the overwrite round trip
-5963ae6  S2: outline golden tests, --compact, and fix unlimited depth
-2b1889f  S2: add shared fixtures and the twelve A12 classes
-ddcd80a  S1: foundation, engine, and all four commands
+4309b08  feat: foundation, engine, and all four commands
+c97a2b6  test: add shared fixtures and twelve A12 classes
+5974d84  test: outline golden tests, --compact, fix unlimited depth
+e00ba74  feat: byte invariant through get, overwrite round trip
+f7c67b1  test: check test suite, cross-file conflicts, fix false positive
+e1b740b  docs: S4 retrospective and current handoff
+dcc0d12  feat: concurrency (A3), spec conformance, README
+1947d4a  docs: final handoff, all sessions complete
+976875b  docs: add MIT license
+a931df5  docs: add acknowledgements section
+8134a52  docs: record merge into main
+bb3cddc  ci: add GitHub Actions workflow
+4b4cba5  feat: resolve /vN module suffixes in import local names
+2972bd2  feat: match declaration heads to source, locate naming violations
+89bb6a2  test: cover check false positives found against duf
+30f2448  fix: drop three false-positive classes found against duf
+fad1b79  cli: put per-command conventions in --help, add AGENTS.md
+ea50be6  cli: lead each command help with labelled fact block
+553ceff  cli: clarify check is not a type checker, add cold-start protocol
+08eaa18  cli: show build constraint, advise disambiguation, add --version
+2d810ad  feat: benchmark all four commands end to end
+7b13bf4  ci: add golangci-lint with minimal agent-shaped linter set
+92c1b51  docs: update binary size to 5.4 MB stripped
+d3b91c4  feat: reproduce "=" on type alias in outline
+4101e04  refactor: enforce Go initialism convention
+3f72f85  refactor: remove naming check, golens describes code not grades
+af52ebc  test: case 16 splices wrongly on purpose, watches file break
+b92c9d1  test: fix stale count and misleading cases
+93c889f  test: add preflight so hard cases cannot pass vacuously
+87b24a5  test: close coverage gap exposed by preflight
+8376fe2  fix: report real positions in parse diagnostics, align spec
+e2d7144  feat: render type parameters on generic functions
+49ddb46  test: case 17 implicit filename constraints, case 18 partial trees
+6fe0e5a  feat: case 17 implicit filename constraints, case 18 outline skips unparseable files
+389cf9e  docs: document the commit message convention in AGENTS.md
+55cdf29  fix: carry type_params, receiver and is_alias into the JSON outline
 ```
 
 The five-session plan in `documentation/implementation-plan.md` is S1–S5 and all five landed. The
@@ -71,25 +84,27 @@ summary.
 
 ## What landed after the plan
 
-Twelve commits that no document in `documentation/` accounts for. All of them came from running the
-tool against real repositories — `duf` and `GoDiabolicalDecorations` — rather than from fixtures.
+Commits that no document in `documentation/` accounts for. Nearly all came from running the tool
+against real repositories — `duf` and `GoDiabolicalDecorations` — rather than from fixtures. The
+last is the exception: it came from reading `specification.md` against the binary, and it is the
+second time the same defect arrived through a different renderer.
 
 ### Defects found and fixed
 
 | Commit | Defect | Impact |
 |---|---|---|
-| `72c791a` | Generic type parameters dropped from rendered heads | `type Stack[T any] struct` rendered as `type Stack struct`; an agent copying it writes code that will not compile |
-| `72c791a` | Receiver variable name invented | Every method rendered `(s ...)` regardless of source — all 61 in the test repo |
-| `72c791a` | Embedded fields rendered their type twice | `sync.Mutex sync.Mutex` |
-| `72c791a` | Naming diagnostics reported every violation at line 1 | Location was fabricated |
-| `939d6fb` | `/vN` module suffixes bound as the package name | `math/rand/v2` bound as `v2`; the unused-import check would call a live import dead |
-| `16cbee9` | Redeclarations across mutually exclusive build constraints | **24 false positives on duf**, a repo that compiles cleanly on five platforms. Now evaluates constraints over a GOOS × GOARCH × cgo matrix |
-| `16cbee9` | Unused imports whose local name cannot be derived | `github.com/mattn/go-runewidth` → `go-runewidth`, not an identifier; check now stays silent rather than guessing |
-| `16cbee9` | camelCaseId applied to `SCREAMING_SNAKE_CASE` | Flagged every all-caps constant by construction. Superseded entirely by the initialism rule, which treats underscores as preserved boundaries |
-| `b89e0f3` | `outline` never showed a file's build constraint | An agent could edit `filesystems_windows.go` on linux and conclude the tool lied |
+| `2972bd2` | Generic type parameters dropped from rendered heads | `type Stack[T any] struct` rendered as `type Stack struct`; an agent copying it writes code that will not compile |
+| `2972bd2` | Receiver variable name invented | Every method rendered `(s ...)` regardless of source — all 61 in the test repo |
+| `2972bd2` | Embedded fields rendered their type twice | `sync.Mutex sync.Mutex` |
+| `2972bd2` | Naming diagnostics reported every violation at line 1 | Location was fabricated |
+| `4b4cba5` | `/vN` module suffixes bound as the package name | `math/rand/v2` bound as `v2`; the unused-import check would call a live import dead |
+| `30f2448` | Redeclarations across mutually exclusive build constraints | **24 false positives on duf**, a repo that compiles cleanly on five platforms. Now evaluates constraints over a GOOS × GOARCH × cgo matrix |
+| `30f2448` | Unused imports whose local name cannot be derived | `github.com/mattn/go-runewidth` → `go-runewidth`, not an identifier; check now stays silent rather than guessing |
+| `30f2448` | camelCaseId applied to `SCREAMING_SNAKE_CASE` | Flagged every all-caps constant by construction. Superseded entirely by the initialism rule, which treats underscores as preserved boundaries |
+| `08eaa18` | `outline` never showed a file's build constraint | An agent could edit `filesystems_windows.go` on linux and conclude the tool lied |
 | spec review | `outline --json` dropped `type_params`, `receiver` and `is_alias` | An alias and a defined type over the same underlying type were byte-identical JSON nodes describing different programs; `type Alias Stack[int]` compiles as a defined type |
 
-The three `16cbee9` classes were found by testing against a real repository, and every one is a false
+The three `30f2448` classes were found by testing against a real repository, and every one is a false
 positive — the direction AGENTS.md says is the expensive one, because an agent that believes a
 diagnostic may delete working code. The narrowed rule still catches genuine violations; TESTING.md
 case 13 carries a positive control.
@@ -98,16 +113,16 @@ case 13 carries a positive control.
 
 | Commit | Item |
 |---|---|
-| `da7ea2e` | `.github/workflows/ci.yml` — `verify` and `quick` jobs, on push and PR to `main` |
-| `881414f` | `.golangci.yml` — errcheck, staticcheck, unused, ineffassign, plus auto-fixable formatters. Style linters deliberately off |
-| `ec84025` | End-to-end benchmarks for all four commands |
-| `d011d65` | Per-command `Long` help carrying exit codes and the stream contract; `AGENTS.md` at root; `documentation/AGENTS.template.md` |
-| `974f912` | Each command's help now opens with a labelled fact block; destructive facts moved from paragraph four to line five |
-| `b89e0f3` | `--version`; ambiguity errors carry the remedy |
-| `2b53ceb` | `check` help states plainly that exit 0 does not mean the file compiles; `documentation/COLDSTART.md` |
-| `d011d65` | Dropped `go/build` — it imports `go/ast`, which `internal/arch` forbids outside `engine/goast`. `runtime.Version` derives the release tags instead |
+| `bb3cddc` | `.github/workflows/ci.yml` — `verify` and `quick` jobs, on push and PR to `main` |
+| `7b13bf4` | `.golangci.yml` — errcheck, staticcheck, unused, ineffassign, plus auto-fixable formatters. Style linters deliberately off |
+| `2d810ad` | End-to-end benchmarks for all four commands |
+| `fad1b79` | Per-command `Long` help carrying exit codes and the stream contract; `AGENTS.md` at root; `documentation/AGENTS.template.md` |
+| `ea50be6` | Each command's help now opens with a labelled fact block; destructive facts moved from paragraph four to line five |
+| `08eaa18` | `--version`; ambiguity errors carry the remedy |
+| `553ceff` | `check` help states plainly that exit 0 does not mean the file compiles; `documentation/COLDSTART.md` |
+| `fad1b79` | Dropped `go/build` — it imports `go/ast`, which `internal/arch` forbids outside `engine/goast`. `runtime.Version` derives the release tags instead |
 
-`d011d65` is the load-bearing one for future agents: help text cannot drift from the binary, so the
+`fad1b79` is the load-bearing one for future agents: help text cannot drift from the binary, so the
 conventions live in the command definitions rather than in a file an agent may never read.
 
 ### Performance
@@ -192,7 +207,7 @@ This hid a real failure during S1. **Always use `go test -count=1 ./...` here.**
 ## Frozen interfaces
 
 Unchanged since S1 except `Node.IsGroup` (S2), and `TypeParams` plus `IsAlias` on `Node`/`Symbol`
-(`72c791a` and the alias fix below). See `decisions.md` §2 for the canonical copy.
+(`2972bd2` and the alias fix below). See `decisions.md` §2 for the canonical copy.
 
 ```go
 type Bounds struct{ StartLine, EndLine, StartByte, EndByte int }
