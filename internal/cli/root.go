@@ -46,9 +46,11 @@ Exit codes:
 
 Streams:
   outline, get and bounds write to stdout.
-  check writes to stderr and nothing to stdout. Capture both:
-  "golens check . 2>&1". Reading only stdout yields empty output and looks like
-  a clean result.
+  check writes to stderr in the human form. Capture both:
+  "golens check . 2>&1". Reading only stdout yields empty output and
+  looks like a clean result.
+  check --json is the exception: the payload goes to stdout and stderr
+  stays empty, so it pipes. Do not add 2>&1 to a --json call.
 
 Run "golens <command> --help" before the first use of a command. The conventions
 differ between them, and bounds in particular will corrupt a file if guessed.

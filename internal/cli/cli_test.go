@@ -202,6 +202,88 @@ func TestCheckBrokenFileExitsThree(t *testing.T) {
 	}
 }
 
+// TestCheckHelpStatesTheStreamContract pins the help text to the behaviour.
+//
+// The help used to say "stdout stays empty" for check, which is true of the human form and false
+// of --json, where the payload goes to stdout and stderr is empty. TestStdoutStaysCleanOnError
+// below already proved the behaviour, so the two were contradicting each other: the suite was
+// green and the documentation was wrong. Nothing connected a claim about behaviour to the test
+// that verifies it, which is how that survives a code review.
+//
+// This test makes the connection. It asserts both halves of the contract the help must state --
+// the human form's stderr and the JSON form's stdout -- and fails if the help is silent about
+// either, so help cannot drift away from behaviour that a test already pins.
+func TestCheckHelpStatesTheStreamContract(t *testing.T) {
+	root := New(DefaultEnv(goast.New()))
+
+	rootHelp := root.Long
+	checkCmd, _, err := root.Find([]string{"check"})
+	if err != nil {
+		t.Fatalf("Find check: %v", err)
+	}
+	checkHelp := checkCmd.Long
+
+	// The root help must not claim stdout is unconditionally empty, because --json contradicts
+	// that. An unqualified claim is the bug; the fix is to scope it.
+	for _, forbidden := range []string{
+		"nothing to stdout",
+		"stderr only",
+	} {
+		if strings.Contains(rootHelp, forbidden) {
+			t.Errorf("root help contains %q, but check --json writes to stdout:\n%s", forbidden, rootHelp)
+		}
+	}
+
+	// Both must name the JSON exception, or an agent piping --json has no way to know stdout
+	// carries the payload.
+	for name, help := range map[string]string{"root": rootHelp, "check": checkCmd.Long} {
+		if !strings.Contains(help, "--json") {
+			t.Errorf("%s help never mentions --json, so it cannot state the stream contract:\n%s", name, help)
+		}
+		if !strings.Contains(help, "stdout") || !strings.Contains(help, "stderr") {
+			t.Errorf("%s help must name both streams to state the contract:\n%s", name, help)
+		}
+	}
+	if !strings.Contains(checkHelp, "2>&1") {
+		t.Errorf("check help must keep the human-form capture advice:\n%s", checkHelp)
+	}
+}
+
+// TestCheckStreamContractHolds confirms the help describes what the code does, in both modes.
+// The assertions mirror TestCheckHelpStatesTheStreamContract: if this fails, the help is right
+// and the code is wrong.
+func TestCheckStreamContractHolds(t *testing.T) {
+	path := fixture(t, "unused.go", "package p\n\nimport \"fmt\"\n\nfunc F() {}\n")
+
+	stdout, stderr, code := run(t, "check", path)
+	if code != 3 {
+		t.Fatalf("human form: exit = %d, want 3", code)
+	}
+	if stdout != "" {
+		t.Errorf("human form: stdout should be empty, got:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "imported and not used") {
+		t.Errorf("human form: stderr should carry the diagnostic, got:\n%s", stderr)
+	}
+
+	stdout, stderr, code = run(t, "check", path, "--json")
+	if code != 3 {
+		t.Fatalf("--json: exit = %d, want 3", code)
+	}
+	if stderr != "" {
+		t.Errorf("--json: stderr should be empty so stdout pipes, got:\n%s", stderr)
+	}
+	var payload struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("--json: stdout is not a parseable payload: %v\n%s", err, stdout)
+	}
+	if payload.SchemaVersion != 1 {
+		t.Errorf("--json: schema_version = %d, want 1", payload.SchemaVersion)
+	}
+}
+
 // TestStdoutStaysCleanOnError is the property that makes --json pipeable: diagnostics and
 // errors go to stderr so stdout carries only the payload.
 func TestStdoutStaysCleanOnError(t *testing.T) {

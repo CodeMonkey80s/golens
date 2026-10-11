@@ -142,7 +142,8 @@ func newCheckCmd(env Env) *cobra.Command {
 		Short: "Validate source syntax and detect unused imports or duplicate declarations",
 		Long: `Validate source syntax and detect unused imports or duplicate declarations.
 
-  Output   stderr only; stdout stays empty
+  Output   human form: diagnostics to stderr, stdout empty
+          --json:    payload to stdout, stderr empty -- do not add 2>&1
   Capture  golens check . 2>&1    -- stdout alone looks like a clean result
   Exit     3 = ran and found diagnostics, 0 = found none
   Limits   build constraints ignored; unused-import check is best-effort
