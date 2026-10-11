@@ -117,7 +117,7 @@ seconds, and a missing one turns a trap into a silent pass:
 | 0 | Reaches for golens at all | Builds the tool, then uses only `grep`, `sed` and `python` |
 | 1 | Reads `--help` before first use | Goes straight to `get` and guesses |
 | 2 | Addresses symbols unambiguously | Uses a bare method name against a directory, then treats the resulting exit 2 as the tool being broken instead of passing a file |
-| 3 | Captures both streams | Runs `check` without `2>&1`, sees empty output, concludes the file is clean |
+| 3 | Validates what it changed | Edits a file and never checks it; or runs `check` without `2>&1` and reads the empty result as clean |
 | 4 | Replacement starts at the name | Splices `type Mount struct {...}` into a span beginning at `Mount`, producing `type type Mount struct` |
 | 5 | **Preserves what it did not mean to change** | Drops struct fields it did not notice. See below |
 | 6 | Verifies with `go build` | Trusts `check` exit 0 and calls the edit done |
@@ -139,6 +139,32 @@ instead: **does the agent address symbols unambiguously?** An agent that qualifi
 passes a file is demonstrating the property; one that fires bare names at directories and then calls
 the tool broken is not. Both old and new versions are scored from the same commands — only what is
 being asked about them changed, and the new version can actually be answered.
+
+**Trap 3 was reframed twice, and the second reframe is the interesting one.** It originally asked
+whether the agent *captures both streams* — that `check` writes to stderr, so reading stdout alone
+shows nothing and looks like a clean result. That escaped measurement on three consecutive subjects,
+for three different reasons:
+
+| Subject | Why the trap could not be scored |
+|---|---|
+| k9s, 524 files | clean — zero diagnostics, so no stderr existed |
+| duf, clean | clean — same |
+| duf + a planted fault | the fault existed, and the agent ran `check` on **the file it had edited**, which was clean |
+
+The first two were protocol faults: a clean repository has nothing on stderr to capture, and planting
+a fault is not a fix because specification 2.4 says every `check` diagnostic corresponds to something
+`go build` rejects — so a repository either compiles or it does not, and traps 3 and 6 are mutually
+exclusive in one subject.
+
+The third was the trap's own fault, and it is the reason for the reframe. Trap 3 presupposed
+repository-scope validation. But **checking what you touched is the correct behaviour** — narrower
+than the task even — and an agent that swept `check .` and reported an unrelated pre-existing fault
+would be doing the thing this tool's whole design biases against. The old trap rewarded the opposite
+of good judgement.
+
+It now asks: **does the agent validate what it changed?** An agent that edits a file and then checks
+that file has demonstrated the property. One that edits and never checks has not. That is measurable
+on any repository, clean or not, which is what the previous two versions were not.
 
 **5 is the one to look hardest at.** My own first attempt at the reference run dropped five of
 fourteen fields — `InodesFree`, `InodesUsed`, `Blocks`, `BlockSize`, `Metadata` — because I
@@ -389,14 +415,62 @@ with four platform variants of the same method.
 | 6 verifies with `go build` | runs 4, 5, 6 — pass |
 | 7 build constraint | run 4 — pass |
 
-**Seven of eight, each on at least two subjects or two runs. Trap 3 is the only one never measured**,
-and it needs a deliberately broken repository — which is one more run, on a subject whose builds are
-*meant* to fail.
+### Run seven on duf: trap 0 at last, unprompted
 
-**A note on `AGENTS.md` loading.** Runs five and six both needed the file named in the prompt, while
-run four found it unprompted with the same template. That points at the agent's loader rather than
-the file, and it matters beyond the protocol: the template is how golens reaches a user's repository,
-so a harness that does not load `AGENTS.md` weakens that channel however good the file is.
+The subject moved out of `/tmp` and a fresh binary went into `~/Development/go/bin`, replacing a stale
+October build that had been shadowing it. The session was launched in the subject directory and the
+prompt **did not** name `AGENTS.md`.
+
+| Trap | Result | Evidence |
+|---|---|---|
+| **0 reaches for golens** | **pass** | `which golens && golens --help`, unprompted — the first clean score in seven runs |
+| 1 reads the help | **pass** | `bounds --help`, `get --help` — and used both |
+| 2 addresses unambiguously | **pass** | `get Mount.Stat mounts_linux.go`; the `.` form exits 2 |
+| 3 captures both streams | **not measured** | repository is clean; nothing on stderr |
+| 4 span starts at the name | **pass** | no `type type`; gofmt column alignment survived |
+| 5 preserves the rest | **pass** | `2 0`; all 14 fields; import sorted |
+| 6 verifies with `go build` | **pass** | five platforms |
+| 7 build constraint | **pass** | read `Mount.Stat` from all four variants before editing the ungated file |
+
+**Six passes, one not measured, zero failures.** The reference result reproduced exactly, a third time.
+
+**Trap 0 is the headline, and it confirms the diagnosis of runs five and six.** Both had needed
+`AGENTS.md` named in the prompt; neither named it here, and the agent opened the file and ran the
+tool anyway. The cause was the loader looking in the wrong directory, not the template. Launching in
+the subject is the whole fix — the same change that made trap 0 measurable also made trap 7 the
+strongest it has been, since the agent read the method from linux, darwin, freebsd and openbsd before
+touching `mounts.go`.
+
+It also ran `git stash` → `gofmt -l .` → `git stash pop` to learn whether formatting complaints were
+pre-existing. Nobody asked it to.
+
+### Run eight on duf-with-a-fault: trap 3 escapes a third time, and the trap is at fault
+
+duf plus one planted file carrying unused imports — a real compile error, so `check` reporting it is
+not a false positive. `golens check .` gave exit 3 with two diagnostics on stderr and **zero bytes on
+stdout**.
+
+| Trap | Result | Evidence |
+|---|---|---|
+| 5 preserves the rest | **pass** | `2 0`; all 14 fields; gofmt clean |
+| 4 span starts at the name | **pass** | parses; no `type type` |
+| 3 captures both streams | **not measured** | see below |
+| 6 verifies with `go build` | out of scope | the planted fault breaks every platform build |
+
+**The agent never ran `check .`.** It ran `check mounts.go` — the file it had just edited, which is
+clean, exit 0, nothing on stderr — and stopped there. The sequence the trap needs never occurred.
+
+**It also left `planted.go` untouched**, which is correct: nothing asked about repository-wide
+validity, and a pre-existing fault in an untouched file is not the agent's to fix. An agent that
+swept `check .` and reported it would be doing the thing this tool's whole design biases against.
+
+That is the third subject, and the third reason — and this one is the trap's fault, not the setup's.
+See the reframe note above. Trap 3 is now "does the agent validate what it changed", which is
+measurable on any repository.
+
+**Seven of eight traps measured.** Trap 3 has been escaped three times, twice by protocol faults and
+once by the trap rewarding behaviour opposite to good judgement. It stays unmeasured until a run can
+distinguish "checked its work" from "got lucky on a file that happened to be clean".
 
 **A wrong tool claim is a result; verify it before recording it.** In the second run an agent
 reported that `outline` had omitted a file. It had not: all 19 headers were emitted, and the file's
