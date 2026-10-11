@@ -2,7 +2,7 @@
 
 Status: **All five sessions landed.** S1–S5 are complete; the plan is kept as a record of the
 sequence and its rationale, not as work to do. Two rows below have since been overtaken by
-events and are annotated where they diverge from what shipped. `HANDOFF.md` at the repo root
+events and are annotated where they diverge from what shipped. `AGENTS.md` at the repo root
 records where the project actually is.
 
 Companion documents — this file answers *when and in what order*; they answer *what and why*:
@@ -12,7 +12,7 @@ Companion documents — this file answers *when and in what order*; they answer 
 | `specification.md` | **WHAT** to build — normative | Stable; changes only on design change |
 | `decisions.md` | **WHY** — 23 decisions, frozen interfaces, acceptance criteria A1–A14 | Stable after S1 |
 | `implementation-plan.md` | **WHEN** — sequencing, estimates, handoffs | Perishable; rows retire as work lands |
-| `HANDOFF.md` (repo root) | **WHERE** — current session's state | Disposable; rewritten each session |
+| `AGENTS.md` (repo root) | **WHERE** — current state, traps, open questions | Rewritten as the project moves |
 
 > This file is deliberately kept out of `specification.md`. The spec is the agent-facing
 > ingest artifact and must stay free of estimates and session logistics.
@@ -53,7 +53,7 @@ done — at which point reading the whole specification against the whole implem
 that `outline --json` dropped `type_params`, `receiver` and `is_alias`, the same three fields
 the human form renders. The alias case is the one that matters: an alias and a defined type
 over the same underlying type were byte-identical JSON nodes describing different programs.
-See `decisions.md` D22 and the alias section of `HANDOFF.md`.
+See `decisions.md` D22, and "Defects the plan shipped" in `AGENTS.md`.
 
 The lesson is the S4 one repeating: a reviewer who reads only the code they changed will not
 find the divergence between two renderers of the same data, because each looks correct alone.
@@ -115,12 +115,11 @@ Each session ends with three things, **in this order**:
 
 | # | Action | Role |
 |---|---|---|
-| 1 | `go test ./...` green | **The real handoff contract** — not a summary |
-| 2 | `HANDOFF.md` rewritten at repo root | Durable state: landed, next, open questions |
+| 1 | `go test -count=1 ./...` green | **The real handoff contract** — not a summary |
+| 2 | `AGENTS.md` updated at repo root | Durable state: landed, traps, open questions |
 | 3 | Chat summary | Disposable. The file is not |
 
-`HANDOFF.md` is rewritten fresh each session, never appended to, so it cannot grow into a
-stale log.
+`AGENTS.md` is rewritten rather than appended to, so it cannot grow into a stale log.
 
 **If a session ends with failing tests, that is a genuine blocker.** Stop and report it
 rather than papering over it — a red suite passed to the next session is how a two-hour
@@ -172,21 +171,13 @@ most likely to break offset math or the unused-import heuristic:
 
 ## 8. Out of scope
 
-Deferred to v0.2, per `decisions.md` §6. Not scheduled here:
-
-| Item | Reason |
-|---|---|
-| Multi-language via Tree-Sitter | Needs the v0.1 `Engine` interface to be language-neutral first |
-| Unreachable-code detection | Lint category; contradicts the v0.1 positioning |
-| Type-level conflict detection | Requires `go/types` |
-| Module-level import resolution | Requires module graph; breaks the stateless budget |
-| Doc-comment-aware selection (`--with-docs`) | Deferred with comment parsing |
-| Field / nested-type access (`Type.Field`) | Not in the v0.1 selection rules |
+Deferred to v0.2. The list and the reason for each are in `decisions.md` §6, which is normative
+for this — it was duplicated here once and the two copies drifted.
 
 ---
 
 ## 9. Go version note
 
-Local toolchain is `go1.27.1`. Nothing in this plan depends on it: `go/parser`, `go/ast`,
-`go/token` and `encoding/json` are stable APIs, and no feature newer than Go 1.20 is
-required. Treat the version as incidental.
+The local toolchain at the time was `go1.27.x`. Nothing in this plan depends on it: `go/parser`,
+`go/ast`, `go/token` and `encoding/json` are stable APIs, and no feature newer than Go 1.20 is
+required. The current version is whatever `go.mod` says. Treat it as incidental.

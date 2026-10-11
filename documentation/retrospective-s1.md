@@ -1,6 +1,6 @@
 # S1 Retrospective — what building the engine actually taught
 
-Written at the end of S1 for the sessions that follow. This is not a status report; `HANDOFF.md`
+Written at the end of S1 for the sessions that follow. This is not a status report; `AGENTS.md`
 covers that. It records the things that were **not** obvious from the specification, and the
 reasoning errors that cost time, so they are not repeated.
 
@@ -113,7 +113,8 @@ so **editing a source file to add an import does not invalidate their cached res
 
 Two rules adopted:
 
-1. **`go test -count=1 ./...` is mandatory in this repo.** Noted at the top of `HANDOFF.md`.
+1. **`go test -count=1 ./...` is mandatory in this repo.** Recorded under "Build and test" in
+   `AGENTS.md`.
 2. A test whose result depends on files outside the test file should arguably bypass the cache
    on its own. Worth doing for `internal/arch` if it ever proves fiddly.
 

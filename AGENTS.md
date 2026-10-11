@@ -18,16 +18,44 @@ load-bearing and are asserted by tests:
 
 Do not change either without reading `documentation/decisions.md` first.
 
+## State
+
+Feature-complete. There is no next session, and nothing is blocked.
+
+| Field | Value |
+|---|---|
+| Tests | 298 (incl. subtests), 6 packages, all passing |
+| Verify with | **`go test -count=1 ./...`** — see the caching trap below |
+| Toolchain | go1.27.2; no `golang.org/x` dependencies, only cobra and its two indirects |
+| Binary | 5.31 MB stripped (budget 15 MB) |
+| Parse budget | ~22 µs typical, ~273 µs largest file here (budget 5 ms P95) |
+| Lint | `golangci-lint run ./...` — 0 issues, includes `revive` `var-naming` |
+| Self-check | `golens check ./internal` and `./cmd` both exit 0 |
+| Remote | **none configured** — nothing has been or can be pushed |
+
+Parse dominates three of the four commands, and `check` is about ten times a parse because it runs
+several analyses. Reproduce with
+`go test -run XXX -bench . ./internal/usecase ./internal/engine/goast`; expect roughly ±20%
+run-to-run, so hold to the budget rather than to a single figure.
+
+`go install ...@latest` therefore cannot work. README leads with a checkout and says so, and
+**tagging and publishing is the only thing standing between this code and use.**
+
 ## Build and test
 
 ```console
-$ go build ./...          # build
-$ go test ./...           # full suite
-$ go test -short ./...    # skips the tests that walk this repository
+$ go build ./...             # build
+$ go test -count=1 ./...     # full suite — the -count=1 is required, see below
+$ go test -short ./...       # skips the tests that walk this repository
 $ go vet ./...
-$ gofmt -l .              # must print nothing
-$ golangci-lint run ./... # includes revive's var-naming
+$ gofmt -l .                 # must print nothing
+$ golangci-lint run ./...    # includes revive's var-naming
 ```
+
+**`go test ./...` without `-count=1` can report a stale pass.** Three packages assert facts about
+the build graph or the source tree rather than about their own test inputs: `internal/arch` (shells
+out to `go list -deps`), plus `selfcheck_test.go` and `TestRepositoryPassesItsOwnCheck` (walk the
+tree). Go's cache does not invalidate on those. This hid a real failure during S1. CI enforces it.
 
 `internal/arch` asserts layering: the CLI must not import an engine, and the domain must not
 import `go/ast`. It fails the build if those boundaries are crossed, which is deliberate.
@@ -37,7 +65,8 @@ style. This repository follows Go's initialism convention — `userID` and `HTTP
 `userId` and `HttpHandler` — and `revive`'s `var-naming` rule enforces it in CI. An initialism
 stays lowercase only at the front of an identifier that already begins lowercase, so `urlPath`
 is correct. Do not add a naming check to the tool: `decisions.md` D9 records why, including the
-4,119 false positives an earlier version produced on the standard library.
+4,119 false positives an earlier version produced on the standard library. The full three-attempt
+history is in "Not doing, and why" below.
 
 ## Layout
 
@@ -88,6 +117,89 @@ renderings at every depth; they must be equal.
 an agent delete working code, so the check stays silent whenever it cannot determine the local
 name. When adding a check, bias toward silence and say so in the comment.
 
+## Acceptance criteria
+
+Fourteen, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
+criteria; this is which test pins each.
+
+| # | Criterion | Evidence |
+|---|---|---|
+| A1 | `file[start:end]` == extracted source | `TestByteInvariantThroughGet` across 12 fixture classes, `TestOverwriteRoundTrip`, `TestOverwritePreservesLineStructure` |
+| A2 | Two runs → byte-identical stdout | `TestOutlineDirectoryIsDeterministic`, `TestConcurrentDeterministicAcrossRuns` |
+| A3 | Concurrent == serial output | `TestConcurrentOutputMatchesSerial`, all four output modes, tree sizes straddling the threshold |
+| A4 | JSON parses, `schema_version: 1` first | `TestSpecSchemaVersionIsFirstField`, all four commands |
+| A5 | `--compact` loses no information | `TestCompactIsLosslessSubset` |
+| A6 | `get --bounds-only` ≡ `bounds` | `TestSpecBoundsOnlyMatchesBounds`, plus format and usecase level |
+| A7 | golens never reports style | `TestCheckDoesNotJudgeStyle`, `TestCheckAcrossFilesReportsNothingStructural` |
+| A8 | Parse < 5 ms P95 | `TestParseP95UnderBudget` |
+| A9 | Binary < 15 MB | 5.31 MB |
+| A10 | No cgo | `TestNoCgoDependency` |
+| A11 | `domain`/`usecase` import nothing external | `internal/arch` |
+| A12 | 12 fixture classes | `TestFixtureClasses` |
+| A13 | Platform variants silent; untagged pair exits 3 | `TestPlatformVariantsDoNotConflict` (5 pairs), `TestCoBuildableFilesStillConflict` (**positive control**), `TestImplicitFilenameConstraints`, `TestFilenameAndTagConstraintsCombine`, `TestCgoFilesAreExcludedWhenCgoIsOff` |
+| A14 | Partial tree: parseable stdout, skipped named, exit 4 | `TestOutlineSkipsUnparseableFilesWithoutHidingTheRest`, `TestOutlineReportsSkippedFilesExitFour`, `TestOutlineJSONStaysParseableWhenAFileIsBroken`, `TestOutlineSingleBrokenFileKeepsTheOriginalMessage` |
+
+A13's positive control is the part that matters: a rule that suppressed every duplicate would
+otherwise pass the five variant cases. `internal/cli/spec_test.go` adds 11 more, each citing the
+specification clause it verifies.
+
+## Frozen interfaces
+
+Unchanged since S1 except `Node.IsGroup` (S2), and `TypeParams` plus `IsAlias` on `Node`/`Symbol`.
+`documentation/decisions.md` §2 has the canonical copy with rationale.
+
+```go
+type Bounds struct{ StartLine, EndLine, StartByte, EndByte int }
+type Node struct {
+    Name, Detail, Receiver, TypeParams string
+    Kind     Kind
+    IsAlias  bool
+    Bounds   Bounds
+    Children []Node
+    IsGroup  bool
+}
+type Symbol struct{ Name, QualifiedName string; Kind Kind; Bounds Bounds; File, Detail, Receiver, TypeParams string; IsAlias bool }
+type Document struct{ Path, Package string; Bounds Bounds; Nodes []Node; Symbols []Symbol; Imports []string; Source []byte; Comments bool }
+type Engine interface{ Parse(path string) (Document, error) }
+```
+
+`domain.LocatedError` carries a parse error's file, line and column. It lives in `domain` rather
+than `engine/goast` because both layers need it and `internal/arch` forbids `usecase` importing
+the engine. It exists because the engine used to return pre-formatted `"file:line:col: message"`
+strings, which left nowhere to put the position — `check` reported every parse error at `1:1`, and
+an agent following the documented format went to line 1 whatever the real position was.
+
+## Not doing, and why
+
+| Item | Why not |
+|---|---|
+| **`var x = 5` shows no `= 5`** | Correct, not a gap. The outline head is *not* the byte span: the span is name-scoped, so pasting `var x = 5` into a span holding `x` writes `var x = 5 = 5`, which does not parse. `var counter int` pastes the same way. Adding `= 5` makes the head *more* divergent from the span while making nothing paste-safe |
+| **`check .` exits 3 on `testdata/store/store.go`** | Intentional — the unused import gives the outline golden a stable shape |
+| Unused-import false negatives | Accepted: comment-only references and shadowed locals. Never false positives, verified against three repositories. A miss is caught by `go build`; a false positive deletes working code |
+| Naming outside a module | `revive` cannot run without a `go.mod`. Filling that gap with golens would make a structural tool the one that grades code — `decisions.md` D9 |
+| `internal/naming`, `check --naming` | Removed. Three attempts, then deletion: `camelCaseId` produced 4,119 false positives on the standard library; the correct in-tree rule was indistinguishable from `revive`; so it was removed rather than kept as a second implementation. Two tests pin the boundary so it cannot return through a new flag |
+
+## Defects the plan shipped, and what each cost
+
+Kept because each one is a bug class rather than an instance. `git log` has the commits; the point
+here is the shape of the failure.
+
+| Defect | Why it matters |
+|---|---|
+| Generic type parameters dropped from heads | `type Stack[T any] struct` rendered `type Stack struct`. An agent copying it writes code that will not compile |
+| Receiver variable invented | Every method rendered `(s ...)` regardless of source — all 61 in the test repo |
+| `type Alias = X` rendered `type Alias X` | **The worst one.** Every sibling defect produced code that failed to compile; this compiled and meant something else — the alias stops being interchangeable with `X`, and the name stops being a synonym for it. A silently wrong declaration is worse than a loud one |
+| `/vN` suffixes bound as the package name | `math/rand/v2` bound as `v2`, so the unused-import check would call a live import dead |
+| Redeclarations across exclusive build constraints | **24 false positives on duf**, which compiles cleanly on five platforms |
+| `outline --json` dropped `is_alias` | The alias defect again, through the other renderer. See D23 |
+| `outline --json --depth 1` returned no declarations | `--depth` was useless to a machine consumer; depth 2 was the only depth that returned anything |
+
+The last two arrived after the project was called complete, and both were found by **running the
+tool and reading the spec** — not by reading the code, and not by the unit tests. `outline --json`
+had two renderers of one document that disagreed about both a field and a depth rule, and the test
+that should have caught it asserted only one direction. A subset assertion is satisfied by the empty
+set.
+
 ## Testing this tool
 
 `TESTING.md` is an eighteen-case manual plan to run against a real repository, not a fixture. It
@@ -107,20 +219,27 @@ and treat every deviation as worth reporting — distinguish *wrong* from merely
 of those is a bug. **The standard library is a target**: `stdlib/slices` declares 86 generics and
 covers case 6, which no repository in `~/Development` does.
 
-## Agent-facing docs
+## Where things are
 
-`README.md` and `documentation/specification.md` are read by agents using this tool.
 `golens --help` and `golens <command> --help` carry the per-command conventions: byte-offset
-semantics, exit codes, and which stream each command writes to. Keep those in the help text
-rather than duplicating them here — help cannot drift from the binary.
+semantics, exit codes, and which stream each command writes to. **Keep conventions in the help
+text rather than duplicating them in a document — help cannot drift from the binary.** A change to
+any command's help should be followed by `documentation/COLDSTART.md`.
 
-`documentation/AGENTS.template.md` is a starting point for a repository that wants its own
-agents to use golens. Copy it into the target repo's root and edit.
+| Document | Read it for |
+|---|---|
+| `documentation/specification.md` | **Normative.** Change this first, then the code |
+| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A14 stated |
+| `documentation/AGENTS.template.md` | Copy into a target repo's root so its agents inherit the traps |
+| `TESTING.md` | The 18-case manual plan — run it after any engine, check or formatter change |
+| `documentation/COLDSTART.md` | Tests the instructions rather than the tool. Run after changing help text |
+| `documentation/implementation-plan.md` | The five sessions, now historical |
+| `documentation/retrospective-s1/s2/s4.md` | Where the design came from, including three bugs in green tests |
+| `README.md` | How to use the tool. Read by agents using it, not by agents working on it |
 
-`documentation/COLDSTART.md` tests the instructions rather than the tool: it gives an agent with
-no prior context a real repository and a two-part task, then scores six things. Run it after
-changing any help text. It is the only check that would catch a trap moving back down the help
-output.
+The retrospectives and the plan are history. They are kept because each records a *class* of
+mistake rather than an instance, and because `AGENTS.md` alone would not tell you why the obvious
+change is the wrong one.
 
 ## Commit message convention
 
