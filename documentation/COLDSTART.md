@@ -316,14 +316,22 @@ it is the only cost. Traps 1–7 are unaffected by how discovery happened.
 | 0 reaches for golens | **not measured** | named in the prompt, so it proves nothing about discovery |
 | 1 reads the help | **pass** | |
 | 2 addresses unambiguously | **pass** | `get K9s.ActiveContext internal/config/k9s.go` — qualified, single file |
-| **3 captures both streams** | **pass** | `check` ran; exit 0 |
+| **3 captures both streams** | **not measured** | `check` ran, but k9s has **zero** diagnostics — there was nothing on stderr to capture, so this could not have failed |
 | **4 span starts at the name** | **pass** | `bounds` used; no `type type`; span begins at `K9s` |
 | **5 preserves the rest** | **pass** | `git diff --numstat` → `1 0`; `K9s` went 30 → 31 bullets |
 | 6 verifies with `go build` | **pass** | 524 files, exit 0 |
 | 7 build constraint | **pass** | |
 
-**Six of eight traps measured and passing**, with trap 0 scored independently in the previous run.
-Traps 3 and 4 had been unmeasured in three consecutive runs before this.
+**Five of eight traps measured and passing**, with trap 0 scored independently in run four and trap 3
+still open. Traps 3 and 4 had been unmeasured in three consecutive runs before this.
+
+**Trap 3 was recorded here as a pass and that was wrong.** k9s has zero diagnostics, so there was
+nothing on stderr for the agent to capture — the trap could not have failed whatever it did, and
+"check ran; exit 0" was not evidence. The same trap is unmeasured on duf for the same reason, and it
+is not fixable by planting a fault: specification 2.4 states that every `check` diagnostic corresponds
+to something `go build` rejects, so a repository either compiles (nothing to capture) or does not
+(the five platform builds break and trap 6 goes with it). **Traps 3 and 6 are mutually exclusive in a
+single subject.** Measuring both needs two repositories: a clean one and a deliberately broken one.
 
 **`bounds` on a 30-field struct produced a one-line insertion.** On duf's 14-field struct the agent
 read `bounds --help` and did not use it; here it did, and the diff is a single added line with zero
@@ -339,6 +347,56 @@ A note on method: several of these were verified from the artifact rather than f
 `git diff --numstat` for trap 5, `bounds` output re-read against the file for trap 4, a full
 `go build ./...` for trap 6. The runner's first report of this run omitted that `check` had been
 used; checking the disk found it.
+
+### A sixth run on duf: the reference result, reproduced
+
+Same subject and prompt as run four. `AGENTS.md` was named in the prompt again — the agent's loader
+did not pick it up — so trap 0 is not measured for the second run running.
+
+| Trap | Result | Evidence |
+|---|---|---|
+| 0 reaches for golens | **not measured** | named in the prompt |
+| 1 reads the help | **pass** | `outline --help`, `get --help`, `bounds --help`, `check --help` — **all four** |
+| 2 addresses unambiguously | **pass** | `get Mount.Stat /tmp/cold/mounts_freebsd.go` — bare name, but a single file |
+| 3 captures both streams | **not measured** | duf is clean; stderr is empty, so there is nothing to capture |
+| 4 span starts at the name | **pass** | parses; no `type type`; gofmt column alignment survived |
+| 5 preserves the rest | **pass** | `2 0`; **all 14** original fields present; `time` import in sorted position |
+| 6 verifies with `go build` | **pass** | linux, darwin, windows, freebsd, openbsd — all five |
+| 7 build constraint | **pass** | |
+
+**Five passes, two not measured, zero failures.** Trap 5 — the one no tool check can catch, and the
+one this protocol was written around — passes on both subjects now.
+
+**Trap 1 in its strongest form.** It read help for all four commands, including `check`, which on
+duf it went on to use. Compare run four, which read three and skipped `check --help`. An agent that
+reads all four before working is the behaviour the template asks for.
+
+**Trap 2, verified against the alternative.** `get Mount.Stat <file>` resolves; `get Mount.Stat .`
+exits 2 with four candidates. The agent chose the file form without being told, which is the
+disambiguating move the reframe asks about — and it did so on a subject where the ambiguity is real,
+with four platform variants of the same method.
+
+**Where every trap now stands**, across six runs and two subjects:
+
+| Trap | Measured in |
+|---|---|
+| 0 discovers golens | run 4 — pass, unprompted |
+| 1 reads the help | runs 4, 5, 6 — pass |
+| 2 addresses unambiguously | runs 5, 6 — pass |
+| 3 captures both streams | **nowhere** — needs a subject with diagnostics |
+| 4 span starts at the name | runs 5, 6 — pass |
+| 5 preserves the rest | runs 4, 5, 6 — pass |
+| 6 verifies with `go build` | runs 4, 5, 6 — pass |
+| 7 build constraint | run 4 — pass |
+
+**Seven of eight, each on at least two subjects or two runs. Trap 3 is the only one never measured**,
+and it needs a deliberately broken repository — which is one more run, on a subject whose builds are
+*meant* to fail.
+
+**A note on `AGENTS.md` loading.** Runs five and six both needed the file named in the prompt, while
+run four found it unprompted with the same template. That points at the agent's loader rather than
+the file, and it matters beyond the protocol: the template is how golens reaches a user's repository,
+so a harness that does not load `AGENTS.md` weakens that channel however good the file is.
 
 **A wrong tool claim is a result; verify it before recording it.** In the second run an agent
 reported that `outline` had omitted a file. It had not: all 19 headers were emitted, and the file's
