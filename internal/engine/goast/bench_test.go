@@ -54,10 +54,6 @@ func BenchmarkParseRealFile(b *testing.B) {
 // make the percentile meaningful without making the suite slow; on the slowest machine the
 // margin still leaves room for normal scheduling noise.
 func TestParseP95UnderBudget(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping timing gate in short mode")
-	}
-
 	engine := New()
 	src := []byte(handChecked)
 

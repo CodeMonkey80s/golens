@@ -28,10 +28,6 @@ import (
 // rationale and history are not machine-checkable and must not be generated. What is machine-checkable
 // is the *output*, and that is all this covers.
 func TestReadmeExamplesAreReproducible(t *testing.T) {
-	if testing.Short() {
-		t.Skip("builds the binary and walks the README; skipped by -short")
-	}
-
 	root := repoRoot(t)
 	readme := read(t, filepath.Join(root, "README.md"))
 	bin := buildBinary(t, root)
@@ -70,10 +66,6 @@ func TestReadmeExamplesAreReproducible(t *testing.T) {
 // because a reader trusts it in the same way. Every golens command in the README is classified
 // here: reproduced above, or explicitly marked as targeting the specification's sample file.
 func TestReadmeMarksItsUnverifiedExamples(t *testing.T) {
-	if testing.Short() {
-		t.Skip("reads the README; skipped by -short")
-	}
-
 	root := repoRoot(t)
 	readme := read(t, filepath.Join(root, "README.md"))
 

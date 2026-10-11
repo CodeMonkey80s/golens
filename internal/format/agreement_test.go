@@ -36,13 +36,11 @@ import (
 // embedded fields, methods on generic receivers and grouped declarations, so the constructs the
 // hand-picked tests covered are all present -- and so is whatever this repository gains next.
 //
-// The cost is that this walks the tree. `go test -short` skips it for that reason; the tree is
-// also walked by internal/arch and the self-check, so nothing new is being asked of CI.
+// The cost is that this walks the tree, which takes about 80 ms. That is cheap enough that there
+// is no -short escape hatch: a mode that skipped it would report ok while skipping the tests most
+// likely to catch a regression, and a green result that means less than it looks like is the one
+// failure mode this whole exercise exists to end.
 func TestRenderersAgreeOnTheWholeCorpus(t *testing.T) {
-	if testing.Short() {
-		t.Skip("walks the repository; skipped by -short")
-	}
-
 	root := repoRoot(t)
 	files := goFilesUnder(t, root)
 	if len(files) < 10 {
@@ -270,10 +268,6 @@ func rel(t *testing.T, root, path string) string {
 // covering nothing -- the exact vacuous-pass failure TESTING.md's preflight exists to catch, in a
 // different place.
 func TestCorpusContainsTheConstructsThatBroke(t *testing.T) {
-	if testing.Short() {
-		t.Skip("walks the repository; skipped by -short")
-	}
-
 	root := repoRoot(t)
 	fset := token.NewFileSet()
 

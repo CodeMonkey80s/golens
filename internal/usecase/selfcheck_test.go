@@ -67,10 +67,6 @@ func TestSameNamespaceInSameDirectoryConflicts(t *testing.T) {
 // covers the awkward real-world case: a directory holding package foo, package foo_test, and
 // several test files with helpers spread between them.
 func TestRepositoryPassesItsOwnCheck(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping repository-wide check in short mode")
-	}
-
 	root, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)

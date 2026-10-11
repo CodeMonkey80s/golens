@@ -47,11 +47,16 @@ run-to-run, so hold to the budget rather than to a single figure.
 ```console
 $ go build ./...             # build
 $ go test -count=1 ./...     # full suite — the -count=1 is required, see below
-$ go test -short ./...       # skips the tests that walk this repository
 $ go vet ./...
 $ gofmt -l .                 # must print nothing
 $ golangci-lint run ./...    # includes revive's var-naming
 ```
+
+There is no `-short` mode, deliberately. The whole suite runs in about a quarter of a second, so a
+fast path would buy nothing — and it would let `go test -short ./...` report `ok` while skipping the
+tree-walking tests most likely to catch a regression. A green result that means less than it looks
+like is the failure mode this repository keeps running into: a subset assertion satisfied by the
+empty set, `go test` reporting a stale pass, help text contradicting a test that passes.
 
 **`go test ./...` without `-count=1` can report a stale pass.** Three packages assert facts about
 the build graph or the source tree rather than about their own test inputs: `internal/arch` (shells
