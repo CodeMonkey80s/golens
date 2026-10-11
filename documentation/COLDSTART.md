@@ -468,9 +468,54 @@ That is the third subject, and the third reason — and this one is the trap's f
 See the reframe note above. Trap 3 is now "does the agent validate what it changed", which is
 measurable on any repository.
 
-**Seven of eight traps measured.** Trap 3 has been escaped three times, twice by protocol faults and
-once by the trap rewarding behaviour opposite to good judgement. It stays unmeasured until a run can
-distinguish "checked its work" from "got lucky on a file that happened to be clean".
+### Run nine on clean duf: trap 3, on the reframe
+
+| Trap | Result | Evidence |
+|---|---|---|
+| 1 reads the help | **pass** | |
+| **3 validates what it changed** | **pass** | `golens check mounts.go 2>&1; echo "check exit: $?"`, after the edit |
+| 4 span starts at the name | **pass** | parses; no `type type`; gofmt clean |
+| 5 preserves the rest | **pass** | `2 0`; all 14 fields; import sorted |
+| 6 verifies with `go build` | **pass** | five platforms |
+| 0, 2, 7 | as run seven | |
+
+**All eight traps are now measured.** Trap 3 passes on the reframe, and the evidence is not thin: the
+agent checked the file it edited, captured stderr with `2>&1`, echoed the exit code, and ran `gofmt`,
+`go build` and `go vet` alongside — on a repository where every one of those comes back clean.
+
+That last part is what makes it a real result. Run eight showed the same habit on a repository with a
+planted fault, where `check mounts.go` passed and the agent correctly did not go looking for the
+fault in `planted.go`. Run nine shows it again on a repository where nothing at all is wrong. The
+behaviour is consistent across two subjects rather than a coincidence of what the file happened to
+contain.
+
+**What trap 3 now claims is narrower than what it first claimed, and that is the point.** It does not
+say an agent captures streams from a repository-wide sweep — it says the agent validates its own work.
+That is the property worth having, it survived being re-tested on a second subject, and the three
+earlier escapes were all measuring something else.
+
+## Summary of nine runs
+
+| Trap | Where measured | Result |
+|---|---|---|
+| 0 reaches for golens | runs 4, 7 | pass |
+| 1 reads the help | runs 4–9 | pass |
+| 2 addresses unambiguously | runs 5, 6, 7 | pass |
+| 3 validates what it changed | runs 8, 9 | pass |
+| 4 span starts at the name | runs 5, 6, 7, 9 | pass |
+| 5 preserves the rest | runs 4, 5, 6, 7, 8, 9 | pass |
+| 6 verifies with `go build` | runs 4–9 | pass |
+| 7 build constraint | runs 4, 7 | pass |
+
+**No trap has ever failed**, on any subject. Three were reframed after they proved unmeasurable
+rather than unpassable, and the reframe in each case describes behaviour worth having more than the
+mistake it originally asked about.
+
+**What these runs do not establish.** Every subject was a repository that builds, and every task was
+"add a field". Nothing here tests a change that legitimately breaks something, a symbol genuinely
+absent, or an edit large enough that a partial splice is the likely failure. The protocol found real
+defects when run against the *tool's* source; run against *agents using* the tool, it has found none,
+and the most useful thing it produced was three traps that turned out to be asking the wrong question.
 
 **A wrong tool claim is a result; verify it before recording it.** In the second run an agent
 reported that `outline` had omitted a file. It had not: all 19 headers were emitted, and the file's
