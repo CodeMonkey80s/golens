@@ -86,6 +86,34 @@ Running case 8 against GoDiabolicalDecorations and case 9 against CubeRL: both p
 file parses cleanly and `go build` agrees; the 37 KB file outlines in under 10 ms against a 5 ms
 per-file parse budget, and `Game`'s 455-byte span is byte-exact against `get`.
 
+### k9s — the strongest single target so far
+
+| Construct | duf | GoDiabolicalDecorations | CubeRL | **k9s** |
+|---|---|---|---|---|
+| build tags | 12 | 0 | 1 | 1 |
+| generics | 0 | 0 | 0 | **4** |
+| cgo / `go:embed` | 0 | 1 | 0 | **2** |
+| large file | 301 lines | — | 1,383 | 826 |
+| `.go` files | ~30 | — | — | **524** |
+
+A full 18-case run against `~/Development/temporary/k9s` (go 1.26.8) passed every case. It is the
+best target in one respect this survey does not measure: it has **305 method names declared on more
+than one type**, so case 12 is exercised for real rather than assumed — `get ActiveContext .` exits
+2 and lists five candidates. It has no platform-variant files, so case 13 still needs duf.
+
+Two results worth keeping:
+
+- **Case 11 over 524 files: the two renderings agree exactly** — 9,159 declarations at depth 1 and
+  14,139 at depth 2, human bullets against JSON nodes. This is the check that found the `--depth 1`
+  defect, and it holds at a scale the fixtures never reached.
+- **Case 13: zero diagnostics on 524 files that build clean**, with a positive control confirming
+  the check still fires. Zero false positives is the direction that matters.
+
+One file, `internal/tchart/gauge_test.go`, is entirely commented out and yields no `nodes` key in
+the JSON payload. Both renderings agree it has no declarations — `omitempty` on `nodes` is correct,
+and this is the A12 "file with only comments" class. A comparison script that assumes the key
+exists will misreport it; tolerate an absent `nodes`.
+
 ---
 
 ## 1. Smoke test
