@@ -48,19 +48,46 @@ agent needs to be told, the help is not doing its job.
 
 ```
 Build golens from ~/Development/area51/golens into /tmp/golens. Then, in
-/tmp/cold, tell me what Mount.Stat does, and add a CalledAt time.Time field
-to the Mount struct.
+/tmp/cold, use it to tell me what Mount.Stat does, and add a CalledAt
+time.Time field to the Mount struct.
 ```
 
 One task, because a single task exercises the whole loop: build, discover, read, place an edit,
 splice, validate. The field is `time.Time` on purpose — it forces an import, and an import the
 agent must remember to add.
 
+**"use it" is load-bearing, and it was added after a run failed without it.** The earlier wording
+joined two unrelated clauses across two directories — build a tool here, do a task there — and an
+agent built `/tmp/golens` and then never ran it, going straight to `grep` and `sed`. That is a fair
+read of the prompt rather than a failure of the tool, so the link is now explicit. Naming the tool
+once is not a hint about any convention: bounds, ambiguity, build tags and exit codes are all still
+unmentioned, which is what traps 1–7 measure.
+
 ## What to watch
 
-Eight things, in the order an agent meets them. Each is pass / fail / **unscorable**, not a
-judgement. Unscorable means the run cannot distinguish "the agent worked it out" from "the agent
-was told" — see the subject-purity check in Setup.
+Eight things, in the order an agent meets them. Each is pass / fail / **not measured**, not a
+judgement.
+
+**Trap 0 gates the rest.** If the agent never runs golens, traps 1–7 are **not measured** — it never
+opened the help, so there is nothing to score. Record them as not measured rather than as failures;
+an unscored trap and a failed one mean different things, and conflating them is what made two
+earlier runs read as partial failures when they were one clean result.
+
+**Not measured** means the run cannot answer the question — the subject leaked the answer via its
+own `AGENTS.md`, or a precondition was absent. **Fail** means the agent had the chance and missed
+it. See the subject-purity check in Setup.
+
+**Check the preconditions before the run, not after.** Every one of these is verifiable in a few
+seconds, and a missing one turns a trap into a silent pass:
+
+| Precondition | Verify with | Serves |
+|---|---|---|
+| Subject has no `AGENTS.md` | `git status --porcelain` empty after `rm -f AGENTS.md` | everything |
+| The symbol is genuinely ambiguous | `golens get Mount.Stat .` exits 2 | trap 2 |
+| The struct has enough fields to lose | `golens outline mounts.go --depth 2` shows all 14 | trap 5 |
+| The package builds on 5 platforms | `GOOS=<os> go build .` for each | traps 6, 7 |
+| A platform variant exists with a different shape | `golens outline mounts_windows.go` has no `Stat` | trap 7 |
+| The tree builds at baseline | `go build ./...` exit 0 | traps 6, 7 |
 
 | # | Signal | Fail looks like |
 |---|--------|-----------------|
@@ -151,6 +178,37 @@ emitted 18 of 19 file headers and that `mounts_linux_test.go` "never appeared". 
 headers are emitted, and that file's outline simply contains no `Stat`. The tool was correct. See
 "What to watch" for why this is the failure mode worth recording.
 
+### A third run, on a clean subject: trap 0 fails
+
+First run against a subject with no `AGENTS.md`, in a fresh session with a different model. Every
+precondition was verified beforehand: `Mount.Stat` defined in four platform variants, the `Mount`
+struct with 14 fields, `mounts_windows.go` present with no `Stat`, and `go build` clean on linux,
+darwin, windows, freebsd and openbsd.
+
+| Trap | Result | Evidence |
+|---|---|---|
+| 0 reaches for golens | **fail** | no golens command was run at any point; the agent worked with other tools |
+| 1–7 | **not measured** | the agent never opened the help, so there is nothing to score |
+
+**This is the first clean-subject result, and it is the most useful of the three runs.** The earlier
+runs were each ambiguous — contaminated in one direction, unscorable in another — because the
+protocol had been oscillating between two setups:
+
+| Setup | Outcome |
+|---|---|
+| Copy `AGENTS.template.md` in as `AGENTS.md` | the agent learns the conventions **from the file**; traps 1–3 measure the template, not the help text |
+| Remove it | the agent has **no signal the tool exists**; trap 0 fails |
+
+Both mistakes have the same root: testing what the agent knows about golens rather than whether
+golens can explain itself. One run "passed" trap 0 with the 126-line template sitting in the
+repository — that was the template earning it, not the tool.
+
+The prompt was also at fault here. It joined two unrelated clauses across two directories — build a
+tool in one place, do a task in another — and an agent built `/tmp/golens` and then never invoked it.
+The prompt now says "use it"; see above. If trap 0 passes with that wording, the failure was the
+prompt's. If it still fails with the tool named explicitly, that is a discoverability finding that
+belongs in the README, and it is the one thing this protocol has been unable to tell us so far.
+
 **A wrong tool claim is a result; verify it before recording it.** In the second run an agent
 reported that `outline` had omitted a file. It had not: all 19 headers were emitted, and the file's
 outline contained no `Stat`, which is why the agent expected to find one there. The claim was wrong
@@ -195,7 +253,10 @@ about — the point is to watch it fail safely.
 
 ## Reporting
 
-Record which of the six the agent missed and what it said when it missed it. A wrong tool
-message is worth as much as a wrong edit: it means an agent will retry the same failing command
-rather than adapt. If trap 1 fails, the help is not being read, which usually means the first
-line does not say enough about why to read it.
+Record which traps the agent missed and what it said when it missed it. A wrong tool message is
+worth as much as a wrong edit: it means an agent will retry the same failing command rather than
+adapt. If trap 1 fails, the help is not being read, which usually means the first line does not say
+enough about why to read it.
+
+Start with trap 0. If it fails, the rest were not measured, and reporting them as failures would
+overstate what the run knows.
