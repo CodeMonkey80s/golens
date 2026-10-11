@@ -115,3 +115,37 @@ func TestTemplateTreatsGolensAsOptional(t *testing.T) {
 		t.Error("the template must tell the agent to work normally when golens is absent")
 	}
 }
+
+// TestTemplateWarnsAboutItsOwnLoading keeps the loading caveat in the template.
+//
+// The template is the only channel by which golens reaches an agent working in someone's
+// repository, and it is a channel that can fail silently: most coding agents read AGENTS.md once, at
+// session start, from the directory they were launched in. A session started elsewhere and later
+// cd'd into the repository never sees the file, and the agent goes to grep without ever hearing of
+// golens.
+//
+// Measured, not assumed: across six cold-start runs, one found golens unprompted from the template
+// and two needed it named in the prompt, with the same file in the same place both times. That is
+// a property of the loader, not of the file, so nothing in the file can fix it -- but the person
+// copying it can, and they can only do that if the template says so.
+func TestTemplateWarnsAboutItsOwnLoading(t *testing.T) {
+	if testing.Short() {
+		t.Skip("reads the template; skipped by -short")
+	}
+
+	root := repoRoot(t)
+	body := read(t, filepath.Join(root, "documentation", "AGENTS.template.md"))
+
+	// The caveat must be addressed to the human copying the file, and must be actionable.
+	for _, required := range []string{
+		"loads `AGENTS.md`",
+		"session start",
+		"launch the agent in the",
+	} {
+		if !strings.Contains(body, required) {
+			t.Errorf("the template lost part of its loading caveat: %q is missing.\n"+
+				"It is the only channel by which golens reaches an agent in someone's repository,\n"+
+				"and it fails silently when the loader looks in the wrong directory.", required)
+		}
+	}
+}

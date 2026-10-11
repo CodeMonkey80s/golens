@@ -77,6 +77,22 @@ func TestReadmeMarksItsUnverifiedExamples(t *testing.T) {
 		"golens check ./internal":                                true,
 	}
 
+	// An example is illustrative when it cannot be run in this repository: it names the
+	// specification's sample file, uses a placeholder argument, or says so outright. A block
+	// that is neither reproduced above nor marked is a claim nobody is checking, which is how
+	// two examples drifted before this test existed.
+	illustrative := func(cmd string) bool {
+		if strings.Contains(cmd, "ILLUSTRATIVE") {
+			return true
+		}
+		for _, marker := range []string{"user.go", "<", "your repository"} {
+			if strings.Contains(cmd, marker) {
+				return true
+			}
+		}
+		return false
+	}
+
 	var unclassified []string
 	for _, m := range command.FindAllStringSubmatch(readme, -1) {
 		cmd := strings.TrimSpace(m[1])
@@ -88,21 +104,20 @@ func TestReadmeMarksItsUnverifiedExamples(t *testing.T) {
 		if verified[key] {
 			continue
 		}
-		// Everything else must mention the specification's sample file, so a reader can see
-		// at a glance that it is illustrative rather than reproducible.
-		if strings.Contains(cmd, "user.go") || strings.Contains(cmd, "<") || strings.Contains(cmd, "<Symbol>") ||
-			strings.Contains(cmd, "<path>") || strings.Contains(cmd, "<Type>") || strings.Contains(cmd, "<MethodName>") ||
-			strings.Contains(cmd, "<file.go>") {
+		// Everything else must be visibly marked as not runnable here, so a reader can tell
+		// at a glance which claims are checked. Two ways to say so: a placeholder argument,
+		// or an explicit ILLUSTRATIVE marker on the command line.
+		if illustrative(cmd) {
 			continue
 		}
 		unclassified = append(unclassified, cmd)
 	}
 
 	if len(unclassified) > 0 {
-		t.Errorf("README has console examples that are neither reproduced by a test nor marked "+
-			"as targeting the specification's sample file:\n  %s\n\n"+
+		t.Errorf("README has console examples that are neither reproduced by a test nor marked as "+
+			"illustrative:\n  %s\n\n"+
 			"Either make the example reproducible (name a real file in this repository) or mark it "+
-			"as illustrative, so a reader can tell which claims are checked.",
+			"ILLUSTRATIVE, so a reader can tell which claims are checked.",
 			strings.Join(unclassified, "\n  "))
 	}
 }

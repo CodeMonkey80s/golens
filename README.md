@@ -115,6 +115,32 @@ repository has no remote, so the install path fails at the fetch.
 
 Requires the Go version in `go.mod` (currently 1.27.2). Builds with `CGO_ENABLED=0`.
 
+### Making an agent use it
+
+golens is built for agents, so the interesting question is how one finds it. There is no plugin and
+nothing to register — **copy `documentation/AGENTS.template.md` into your repository's root as
+`AGENTS.md`.** It is short, it points at `--help` rather than restating conventions, and it teaches an
+agent to use golens when it is on `PATH` and to work normally when it is not.
+
+**That works only if your agent actually loads `AGENTS.md`, and not all of them do.** Most coding
+agents read it once, at session start, from the directory they were launched in. If yours does:
+
+```console
+$ golens outline . --depth 1     # ILLUSTRATIVE: run in your repository, not this one
+```
+
+If it does not, say so in your instructions or your prompt:
+
+```
+Read AGENTS.md in this directory first.
+```
+
+**Launch the agent in the repository you want it to read.** A session started elsewhere and later
+`cd`'d in will not pick the file up, and the agent will go to `grep` without ever hearing of golens.
+This is measured, not assumed: across six cold-start runs, one found golens unprompted from the
+template and two needed it named in the prompt, with the same file in the same place. See
+`documentation/COLDSTART.md` for the runs.
+
 ---
 
 ## Commands

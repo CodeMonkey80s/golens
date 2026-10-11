@@ -3,6 +3,10 @@
 *Template. Copy into the root of a Go repository as `AGENTS.md`, or merge the sections you
 want into the file you already have. Replace `<path>` with your repository root.*
 
+*Note for the person copying this: it only works if your agent loads `AGENTS.md`. Most coding agents
+read it once at session start from the directory they were launched in, so launch the agent in the
+repository you want it to read. If yours does not load it at all, name it in your instructions.*
+
 golens reads and edits Go source structurally, so an agent can work on one declaration without
 reading a whole file.
 
@@ -21,6 +25,10 @@ $ golens <command> --help                # before first use of that command
 corrupt a file if guessed. Everything this document would otherwise have to tell you about them is
 in `--help`, and that is the only place it is kept current — so an agent that reads the help cannot
 be working from stale notes.
+
+*If you are an agent and you did not read this file yourself — it was loaded for you, or you were
+told to open it — it is still worth opening. It is short, and it is the only thing here that tells
+you how to use the tool safely.*
 
 ## The loop
 
