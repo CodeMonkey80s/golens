@@ -339,9 +339,22 @@ neither test can see from one renderer alone.
 
 ---
 
-## 5. Spec patch — merge into `specification.md`
+## 5. Spec patch — applied
 
-### 5.1 Add to §2, immediately after the global-flags list
+**This section is a record, not a to-do list.** Every clause below was merged into
+`specification.md` during S5, and the spec is normative. Nothing here needs applying.
+
+It is kept because it shows what the decisions changed about the spec, and because a diff against
+the spec is otherwise invisible. Two cautions when reading it:
+
+- **The quoted text is the patch as proposed, not the spec as it stands.** Later work reworded and
+  extended several of these clauses — the build-constraint matrix, the alias and type-parameter
+  rules, and the JSON node fields are all longer in the spec than here. Where the two differ,
+  `specification.md` wins.
+- **One clause is obsolete.** The Package Layout line below names a `naming` package that was
+  deleted under D9; the spec's version of that clause does not.
+
+### 5.1 §2, after the global-flags list
 
 > **Exit codes.** `0` success · `1` usage error · `2` symbol or file not found or ambiguous ·
 > `3` `check` found diagnostics · `4` parse or I/O failure. Payloads are written to stdout,
@@ -389,13 +402,13 @@ neither test can see from one renderer alone.
 
 ### 5.5 §2.4 `golens check`
 
-Replace the introduction's "or unreachable code" with:
+(Replacing the original introduction's "or unreachable code".)
 
 > Validates source file syntax and detects unused imports and duplicate declarations.
 > Executes significantly faster than golangci-lint by acting solely as a lightweight AST
 > validator. Unreachable-code detection is out of scope for v0.1.
 
-Replace **Checks Performed** with:
+(Replacing **Checks Performed**.)
 
 > - Fatal parsing errors (unclosed brackets, invalid tokens), reported in `file:line:col:` form with
 >   the line and column the parser reported. A parse failure is one diagnostic among many: every
@@ -442,6 +455,9 @@ Replace **Checks Performed** with:
 > **Package Layout.** One-way import direction `cli → usecase → domain`, with
 > `engine/goast` and `naming` depending only on `domain`. Only `engine/goast` may import
 > `go/parser`, `go/ast` and `go/token`.
+>
+> *(Superseded: the `naming` package was deleted under D9 and is not in the layout. The spec's
+> §3.1 states this clause without it.)*
 
 ---
 

@@ -364,10 +364,21 @@ which is tested by rendering with `GOMAXPROCS` pinned to 1 and comparing.
 
 ### Further reading
 
+If you are wiring golens into a repository you work on, these two matter most:
+
+| Document | Contents |
+|---|---|
+| `documentation/AGENTS.template.md` | Copy into your repo's root as `AGENTS.md` — the traps that cost this project real bugs |
+| `TESTING.md` | An 18-case manual plan; run it against a real repository before trusting the tool |
+
+The rest:
+
 | Document | Contents |
 |---|---|
 | `documentation/specification.md` | The normative spec |
 | `documentation/decisions.md` | Design decisions, frozen interfaces, acceptance criteria |
+| `documentation/COLDSTART.md` | A scored cold-start exercise that tests the instructions rather than the tool |
+| `HANDOFF.md` | Where the project actually stands, and what is deliberately not done |
 | `documentation/implementation-plan.md` | Session plan and sequencing |
 | `documentation/retrospective-s1.md` | The `go/ast` position model; why tests lie |
 | `documentation/retrospective-s2.md` | Sentinel values; three bugs in green tests |
