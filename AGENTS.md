@@ -76,6 +76,14 @@ pasting the head into it yields `var var counter int int`. That is a consequence
 name-scoped span the spec mandates, not a bug — edit with the text `get` returned, which is what
 the `bounds` help text says.
 
+**Group nodes are transparent; they do not consume a depth level.** `compactNodes` and
+`convertNodes` must agree on this or `--depth` means different things per output format. It went
+wrong once: `convertNodes` counted a group as a level, so `outline --json --depth 1` returned the
+four headings and none of the declarations, and no test caught it because
+`TestJSONDepthMatchesHumanDepth` only asserted JSON ⊆ human — a subset check is satisfied by the
+empty set. When you change depth handling, compare the declaration **counts** of the two
+renderings at every depth; they must be equal.
+
 **`check` deliberately under-reports.** A false positive on an import that is in use would have
 an agent delete working code, so the check stays silent whenever it cannot determine the local
 name. When adding a check, bias toward silence and say so in the comment.
@@ -94,9 +102,10 @@ The preflight prints which constructs the target actually has. A zero is not a f
 gap in coverage: find another repository or record the case as unexercised. Never record a
 vacuous case as a pass.
 
-Run the plan against a real Go project after any change to the engine or the checks, and treat
-every deviation as worth reporting — distinguish *wrong* from merely *ugly*, and only one of
-those is a bug.
+Run the plan against a real Go project after any change to the engine, the checks or the formatters,
+and treat every deviation as worth reporting — distinguish *wrong* from merely *ugly*, and only one
+of those is a bug. **The standard library is a target**: `stdlib/slices` declares 86 generics and
+covers case 6, which no repository in `~/Development` does.
 
 ## Agent-facing docs
 

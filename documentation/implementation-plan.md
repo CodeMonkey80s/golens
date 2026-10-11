@@ -58,6 +58,15 @@ See `decisions.md` D22 and the alias section of `HANDOFF.md`.
 The lesson is the S4 one repeating: a reviewer who reads only the code they changed will not
 find the divergence between two renderers of the same data, because each looks correct alone.
 
+Running the plan afterwards found a second defect the review missed. `outline --json --depth 1`
+returned the four group headings and **none of the declarations** — the human form at the same
+depth listed nine from `slices/iter.go`. `convertNodes` counted a group node as a level of the
+hierarchy, so depth 1 was consumed before any declaration was reached, and `--depth` was useless to
+a machine consumer: depth 2 was the only depth that returned anything. `compactNodes` already
+documented the correct rule ("group nodes are transparent ... they do not consume a level") two
+functions away, and `TestJSONDepthMatchesHumanDepth` passed because it only asserted JSON ⊆ human.
+A subset assertion is satisfied by the empty set.
+
 ### Effort envelope
 
 | Scenario | Effort | Elapsed |

@@ -103,6 +103,7 @@ second time the same defect arrived through a different renderer.
 | `30f2448` | camelCaseId applied to `SCREAMING_SNAKE_CASE` | Flagged every all-caps constant by construction. Superseded entirely by the initialism rule, which treats underscores as preserved boundaries |
 | `08eaa18` | `outline` never showed a file's build constraint | An agent could edit `filesystems_windows.go` on linux and conclude the tool lied |
 | spec review | `outline --json` dropped `type_params`, `receiver` and `is_alias` | An alias and a defined type over the same underlying type were byte-identical JSON nodes describing different programs; `type Alias Stack[int]` compiles as a defined type |
+| manual plan | `outline --json --depth 1` returned group headings and no declarations | `convertNodes` counted a group node as a level, so `--depth` was useless to a machine consumer — depth 2 was the only depth that returned anything |
 
 The three `30f2448` classes were found by testing against a real repository, and every one is a false
 positive — the direction AGENTS.md says is the expensive one, because an agent that believes a
@@ -321,6 +322,43 @@ the initializer, which today means reading the file.
 7. `documentation/retrospective-s2.md` — sentinel values; three bugs in green tests
 8. `documentation/retrospective-s1.md` — the `go/ast` position model; why `Detail` stays a token
 9. `TESTING.md` — eighteen manual cases; **run them against a real repository after any engine or check change**
+
+## Manual plan — run after the spec review, and what it found
+
+`AGENTS.md` says to run `TESTING.md` against a real repository after any engine or check change.
+The spec review changed the JSON schema, so the plan was run. Preflight first, as the plan insists,
+because cases 4, 6, 8 and 9 pass vacuously on a target that lacks the construct.
+
+| Case | Target | Result |
+|---|---|---|
+| Preflight | duf, GoDiabolicalDecorations, CubeRL | build tags 12/0/1 · go:embed 0/1/0 · cgo 0 · **generics 0 everywhere** |
+| 4 build tags | duf | pass — `build: mango`, `openbsd`, `linux`, `darwin` reported per file |
+| 6 generics | **stdlib `slices`** | pass — 86 generic declarations render with their parameters; `get Sorted iter.go` byte-exact |
+| 8 go:embed | GoDiabolicalDecorations | pass — `tools/gen-font-bitmap/main.go` parses |
+| 9 large file | CubeRL | pass — `internal/game/game.go`, 1,383 lines, outline p95 **2.7 ms** against a 5 ms budget, `Game` span byte-exact |
+| 10 round trip | duf | pass — splice is byte-exact, `gofmt`-clean, still parses |
+| 13 audit `check` | duf, GoDiabolicalDecorations, CubeRL, golens | **0 diagnostics** on all three external repos; golens' one hit is the documented `testdata/store` fixture |
+| 16 bytes not chars | synthetic `Café` / `Größe` / `Ünïcödé` | pass — byte slice correct on all three, character indexing wrong on two, as documented |
+| 11 JSON | stdlib `slices` | **failed** — see below |
+
+Case 6 was recorded as unexercised in the plan's own survey, because no repository on this machine
+declared generics. The standard library does, so the case ran: `stdlib/slices` has 86. A survey
+records what was looked for, not what exists.
+
+**What it found: `outline --json --depth 1` returned the group headings and none of the
+declarations.** `convertNodes` counted a group node as a level of the hierarchy, so depth 1 was
+spent before any declaration was reached. `compactNodes` already documented the correct rule two
+functions away — group nodes are transparent and consume no level — and the existing
+`TestJSONDepthMatchesHumanDepth` passed because it only asserted JSON ⊆ human, which the empty set
+satisfies. Fixed, and the test now asserts both directions plus a non-empty payload.
+
+After the fix, the two renderings agree exactly on `stdlib/slices`: **276 = 276** declarations at
+depth 1 and **601 = 601** at depth 2.
+
+This is the same lesson twice in one sitting. Reading the specification found a field that one
+renderer had and another had not. Running the plan found a depth rule that one renderer had and
+another had not. **Neither is visible from the code alone, and a one-directional test cannot see
+either.**
 
 ## Spec review — done, and what it changed
 

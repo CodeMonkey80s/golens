@@ -365,6 +365,18 @@ on methods, spelled as the source spells it.
 Failure: invalid JSON, stderr text leaking into stdout, or a declaration in the human output that
 the JSON node cannot reproduce.
 
+**Then compare the two renderings node for node**, which is what catches a payload that is merely
+*plausible* rather than correct:
+
+```console
+$ /tmp/golens outline . --depth 1 | grep -c '^  • '                      # human declarations
+$ /tmp/golens outline . --depth 1 --json --compact | jq '[..|objects|select(has("kind"))]|length'
+```
+
+The two counts must be equal at every depth. A subset check is not enough — a payload that emits
+nothing satisfies "every JSON name appears in the human output" trivially, which is how
+`--depth 1 --json` shipped group headings with no declarations under them for its whole life.
+
 ☐
 
 ## 12. Ambiguous symbol
