@@ -20,21 +20,42 @@ $ rm -rf .git && git init -q . && git add -A && git commit -qm baseline
 $ cd ~/Development/area51/golens && go build -o /tmp/golens ./cmd/golens
 ```
 
-**Remove any `AGENTS.md` from the subject before the run, and check.** This is not optional and it
-is not a hypothetical:
+**Put golens on `PATH`, first.** The rule it now follows is that it is used if it is there and
+ignored if it is not — the agent neither installs nor refuses. So the environment decides, and this
+protocol measures the "there" case:
+
+```console
+$ export PATH="/tmp:$PATH"      # first, not last — see below
+$ command -v golens             # must be /tmp/golens
+```
+
+**Prepend, and check which one resolved.** A stale `golens` elsewhere on `PATH` will shadow the
+build, and the run then measures a binary that predates the changes being tested. That is not
+hypothetical: a `golens` from October sat in `~/Development/go/bin`, and it still carried the
+`check --json` stream bug fixed the same day. `export PATH="$PATH:/tmp"` would have lost to it.
+`command -v golens` is the check; a run that does not do it can silently measure the wrong binary.
+
+A run in which golens is absent is not a failure of anything: the correct behaviour is to work
+normally with `grep` and `sed`, and that is a pass for availability, not for traps 1–7.
+
+**Replace any `AGENTS.md` in the subject with the current template, and check it is the current
+one.** This is the other half:
 
 ```console
 $ rm -f AGENTS.md
-$ git status --porcelain     # must be empty
+$ cp ~/Development/area51/golens/documentation/AGENTS.template.md ./AGENTS.md
+$ git add -A && git commit -qm "subject: golens available on PATH"
 ```
 
-`cp -r` copies untracked files, and a repository that has previously been used with golens may
-carry one. A copy of `AGENTS.template.md` states, in one sentence, that byte offsets start at the
-declaration's *name*, that `check` writes to stderr, and that a symbol can be ambiguous — which is
-traps 3, 4 and 1 exactly. An agent handed that file cannot be scored on whether it read `--help`,
-because the answer is already in its instructions. A run contaminated this way still produces
-useful evidence for traps 5–7 (which are read off the artifact on disk), but 1–3 are **unscorable**,
-not "pass". Say so in the report rather than recording a result you cannot trust.
+The template used to be the reason traps 1–3 could not be scored, because it restated the
+conventions — which stream `check` writes, where a span starts, that a symbol can be ambiguous — so
+an agent holding it never needed `--help`. It no longer does: it points at the help and keeps only
+the judgement that help cannot give. `TestTemplatePointsAtHelpRatherThanRestatingIt` in
+`internal/cli` fails if the conventions come back.
+
+With the template present and de-taught, both halves are finally satisfiable at once: the agent is
+told the tool exists **and** has to read the help to learn how to use it. That is the configuration
+this protocol has been unable to reach until now — the previous two setups each broke one half.
 
 duf is a good subject. It is flat, it builds cleanly on five platforms, and it has a method
 defined in four platform variants, which makes ambiguity unavoidable rather than incidental. It
@@ -47,21 +68,22 @@ Under-specified on purpose. Do not mention bounds, ambiguity, build tags or exit
 agent needs to be told, the help is not doing its job.
 
 ```
-Build golens from ~/Development/area51/golens into /tmp/golens. Then, in
-/tmp/cold, use it to tell me what Mount.Stat does, and add a CalledAt
-time.Time field to the Mount struct.
+In /tmp/cold, tell me what Mount.Stat does, and add a CalledAt time.Time
+field to the Mount struct.
 ```
 
-One task, because a single task exercises the whole loop: build, discover, read, place an edit,
-splice, validate. The field is `time.Time` on purpose — it forces an import, and an import the
-agent must remember to add.
+One task, because a single task exercises the whole loop: discover, read, place an edit, splice,
+validate. The field is `time.Time` on purpose — it forces an import, and an import the agent must
+remember to add.
 
-**"use it" is load-bearing, and it was added after a run failed without it.** The earlier wording
-joined two unrelated clauses across two directories — build a tool here, do a task there — and an
-agent built `/tmp/golens` and then never ran it, going straight to `grep` and `sed`. That is a fair
-read of the prompt rather than a failure of the tool, so the link is now explicit. Naming the tool
-once is not a hint about any convention: bounds, ambiguity, build tags and exit codes are all still
-unmentioned, which is what traps 1–7 measure.
+**The prompt no longer tells the agent to build golens, and no longer says "use it".** Both were
+workarounds for a prompt that named a tool in one directory and asked for a task in another, which
+an agent reasonably read as unrelated. Setup now puts golens on `PATH` and the template in the
+repository, which is where a real agent would learn it exists. The prompt is what a user would
+actually type, and the tool is discovered the way it should be.
+
+Nothing in the prompt or the template mentions bounds, ambiguity, build tags or exit codes — that is
+what traps 1–7 measure, and both halves have to stay clean for the run to mean anything.
 
 ## What to watch
 
@@ -82,7 +104,8 @@ seconds, and a missing one turns a trap into a silent pass:
 
 | Precondition | Verify with | Serves |
 |---|---|---|
-| Subject has no `AGENTS.md` | `git status --porcelain` empty after `rm -f AGENTS.md` | everything |
+| golens is on `PATH`, and is the build under test | `command -v golens` → `/tmp/golens` | everything |
+| Subject carries the **current** template | `git status` clean after copying it in | everything |
 | The symbol is genuinely ambiguous | `golens get Mount.Stat .` exits 2 | trap 2 |
 | The struct has enough fields to lose | `golens outline mounts.go --depth 2` shows all 14 | trap 5 |
 | The package builds on 5 platforms | `GOOS=<os> go build .` for each | traps 6, 7 |

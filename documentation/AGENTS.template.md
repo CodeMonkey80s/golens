@@ -4,18 +4,23 @@
 want into the file you already have. Replace `<path>` with your repository root.*
 
 golens reads and edits Go source structurally, so an agent can work on one declaration without
-reading a whole file. Prefer it over `grep`, `sed` and reading whole files: it answers the
-question directly and returns exact byte offsets for an edit.
+reading a whole file.
+
+**Use it if it is on `PATH`.** If it is, prefer it over `grep`, `sed` and reading whole files: it
+answers the question directly and returns exact byte offsets for an edit. **If it is not on `PATH`,
+work normally** — this repository does not require it, and `grep` and `sed` are perfectly good tools.
+Do not try to install it, build it, or fetch it. Its presence is the user's decision; your job is to
+use what is here.
 
 ```console
 $ golens --help                          # once per session
 $ golens <command> --help                # before first use of that command
 ```
 
-If `golens` is not on `PATH`, it is not installed here — stop and say so rather than
-substituting `grep`. The per-command help carries the conventions that differ between commands
-and will corrupt a file if guessed: byte offsets are half-open and start at a declaration's
-*name* rather than its keyword, `check` writes to stderr, and a symbol can be ambiguous.
+**Read that help before using it.** The per-command conventions differ between commands and will
+corrupt a file if guessed. Everything this document would otherwise have to tell you about them is
+in `--help`, and that is the only place it is kept current — so an agent that reads the help cannot
+be working from stale notes.
 
 ## The loop
 
@@ -43,13 +48,12 @@ $ golens bounds <Type>.<Method> <path>/file.go --json
 # -> {"schema_version":1,...,"start_byte":430,"end_byte":612}
 ```
 
-Replace exactly `[start_byte, end_byte)`. The span starts at the declaration's name, so for a
-type or var your replacement text must not repeat the `type` / `var` / `const` keyword. Writing
-back what `get` returned always satisfies this.
+Replace exactly `[start_byte, end_byte)` — and take the span from the output rather than computing
+it. Writing back what `get` returned always satisfies whatever rule the span follows.
 
-**Open the file in binary.** `start_byte` and `end_byte` count *bytes*, not characters. Splicing a
-decoded string with those numbers is a different operation and silently corrupts any file
-containing a non-ASCII identifier or a BOM:
+**Open the file in binary.** The offsets count *bytes*, not characters. Splicing a decoded string
+with those numbers is a different operation and silently corrupts any file containing a non-ASCII
+identifier or a BOM:
 
 ```python
 raw  = open(p, "rb").read()          # correct: raw[430:612]
@@ -64,63 +68,43 @@ that follows points at the name rather than at the cause. Use `raw[start:end]`, 
 **4. Validate.**
 
 ```console
-$ golens check <path>/file.go 2>&1
+$ golens check <path>/file.go
 $ gofmt -l <path>/file.go && go vet <path>/...
 $ golens outline <path>/file.go | head -20
 ```
 
-Confirm the file still parses, still formats, and that its neighbours are intact.
+Confirm the file still parses, still formats, and that its neighbours are intact. Which stream
+`check` writes to is in its `--help`; it matters here, because reading only one of them can look
+exactly like a clean result.
 
-## Things that will waste your time if you do not know them
+## Judgement `--help` cannot give you
 
-**`check` writes to stderr.** `golens check .` piped or redirected on stdout alone returns
-nothing, which looks exactly like a clean result. Always `2>&1`.
+The help states conventions: which stream a command writes, what its exit codes mean, where its
+spans start. Those are facts about the tool, and they change when the tool changes, so they live in
+one place and you read them there.
+
+What follows is **judgement** — when to reach for the tool at all, and what a result does and does
+not prove. That does not change with a release, so it is here.
 
 **`check` is not a type checker.** It validates syntax, import usage and duplicate declarations.
 Exit 0 does not mean the file compiles — an undefined type or a struct field you accidentally
 dropped both pass. `go build ./...` is the only thing that settles it.
 
-**`outline` can come back partial.** A file that does not parse is left out, named on stderr, and
-the run exits 4 — but every other file is outlined first, so stdout is not empty and a `--json`
-payload still parses. Exit 4 with usable output means *incomplete*, not *failed*: check `$?` to
-learn whether your map of the tree is whole, but do not discard stdout on it.
-
-**A symbol can be ambiguous.** Platform variants of one method commonly appear in four files.
-Ambiguity exits 2, prints nothing to stdout, and lists the candidates on stderr. Pass a
-specific file instead of a directory to resolve it.
-
-**Build constraints are ignored.** Every `.go` file is parsed, including files this platform
-would not compile, because the question is what the tree contains. `outline` therefore reports
-each file's constraint in its header, and you should check it before editing:
-
-```console
-$ golens outline <path>
-file: filesystems_windows.go
-package: main
-build: windows
-```
-
-A change to a file the current `GOOS` excludes is never compiled, so it will appear to have done
-nothing. Verify with `GOOS=<platform> go build ./...`, not plain `go build`.
+**A diagnostic is a claim, not a verdict.** `check` is deliberately biased toward silence: a false
+positive tells you to delete something that works. Cross-check anything surprising against
+`go build` before acting on it.
 
 **Edit the declaration, do not rewrite it.** A `bounds` span replaces one whole declaration. If
 you retype a struct body from an outline instead of editing the existing text, fields you did
-not notice are silently dropped — and nothing here will tell you. Re-read the original, change
-only what the task requires, and confirm the diff shows additions rather than deletions.
+not notice are silently dropped — and nothing in the tool will tell you. Re-read the original,
+change only what the task requires, and confirm the diff shows additions rather than deletions.
+This is the failure mode most likely to survive every check the tool performs.
 
-**Exit codes.** `0` success · `1` wrong flags or arguments · `2` symbol or file not found, or
-ambiguous · `3` check found diagnostics · `4` parse or I/O failure.
+**`check` does not judge style.** No naming convention, no formatting, no idiom. If you want those
+enforced, run `golangci-lint run`; `revive`'s `var-naming` covers Go's initialism convention
+(`userID`, `HTTPHandler`), and `gofmt -l` covers formatting. The separation is deliberate: golens
+describes code, it does not grade it, so its output never mixes a structural fact with an opinion you
+did not ask for.
 
 **Token budget.** Add `--compact` to any command whose output you intend to read in full. It
 removes decoration, never information. `--json` gives a machine-readable payload.
-
-**Never let a diagnostic stand alone.** `check`'s unused-import detection is best-effort and
-may miss cases, but it is built never to report an import that is in use. Cross-check anything
-surprising against `go build` before acting on it.
-
-**`check` does not judge style.** It reports parse failures, malformed import paths, unused
-imports and duplicate declarations — nothing else. No naming convention, no formatting, no idiom.
-If you want naming checked, run a linter: `golangci-lint run` with `revive`'s `var-naming`
-enforces Go's initialism convention (`userID`, `HTTPHandler`), and `gofmt -l` covers formatting.
-That separation is deliberate: `golens` describes code, it does not grade it, so its output never
-mixes a structural fact with an opinion you did not ask for.
