@@ -24,7 +24,8 @@ Feature-complete. There is no next session, and nothing is blocked.
 
 | Field | Value |
 |---|---|
-| Tests | 298 (incl. subtests), 6 packages, all passing |
+| Tests | 307 (incl. subtests), 7 packages, all passing |
+| Test count by package | arch 6 · cli 74 · domain 15 · goast 45 · format 23 · usecase 144 |
 | Verify with | **`go test -count=1 ./...`** — see the caching trap below |
 | Toolchain | go1.27.2; no `golang.org/x` dependencies, only cobra and its two indirects |
 | Binary | 5.31 MB stripped (budget 15 MB) |
@@ -78,6 +79,7 @@ history is in "Not doing, and why" below.
 | `internal/engine/goast` | AST to domain model |
 | `internal/domain` | shared types, including `Declaration()` |
 | `internal/format` | human and JSON rendering |
+| `internal/constructs` | compiled declarations the cross-renderer corpus walk needs; not imported by anything |
 
 ## Traps
 
@@ -96,8 +98,38 @@ is the only place a head is assembled, and it reads `Name`, `TypeParams`, `Recei
 and when it did, `outline --json` emitted an alias and a defined type over the same underlying type
 as two byte-identical nodes. `TestDeclarationHeadsMatchSource` passed throughout, because it only
 ever looked at the human path. When you add a field that a declaration head depends on, add it to
-`format.OutlineNode` too and extend `TestJSONDeclarationHeadsMatchSource` in the same commit; a
-test on one renderer cannot see the other diverging.
+`format.OutlineNode` too; `TestRenderersAgreeOnTheWholeCorpus` in `internal/format` then checks
+every declaration in this repository rather than the constructs a test remembered to name.
+
+**An invariant nobody enumerates is an invariant nobody checks.** The alias `=` broke twice — once
+in `Declaration`, once in the JSON path — because the tests named the constructs they remembered.
+`TestRenderersAgreeOnTheWholeCorpus` walks every non-test `.go` file here and compares the two
+renderings at three depths, in both directions, asserting that a JSON head reassembled from its
+serialised fields appears in the human output. Its corpus is the repository itself, which is why
+`internal/constructs` exists: it declares generics, aliases, an embedded field and a generic
+receiver as **real compiled code**, so the walk has something to walk. Fixture text in a backtick
+literal would not do — `go/ast` does not read test data as code, which is correct and also why the
+corpus had to be extended rather than the test pointed at the fixtures.
+`TestCorpusContainsTheConstructsThatBroke` fails if a construct is ever removed from it.
+
+**Compare renderings in both directions, and by count.** A subset assertion is satisfied by the
+empty set, which is how `outline --json --depth 1` shipped returning four group headings and none
+of the declarations while its test passed.
+
+**Help text must not state a behaviour no test pins.** `check`'s help said "stdout stays empty"
+while `TestStdoutStaysCleanOnError` proved `check --json` writes a payload there. The suite was
+green and the documentation was wrong, because nothing connected a claim about behaviour to the
+test verifying it. `TestCheckHelpStatesTheStreamContract` makes that connection; add the same kind
+of test whenever help states something a test could check.
+
+**Verify a recorded console output against the binary.** Every output block in the README that names
+a file in this repository is re-run by `TestReadmeExamplesAreReproducible`, which builds the binary
+and diffs it. Two blocks had drifted before it existed — a stale outline example and two disagreeing
+binary sizes — and hand-checking found those while failing to keep them current. Blocks referring to
+the specification's fictional `user.go` are not checkable and say so;
+`TestReadmeMarksItsUnverifiedExamples` fails on any block that is neither verified nor marked. The
+scope is deliberately narrow: output is machine-checkable, rationale is not, and prose must not be
+generated.
 
 **An outline head is not the byte span.** `get` and `bounds` report a name-scoped span, but the
 outline head is the whole declaration. For `var counter int` the span covers `counter` alone, so
@@ -108,10 +140,8 @@ the `bounds` help text says.
 **Group nodes are transparent; they do not consume a depth level.** `compactNodes` and
 `convertNodes` must agree on this or `--depth` means different things per output format. It went
 wrong once: `convertNodes` counted a group as a level, so `outline --json --depth 1` returned the
-four headings and none of the declarations, and no test caught it because
-`TestJSONDepthMatchesHumanDepth` only asserted JSON ⊆ human — a subset check is satisfied by the
-empty set. When you change depth handling, compare the declaration **counts** of the two
-renderings at every depth; they must be equal.
+four headings and none of the declarations. When you change depth handling, compare the declaration
+**counts** of the two renderings at every depth; they must be equal.
 
 **`check` deliberately under-reports.** A false positive on an import that is in use would have
 an agent delete working code, so the check stays silent whenever it cannot determine the local
