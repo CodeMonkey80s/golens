@@ -237,6 +237,62 @@ reported that `outline` had omitted a file. It had not: all 19 headers were emit
 outline contained no `Stat`, which is why the agent expected to find one there. The claim was wrong
 and it was never chased down.
 
+### A fourth run: traps 0 and 1 score for the first time
+
+Clean subject, current template in place, golens first on `PATH`, session started **in the subject
+directory**. The first configuration where both halves hold at once — the agent is told the tool
+exists and still has to read the help to learn how to use it.
+
+| Trap | Result | Evidence |
+|---|---|---|
+| 0 reaches for golens | **pass** | discovered unprompted, from the template alone |
+| 1 reads the help | **pass** | `get --help`, `bounds --help`, `outline --help` — and **not** `check --help` |
+| 2 handles ambiguity | not recorded | — |
+| 3 captures both streams | **not measured** | `check` was never reached |
+| 4 span starts at the name | **not measured** | no splice; `bounds --help` was read and `bounds` was not used |
+| 5 preserves the rest | **pass** | `K9s`'s 30 fields, or `Mount`'s 14, all intact; additions only |
+| 6 verifies with `go build` | **pass** | clean on the platforms it ran |
+| 7 build constraint | **pass** | |
+
+**Four passes, two not measured, zero failures** — the best result of the four runs.
+
+**Reading help for exactly the commands it went on to use is the strongest form of trap 1.** It read
+help for three commands and skipped the fourth, the one it did not use. An agent reading all four
+indiscriminately would be less selective, not more.
+
+**`bounds --help` was read and then `bounds` was not used.** That is a deliberate choice made with
+full information, and it is correct under the `$PATH` rule: add one field to a 26-line struct with a
+patch tool rather than a binary splice. `bounds` earns its place when the obvious alternative stops
+being viable — a 30-field struct, or a rename touching many files. duf is the smallest subject in the
+plan, so it is the subject least likely to exercise it.
+
+**The two unmeasured traps share a cause, and it is the task, not the tool.** "Tell me what this does,
+add a field" is small enough that `grep` plus a patch plus `go build` handles it completely. An agent
+that never needs the answer is never tested on it. Do not read these as failures, and do not
+contort the prompt to reach them — trade a clean result for a contrived one. If they are to be
+measured, the task has to demand them, which is what the next run is for.
+
+## Choosing a subject that exercises what duf could not
+
+The four runs agree on which properties each subject can reach:
+
+| Property | duf | k9s |
+|---|---|---|
+| Ambiguity with real candidates | yes — 4 platform variants | yes — 305 method names on >1 type |
+| Builds on 5 platforms in under a second | yes | no — 6.7 s per cross-build |
+| Struct big enough that retyping risks dropping fields | 14 fields | **30 fields** |
+| Validation where the choice of tool matters | `go build` is instant | **`go build ./...` 10 s vs `golens check .` 40 ms** |
+| Large-file outline | no | yes — 826 lines |
+
+k9s is the subject for byte-level editing and validation; duf stays the subject for ambiguity and
+platform builds. The two together cover the plan. Using one repository for both was the reason four
+runs could not settle traps 3 and 4.
+
+**A wrong tool claim is a result; verify it before recording it.** In the second run an agent
+reported that `outline` had omitted a file. It had not: all 19 headers were emitted, and the file's
+outline contained no `Stat`, which is why the agent expected to find one there. The claim was wrong
+and it was never chased down.
+
 This is the failure mode the protocol is best placed to catch, because it is checkable in seconds
 and it is the one that matters most — an agent that believes the tool is broken retries the same
 command instead of adapting. So:
