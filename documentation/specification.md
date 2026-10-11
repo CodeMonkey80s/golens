@@ -43,7 +43,10 @@ golens outline <file|dir> [flags]
 - `--depth <int>`: Restricts AST hierarchy recursion depth (default: unlimited).
 - `--json`: Returns structured JSON array.
 
-**Directory input.** The path is traversed recursively; `.git`, `vendor` and hidden directories are skipped, and only `.go` files are considered. Files are emitted in lexical path order, and each block repeats the `file:` header. Output is deterministic: identical input always yields byte-identical output.
+**Directory input.** The path is traversed recursively; `.git`, `vendor`, `node_modules` and
+hidden directories are skipped, and only `.go` files are considered. Files are emitted in lexical
+path order, and each block repeats the `file:` header. Output is deterministic: identical input
+always yields byte-identical output.
 
 **JSON shape.** Always an array of per-file objects, including for a single file, so the schema never varies with input type.
 
@@ -210,11 +213,14 @@ golens check <file|dir> [flags]
   when their build sets intersect.
 
   The matrix enumerates the GOOS/GOARCH pairs the toolchain can actually build (`go tool dist
-  list`, 47 of them), not their cross product. An invented pair makes real constraints look
-  satisfied: under a fictional `freebsd/mipsle`, `//go:build mips || mipsle` and
-  `//go:build freebsd` both hold. Name recognition is deliberately wider than the matrix, so a
-  file named for a retired platform is constrained to a configuration that does not exist and is
-  therefore never built — suppressed rather than accused.
+  list`, 47 of them), not their cross product of 210. An invented pair makes real constraints look
+  satisfied: under a fictional `freebsd/mipsle`, `//go:build mips || mipsle` and `//go:build freebsd`
+  both hold. **The 47 pairs are a compiled-in snapshot, not a query** — golens is stateless and
+  answers in microseconds, so running the toolchain per check is out of budget. A pair added by a
+  later Go release is therefore not modelled, which can only *suppress* a diagnostic, never invent
+  one. Name recognition is deliberately wider than the matrix, so a file named for a retired
+  platform is constrained to a configuration that does not exist and is therefore never built —
+  suppressed rather than accused.
 
   Platform variants of one function are therefore silent, which is what keeps the check usable on
   any repository that targets more than one OS; a build tag the tool cannot recognise evaluates
@@ -233,10 +239,17 @@ not checked here — see §3.1.
 
 **Output**
 
+Every diagnostic carries `file:line:column: message`, including the ones that are not syntax errors:
+
 ```text
 user.go:5:1: expected 'package', found 'func'
-user.go:12: imported and not used: "fmt"
+user.go:12:1: imported and not used: "fmt"
 ```
+
+The column is the position the parser reported for a parse error, and `1` for the checks that
+report a declaration rather than a position — an unused import is attributed to the line its spec
+is written on, not to the package clause. `--json` carries the same facts as
+`severity`, `file`, `line`, `column` and `message`.
 
 ## 3. Project Constraints & Guidelines
 

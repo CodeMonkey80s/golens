@@ -10,7 +10,7 @@ Companion documents — this file answers *when and in what order*; they answer 
 | Document | Owns | Stability |
 |---|---|---|
 | `specification.md` | **WHAT** to build — normative | Stable; changes only on design change |
-| `decisions.md` | **WHY** — 20 decisions, frozen interfaces, acceptance criteria A1–A12 | Stable after S1 |
+| `decisions.md` | **WHY** — 23 decisions, frozen interfaces, acceptance criteria A1–A14 | Stable after S1 |
 | `implementation-plan.md` | **WHEN** — sequencing, estimates, handoffs | Perishable; rows retire as work lands |
 | `HANDOFF.md` (repo root) | **WHERE** — current session's state | Disposable; rewritten each session |
 
@@ -42,7 +42,7 @@ Two rules govern the split:
 | **S2** `outline` | Human + JSON, `--depth`, dir recursion, lexical order, range rendering | 5 | 5–6h | Matches the spec's `golens outline user.go` sample byte-for-byte. Determinism test passes |
 | **S3** `get` + `bounds` | Resolver, ambiguity handling, dir resolution, `--bounds-only` | 4, 6, 7 | 12–17h | Property test green across **all** fixture classes. `get --bounds-only` ≡ `bounds` |
 | **S4** `check` + naming | Parse errors, unused imports, duplicate decls, path syntax, `--naming` | 8, 10 | 9–12h | Passes the 12-class fixture suite incl. CRLF, BOM, unicode idents, dot/blank imports. **Shipped narrower:** `--naming` and `internal/naming` were removed before release — naming is `revive`'s job, and `decisions.md` D9 records why |
-| **S5** Harden + ship | `--compact`, `schema_version`, P95 gate, binary size, `CGO_ENABLED=0`, README | 9, 12, 13 | 6–9h | A1–A12 all green. Full line-by-line review against `specification.md` |
+| **S5** Harden + ship | `--compact`, `schema_version`, P95 gate, binary size, `CGO_ENABLED=0`, README | 9, 12, 13 | 6–9h | A1–A14 all green. Full line-by-line review against `specification.md` |
 | | **Total** | | **41–56h** | |
 
 Task numbers refer to the original 13-task breakdown preserved in `decisions.md` context.

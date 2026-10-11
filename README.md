@@ -10,8 +10,8 @@ golens bounds <symbol> <file>   byte and line offsets for an edit
 golens check <file|dir>         fast syntax and namespace validation
 ```
 
-Pure Go, no cgo, no daemon, no index. One binary, ~5.4 MB stripped (`-ldflags="-s -w"`), parses a file in well under a
-millisecond.
+Pure Go, no cgo, no daemon, no index. One binary, ~5.3 MB stripped (`-ldflags="-s -w"`), parses a
+typical file in about 20 µs and the largest file in this repository in about 270 µs.
 
 ---
 
@@ -30,20 +30,50 @@ IMPORTS
   • fmt
   • strconv
 
-TYPES & STRUCTS (lines 18-276)
+TYPES & STRUCTS (lines 18-304)
   • type Kind string (line 18)
   • type Bounds struct (lines 42-47)
   • type Node struct (lines 103-130)
-  • type Symbol struct (lines 185-196)
-  • type Document struct (lines 205-221)
-  • type Engine interface (lines 268-270)
+  • type Symbol struct (lines 189-200)
+  • type Document struct (lines 209-225)
+  • type Engine interface (lines 272-274)
+  • type ErrorExit int (line 280)
+  • type LocatedError struct (lines 299-304)
 
-FUNCTIONS & METHODS (lines 51-286)
+FUNCTIONS & METHODS (lines 51-310)
   • func (b Bounds) Valid() bool (lines 51-53)
   • func (b Bounds) LineCount() int (lines 57-62)
   • func (b Bounds) ByteLen() int (lines 65-70)
-  • func (n Node) Declaration() string (lines 139-167)
+  • func (b Bounds) LineRange() string (lines 75-80)
+  • func (b Bounds) String() string (lines 82-84)
+  • func (b Bounds) Source(src []byte) string (lines 92-97)
+  • func (n Node) Declaration() string (lines 139-171)
+  • func (n Node) Keyword() string (lines 178-183)
+  • func (s Symbol) Declaration() string (lines 204-206)
+  • func (d *Document) Symbol(name string) (Symbol, bool) (lines 232-239)
+  • func (d *Document) Lookup(name string) []Symbol (lines 247-255)
+  • func (d *Document) RootNode() Node (lines 258-264)
+  • func (e ErrorExit) Code() int (line 290)
+  • func (e LocatedError) String() string (lines 308-310)
+
+VARS & CONSTS (lines 21-287)
+  • const KindPackage Kind (line 21)
+  • const KindImport Kind (line 22)
+  • const KindType Kind (line 23)
+  • const KindFunc Kind (line 24)
+  • const KindMethod Kind (line 25)
+  • const KindVar Kind (line 26)
+  • const KindConst Kind (line 27)
+  • const KindField Kind (line 28)
+  • const ExitOk ErrorExit (line 283)
+  • const ExitUsage (line 284)
+  • const ExitNotFound (line 285)
+  • const ExitDiagnostics (line 286)
+  • const ExitParse (line 287)
 ```
+
+Note `type ErrorExit int` and `const ExitOk ErrorExit` — the type and its typed constant, which is
+where a declaration head that dropped half the source would be obvious.
 
 ```console
 $ golens get Bounds.ByteLen internal/domain/domain.go
@@ -83,7 +113,7 @@ Once the module is published to a public proxy, `go install
 github.com/CodeMonkey80s/golens/cmd/golens@latest` will work too. It does not yet: this
 repository has no remote, so the install path fails at the fetch.
 
-Requires Go 1.20 or newer. Builds with `CGO_ENABLED=0`.
+Requires the Go version in `go.mod` (currently 1.27.2). Builds with `CGO_ENABLED=0`.
 
 ---
 
@@ -145,11 +175,15 @@ Checks performed:
 - Malformed import paths
 
 ```console
-$ golens check ./internal
-internal/domain/domain.go:5:1: imported and not used: "unused"
+$ golens check user.go
+user.go:4:1: imported and not used: "fmt"
+user.go:5:1: imported and not used: "os"
 $ echo $?
 3
 ```
+
+Every diagnostic carries `file:line:column`. The column is the parser's position for a syntax error
+and `1` for the checks that report a declaration rather than a position.
 
 **Out of scope by design:** unreachable code, type-level conflicts, and module import resolution.
 The last two need `go/types` and a module graph, which cannot coexist with the stateless,
@@ -257,8 +291,13 @@ $ golens check user.go
 $ golens bounds UserStore.GetUser user.go --json
 # -> {"schema_version":1,...,"start_byte":430,"end_byte":612}
 
-# 5. Seek to 430, write 182 bytes, done.
+# 5. Seek to 430, write 182 bytes — end_byte minus start_byte, which is
+#    exactly the length of the text `get` returned in step 2.
 ```
+
+The offsets above are from the specification's sample file. Run the commands against your own file
+and use the numbers it gives you; the property that matters is that `end_byte - start_byte` equals
+the length of what `get` printed.
 
 Read with `outline`, extract with `get`, edit with `bounds`, validate with `check`.
 
@@ -277,7 +316,7 @@ than about their own test inputs — `internal/arch` shells out to `go list -dep
 `selfcheck_test.go` and `TestRepositoryPassesItsOwnCheck` walk the tree. Go's test cache does not
 invalidate on those, so a stale `ok` is possible. This has hidden a real failure once.
 
-`golens check ./internal` and `./cmd` both pass on this repository. The tool checks itself in CI,
+`golens check ./internal` and `./cmd` both exit 0 on this repository. The tool checks itself in CI,
 which is how a false positive in its namespace check was caught.
 
 `golangci-lint` runs in CI too. Among the rules it enforces is `revive`'s `var-naming`, which
@@ -312,7 +351,7 @@ will differ on yours.
 
 | Budget | Measured here |
 |---|---|
-| Read + parse, single file — 5 ms P95 | ~15 µs typical, ~265 µs on the largest file in this repo |
+| Read + parse, single file — 5 ms P95 | ~22 µs typical, ~273 µs on the largest file in this repo |
 | Binary — 15 MB | 5.3 MB stripped (`-ldflags="-s -w"`) |
 
 Reproduce with `go test -run XXX -bench Parse -benchtime 500x ./internal/engine/goast`. Expect

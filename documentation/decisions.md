@@ -22,7 +22,7 @@ the choice is the one that cannot be misread and cannot silently corrupt a file.
 | D6 | `outline` on a dir = recursive, lexical order, one JSON object per file | Deterministic output is what makes agent diffing and caching work. |
 | D7 | `--depth 1` = package-level declarations only | Natural reading of "hierarchy depth"; keeps the common case cheap. |
 | D8 | `check` stays AST-only: parse errors, unused imports, duplicate decls | Module resolution and type checking break the <5 ms, no-daemon budget. |
-| D9 | Naming enforced by an in-repo AST test; initialisms lowercased uniformly | CI cannot be bypassed; exceptions would make the check non-deterministic. |
+| D9 | Naming is **not** golens' business; `revive`'s `var-naming` owns it in CI | A structural query that returns style judgements makes an agent rewrite correct code. The in-repo AST check was tried three times and deleted — see below |
 | D10 | Engine interface is narrow and tree-shaped; `Bounds` in engine coordinates | Keeps the v0.2 Tree-sitter promise cheap to honour now instead of a rewrite later. |
 | D11 | Exit codes 0/1/2/3/4; payload → stdout, diagnostics → stderr | Agents branch on exit codes; `--json` must stay pipe-clean. |
 | D12 | `bounds` human output is one pinned line | §2.3 never defined it; agents need a stable default. |
@@ -36,6 +36,7 @@ the choice is the one that cannot be misread and cannot silently corrupt a file.
 | D20 | Clean package layout enforced by import direction | §3.1 requires decoupling; layout is what makes it real. |
 | D21 | A file's build set is name ∧ tag ∧ cgo, over the 47 real GOOS/GOARCH pairs | 70,854 false positives on the standard library until all three were modelled |
 | D22 | `outline` writes every parseable file first, then reports the skips and exits 4 | One broken file must not hide 8,000 others, and exit 0 would be a lie |
+| D23 | A field that changes what a declaration head means reaches every renderer | `outline --json` emitted an alias and a defined type as two byte-identical nodes; the human form was already correct |
 
 ---
 

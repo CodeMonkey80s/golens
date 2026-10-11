@@ -176,7 +176,7 @@ Verified the test fails without the fix rather than assuming it: removing the `I
 
 ## Acceptance criteria
 
-All twelve green. Evidence is a test, not a claim.
+All fourteen green. Evidence is a test, not a claim.
 
 | # | Criterion | Evidence |
 |---|---|---|
@@ -188,10 +188,18 @@ All twelve green. Evidence is a test, not a claim.
 | A6 | `get --bounds-only` ≡ `bounds` | `TestSpecBoundsOnlyMatchesBounds`, plus format and usecase level |
 | A7 | golens never reports style | `TestCheckDoesNotJudgeStyle`, `TestCheckAcrossFilesReportsNothingStructural` |
 | A8 | Parse < 5 ms P95 | `TestParseP95UnderBudget` |
-| A9 | Binary < 15 MB | 5.30 MB |
+| A9 | Binary < 15 MB | 5.31 MB |
 | A10 | No cgo | `TestNoCgoDependency` |
 | A11 | `domain`/`usecase` import nothing external | `internal/arch` |
 | A12 | 12 fixture classes | `TestFixtureClasses` |
+| A13 | Platform variants silent; untagged pair exits 3 | `TestPlatformVariantsDoNotConflict` (5 pairs), `TestCoBuildableFilesStillConflict` (positive control), `TestImplicitFilenameConstraints`, `TestFilenameAndTagConstraintsCombine`, `TestCgoFilesAreExcludedWhenCgoIsOff` |
+| A14 | Partial tree: parseable stdout, skipped named, exit 4 | `TestOutlineSkipsUnparseableFilesWithoutHidingTheRest`, `TestOutlineReportsSkippedFilesExitFour`, `TestOutlineJSONStaysParseableWhenAFileIsBroken`, `TestOutlineSingleBrokenFileKeepsTheOriginalMessage` |
+
+A13 and A14 are stated in `decisions.md` but were added after `HANDOFF.md` first claimed "all twelve
+green", which is why they went uncredited until a documentation review asked where they were. They
+have been covered all along — by `buildconstraint_test.go` and `outline_skip_test.go` respectively —
+and the positive control in A13 is the part that matters: a rule that suppressed every duplicate
+would otherwise pass the five variant cases.
 
 `internal/cli/spec_test.go` adds 11 more, each citing the specification clause it verifies.
 
@@ -316,7 +324,7 @@ the initializer, which today means reading the file.
 1. `AGENTS.md` — the invariants, the layering rule, and the traps that bit twice
 2. `README.md` — how to use the tool
 3. `documentation/specification.md` — normative
-4. `documentation/decisions.md` — rationale, frozen interfaces, A1–A12
+4. `documentation/decisions.md` — rationale, frozen interfaces, A1–A14
 5. `documentation/COLDSTART.md` — tests the instructions, not the tool
 6. `documentation/retrospective-s4.md` — **error bias per check**, and why a checker must run on its own codebase
 7. `documentation/retrospective-s2.md` — sentinel values; three bugs in green tests
