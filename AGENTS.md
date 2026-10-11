@@ -97,3 +97,34 @@ agents to use golens. Copy it into the target repo's root and edit.
 no prior context a real repository and a two-part task, then scores six things. Run it after
 changing any help text. It is the only check that would catch a trap moving back down the help
 output.
+
+## Commit message convention
+
+Use a lightweight `area: brief description` format. Prefix every commit with one of:
+
+| Prefix | When to use |
+|--------|-------------|
+| `feat:` | New user-visible feature or capability |
+| `fix:` | Bug fix |
+| `refactor:` | Code restructuring without behavior change |
+| `test:` | Test additions, fixes, or infrastructure |
+| `docs:` | Documentation only |
+| `ci:` | CI/CD configuration |
+| `cli:` | CLI-specific changes (flags, help, wiring) |
+| `engine:` | Engine/internal AST/domain changes |
+
+**Rules:**
+- Subject line: imperative mood, lowercase after prefix, no trailing period
+- Body (optional): explain *why* and *what changed*, not *how*
+- One logical change per commit; split if `and` appears in subject
+
+Examples:
+```
+feat: render type parameters on generic functions
+fix: report real positions in parse diagnostics, align spec
+test: add preflight so hard cases cannot pass vacuously
+refactor: remove naming check, golens describes code not grades
+cli: show build constraint, advise disambiguation, add --version
+docs: update binary size to 5.4 MB stripped
+ci: add golangci-lint with minimal agent-shaped linter set
+```
