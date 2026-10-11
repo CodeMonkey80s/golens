@@ -1,6 +1,9 @@
 # golens — Implementation Plan
 
-Status: **Ready to execute.** S1 not yet started.
+Status: **All five sessions landed.** S1–S5 are complete; the plan is kept as a record of the
+sequence and its rationale, not as work to do. Two rows below have since been overtaken by
+events and are annotated where they diverge from what shipped. `HANDOFF.md` at the repo root
+records where the project actually is.
 
 Companion documents — this file answers *when and in what order*; they answer *what and why*:
 
@@ -38,11 +41,22 @@ Two rules govern the split:
 | **S1** Foundation | Layout, domain types, Go engine, minimal formatters. **Prove offset math.** | 1, 2, 3 | 9–12h | Engine parses a file → correct `Bounds`. Byte invariant proven on a hand-checked fixture. Interface signatures frozen into `decisions.md` |
 | **S2** `outline` | Human + JSON, `--depth`, dir recursion, lexical order, range rendering | 5 | 5–6h | Matches the spec's `golens outline user.go` sample byte-for-byte. Determinism test passes |
 | **S3** `get` + `bounds` | Resolver, ambiguity handling, dir resolution, `--bounds-only` | 4, 6, 7 | 12–17h | Property test green across **all** fixture classes. `get --bounds-only` ≡ `bounds` |
-| **S4** `check` + naming | Parse errors, unused imports, duplicate decls, path syntax, `--naming` | 8, 10 | 9–12h | Passes the 12-class fixture suite incl. CRLF, BOM, unicode idents, dot/blank imports |
+| **S4** `check` + naming | Parse errors, unused imports, duplicate decls, path syntax, `--naming` | 8, 10 | 9–12h | Passes the 12-class fixture suite incl. CRLF, BOM, unicode idents, dot/blank imports. **Shipped narrower:** `--naming` and `internal/naming` were removed before release — naming is `revive`'s job, and `decisions.md` D9 records why |
 | **S5** Harden + ship | `--compact`, `schema_version`, P95 gate, binary size, `CGO_ENABLED=0`, README | 9, 12, 13 | 6–9h | A1–A12 all green. Full line-by-line review against `specification.md` |
 | | **Total** | | **41–56h** | |
 
 Task numbers refer to the original 13-task breakdown preserved in `decisions.md` context.
+
+**On S5's exit criterion.** The line-by-line review was not part of S5. S5 checked its own
+surface, as every session before it had, and the review was deferred until the sessions were
+done — at which point reading the whole specification against the whole implementation found
+that `outline --json` dropped `type_params`, `receiver` and `is_alias`, the same three fields
+the human form renders. The alias case is the one that matters: an alias and a defined type
+over the same underlying type were byte-identical JSON nodes describing different programs.
+See `decisions.md` D22 and the alias section of `HANDOFF.md`.
+
+The lesson is the S4 one repeating: a reviewer who reads only the code they changed will not
+find the divergence between two renderers of the same data, because each looks correct alone.
 
 ### Effort envelope
 

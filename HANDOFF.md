@@ -1,7 +1,7 @@
 # HANDOFF — golens
 
 **Status: feature-complete. The session plan is done and 12 commits of unplanned hardening landed
-after it.** Every gate below was re-run at commit `cbec81d`; all are green.
+after it.** Every gate below was re-run after the spec review; all are green.
 
 There is no next session to hand off to. This document records where the project actually is, so the
 next agent starts from fact rather than from the plan.
@@ -12,8 +12,8 @@ next agent starts from fact rather than from the plan.
 |---|---|
 | Branch | `main` only, working tree clean |
 | Remote | **none configured** — nothing has been or can be pushed |
-| Tests | 281 top-level, 6 packages, all passing |
-| Test count by package | arch 6 · cli 64 · domain 15 · goast 45 · format 20 · usecase 131 |
+| Tests | 298 (incl. subtests), 6 packages, all passing |
+| Test count by package | arch 6 · cli 67 · domain 15 · goast 45 · format 21 · usecase 144 |
 | Licence | MIT, `LICENSE` at repo root |
 | Toolchain | go1.27.2, `golang.org/x` dependencies: none. Only cobra and its two indirects |
 | Verify with | **`go test -count=1 ./...`** — see caching note below |
@@ -87,6 +87,7 @@ tool against real repositories — `duf` and `GoDiabolicalDecorations` — rathe
 | `16cbee9` | Unused imports whose local name cannot be derived | `github.com/mattn/go-runewidth` → `go-runewidth`, not an identifier; check now stays silent rather than guessing |
 | `16cbee9` | camelCaseId applied to `SCREAMING_SNAKE_CASE` | Flagged every all-caps constant by construction. Superseded entirely by the initialism rule, which treats underscores as preserved boundaries |
 | `b89e0f3` | `outline` never showed a file's build constraint | An agent could edit `filesystems_windows.go` on linux and conclude the tool lied |
+| spec review | `outline --json` dropped `type_params`, `receiver` and `is_alias` | An alias and a defined type over the same underlying type were byte-identical JSON nodes describing different programs; `type Alias Stack[int]` compiles as a defined type |
 
 The three `16cbee9` classes were found by testing against a real repository, and every one is a false
 positive — the direction AGENTS.md says is the expensive one, because an agent that believes a
@@ -258,10 +259,41 @@ misfiled as cosmetic; it was the most dangerous defect the plan ever shipped.
 | Item | Notes |
 |---|---|
 | **Tag and publish** | No remote configured, so `go install ...@latest` cannot work. README leads with a checkout and says so. This is the only thing standing between the code and use |
-| `var x = 5` shows no `= 5` in outline | Cosmetic, and unlike the alias case it is not an edit hazard: the byte span covers only the name, and writing the name back is what the specification requires |
+| `var x = 5` shows no `= 5` in outline | Cosmetic, and unlike the alias case it is not an edit hazard: the byte span covers only the name, and writing the name back is what the specification requires. **Investigated against the spec review and confirmed correct** — see "Var and const values" below |
 | `check .` exits 3 on `testdata/store/store.go` | Intentional — the unused import gives the outline golden a stable shape |
 | Unused-import false negatives | Accepted: comment-only references and shadowed locals. Never false positives, verified empirically against three repositories |
 | Naming outside a module | Accepted loss. `revive` cannot run without a `go.mod`, so a loose file handed to an agent outside any repository gets no naming check. Filling that gap with golens would make a structural tool the one that grades code; `decisions.md` D9 records the trade |
+
+## Var and const values — investigated, no change
+
+`var x = 5` renders as `var x` with no `= 5`, which reads like a gap. The spec review checked
+whether it is one. It is not, and closing it would introduce a defect.
+
+The outline's declaration head is **not** the byte span `get` and `bounds` report. The span is
+name-scoped, so for `var ( x = 5 )` it covers `x` alone. An agent that pastes the outline head
+into that span writes `var x = 5` into a span that already holds `x`, producing:
+
+```go
+var (
+	var x = 5 = 5
+)
+```
+
+which does not parse. Pasting `var x` — the current output — writes back exactly what was there.
+
+This is not specific to the value case. `var counter int` pastes the same way, into `counter`:
+
+```go
+var var counter int int
+```
+
+so the head is already not paste-safe for vars and consts generally, value or not. That is the
+correct consequence of the name-scoped span the specification mandates at §2.2, and it is why the
+help text says to edit with the text `get` returned rather than with the outline.
+
+Adding `= 5` would make the outline *more* divergent from the span it describes while making
+nothing paste-safe. The right fix, if one is wanted, is not in the outline: it is a way to read
+the initializer, which today means reading the file.
 
 ## Read first
 
@@ -274,3 +306,23 @@ misfiled as cosmetic; it was the most dangerous defect the plan ever shipped.
 7. `documentation/retrospective-s2.md` — sentinel values; three bugs in green tests
 8. `documentation/retrospective-s1.md` — the `go/ast` position model; why `Detail` stays a token
 9. `TESTING.md` — eighteen manual cases; **run them against a real repository after any engine or check change**
+
+## Spec review — done, and what it changed
+
+`retrospective-s4.md` flagged "final line-by-line review against the spec" as never done, every
+session having checked only its own surface. It is now done: every clause of `specification.md`
+was checked against the built binary, not against the code, so a divergence between what the spec
+promises and what the tool does could not hide behind a passing test.
+
+Most of it held. `outline`'s header, group layout, depth semantics and `(line N)` / `(lines N-M)`
+forms match the sample exactly. All four payloads put `schema_version` first. `get --bounds-only
+--json` is byte-identical to `bounds --json`. The byte invariant holds by slicing the file.
+`schema_version`, the exit-code table, `bounds` rejecting a directory, ambiguity listing
+candidates on stderr, the `init`/`_` exemption, external test packages as distinct namespaces,
+and mutually exclusive platform variants all behave as specified. One true positive was confirmed
+against `go vet` rather than trusted.
+
+One defect came out of it, and it was not cosmetic: `outline --json` dropped `type_params`,
+`receiver` and `is_alias`. See `decisions.md` D23. The generalisable finding is in the AGENTS.md
+traps — a field that changes what a declaration head *means* has to reach every renderer, and a
+test on one renderer cannot see the other's divergence.

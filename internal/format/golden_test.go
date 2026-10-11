@@ -341,6 +341,104 @@ func TestJSONDepthMatchesHumanDepth(t *testing.T) {
 	}
 }
 
+// TestJSONDeclarationHeadsMatchSource pins the JSON outline against the same constructs
+// TestDeclarationHeadsMatchSource pins for the human form: a generic type, a generic function,
+// a generic receiver, and an alias beside a defined type of the same underlying type.
+//
+// The human path and the JSON path render from the same domain fields but by different code,
+// so a fix to one is not a fix to the other. That is how the alias bug survived a second time:
+// Declaration() learned to emit the "=" and reproduce the receiver, while convertNodes kept
+// copying Name, Kind and Detail alone. An agent reading --json saw
+//
+//	{"name": "Alias", "kind": "type", "detail": "Stack[int]"}
+//
+// and no way to tell it from {"name": "Defined", ...} -- byte-identical nodes describing two
+// different programs. Reconstructing a declaration from that payload yields a defined type
+// where the source says alias, which compiles and means something else.
+//
+// Each field is asserted against the source text, and the alias/defined pair is compared to
+// each other: the interesting property is that two nodes with the same name shape differ.
+func TestJSONDeclarationHeadsMatchSource(t *testing.T) {
+	src := `package p
+
+type Stack[T any] struct{ items []T }
+
+func Sorted[E cmp.Ordered](seq []E) []E { return seq }
+
+type Alias = Stack[int]
+type Defined Stack[int]
+
+func (s *Stack[T]) Push(v T) {}
+`
+
+	dir := t.TempDir()
+	path := writeFixture(t, dir, "p.go", src)
+
+	var buf bytes.Buffer
+	if err := usecase.Outline(goast.New(), path, usecase.DepthUnlimited, &buf, format.Options{JSON: true}); err != nil {
+		t.Fatalf("Outline: %v", err)
+	}
+
+	var files []format.OutlineFile
+	if err := jsonUnmarshal(buf.Bytes(), &files); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("files = %d, want 1", len(files))
+	}
+
+	byName := map[string]format.OutlineNode{}
+	for _, group := range files[0].Nodes {
+		for _, decl := range group.Children {
+			byName[decl.Name] = decl
+		}
+	}
+
+	for name, want := range map[string]struct{ params, receiver, detail string }{
+		// The type parameters are part of the name as the source spells it: an agent
+		// writing "type Stack struct" for "type Stack[T any] struct" writes code that
+		// does not compile.
+		"Stack": {params: "[T any]", detail: "struct"},
+		"Sorted": {
+			params: "[E cmp.Ordered]",
+			detail: "(seq []E) []E",
+		},
+		// A method carries its receiver verbatim, type parameters included.
+		"Push": {receiver: "s *Stack[T]", detail: "(v T)"},
+		// The alias and the defined type differ only in is_alias.
+		"Alias":   {detail: "Stack[int]"},
+		"Defined": {detail: "Stack[int]"},
+	} {
+		node, ok := byName[name]
+		if !ok {
+			t.Errorf("%s missing from JSON outline", name)
+			continue
+		}
+		if node.TypeParams != want.params {
+			t.Errorf("%s type_params = %q, want %q", name, node.TypeParams, want.params)
+		}
+		if node.Receiver != want.receiver {
+			t.Errorf("%s receiver = %q, want %q", name, node.Receiver, want.receiver)
+		}
+		if node.Detail != want.detail {
+			t.Errorf("%s detail = %q, want %q", name, node.Detail, want.detail)
+		}
+	}
+
+	alias, defined := byName["Alias"], byName["Defined"]
+	if !alias.IsAlias {
+		t.Error(`Alias is_alias = false, want true: an alias without its "=" reads as a defined type`)
+	}
+	if defined.IsAlias {
+		t.Error("Defined is_alias = true, want false")
+	}
+
+	// The two must be distinguishable in the payload, not merely in the domain model.
+	if alias.IsAlias == defined.IsAlias {
+		t.Error("Alias and Defined are indistinguishable in JSON; the payload cannot express the difference")
+	}
+}
+
 // TestMultiFileRepeatsFileHeader covers the directory case: each block repeats the file header,
 // so concatenated output is unambiguous.
 func TestMultiFileRepeatsFileHeader(t *testing.T) {

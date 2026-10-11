@@ -61,6 +61,21 @@ agent copying `type Stack struct` for a real `type Stack[T any] struct` writes c
 compile. `TestDeclarationHeadsMatchSource` in `internal/engine/goast` pins the constructs that
 previously diverged, including the alias `=` and the receiver variable name.
 
+**A field that changes what a head means must reach every renderer.** `domain.Node.Declaration()`
+is the only place a head is assembled, and it reads `Name`, `TypeParams`, `Receiver`, `Detail` and
+`IsAlias`. The human outline calls it. `format.convertNodes` does not — it copies fields by hand,
+and when it did, `outline --json` emitted an alias and a defined type over the same underlying type
+as two byte-identical nodes. `TestDeclarationHeadsMatchSource` passed throughout, because it only
+ever looked at the human path. When you add a field that a declaration head depends on, add it to
+`format.OutlineNode` too and extend `TestJSONDeclarationHeadsMatchSource` in the same commit; a
+test on one renderer cannot see the other diverging.
+
+**An outline head is not the byte span.** `get` and `bounds` report a name-scoped span, but the
+outline head is the whole declaration. For `var counter int` the span covers `counter` alone, so
+pasting the head into it yields `var var counter int int`. That is a consequence of the
+name-scoped span the spec mandates, not a bug — edit with the text `get` returned, which is what
+the `bounds` help text says.
+
 **`check` deliberately under-reports.** A false positive on an import that is in use would have
 an agent delete working code, so the check stays silent whenever it cannot determine the local
 name. When adding a check, bias toward silence and say so in the comment.

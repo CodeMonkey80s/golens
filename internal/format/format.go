@@ -54,13 +54,27 @@ type GetPayload struct {
 
 // OutlineNode is one node in the JSON outline. Detail is omitted when empty to keep
 // payloads small.
+//
+// TypeParams, Receiver and IsAlias are the JSON counterpart of the same three domain fields the
+// human form renders through Node.Declaration, and they are load-bearing for the same reason:
+// a declaration head that drops them describes a different program. "type Stack struct" for
+// "type Stack[T any] struct" does not compile, and "type Alias Stack[int]" for "type Alias =
+// Stack[int]" compiles as a defined type, which is worse. Name and Detail alone cannot express
+// any of the three, so a consumer reconstructing a declaration from this payload would write
+// the wrong code while appearing to have followed it.
+//
+// Each is omitted when empty or false, so a file with no generics, no methods and no aliases
+// pays nothing for the fields.
 type OutlineNode struct {
-	Name      string        `json:"name"`
-	Kind      domain.Kind   `json:"kind"`
-	Detail    string        `json:"detail,omitempty"`
-	StartLine int           `json:"start_line"`
-	EndLine   int           `json:"end_line"`
-	Children  []OutlineNode `json:"children,omitempty"`
+	Name       string        `json:"name"`
+	Kind       domain.Kind   `json:"kind"`
+	Detail     string        `json:"detail,omitempty"`
+	TypeParams string        `json:"type_params,omitempty"`
+	Receiver   string        `json:"receiver,omitempty"`
+	IsAlias    bool          `json:"is_alias,omitempty"`
+	StartLine  int           `json:"start_line"`
+	EndLine    int           `json:"end_line"`
+	Children   []OutlineNode `json:"children,omitempty"`
 }
 
 // OutlineFile is the per-file JSON object. The outline payload is always an array of
@@ -214,12 +228,18 @@ func convertNodes(nodes []domain.Node, level, depth int) []OutlineNode {
 	out := make([]OutlineNode, 0, len(nodes))
 	for _, n := range nodes {
 		out = append(out, OutlineNode{
-			Name:      n.Name,
-			Kind:      n.Kind,
-			Detail:    n.Detail,
-			StartLine: n.Bounds.StartLine,
-			EndLine:   n.Bounds.EndLine,
-			Children:  convertNodes(n.Children, level+1, depth),
+			Name: n.Name,
+			Kind: n.Kind,
+			// The three fields below are what Node.Declaration consumes to build a head
+			// that matches the source. Copying them here is what keeps the JSON outline
+			// describing the same program the human outline does; see OutlineNode.
+			Detail:     n.Detail,
+			TypeParams: n.TypeParams,
+			Receiver:   n.Receiver,
+			IsAlias:    n.IsAlias,
+			StartLine:  n.Bounds.StartLine,
+			EndLine:    n.Bounds.EndLine,
+			Children:   convertNodes(n.Children, level+1, depth),
 		})
 	}
 	return out

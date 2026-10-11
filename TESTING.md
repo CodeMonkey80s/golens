@@ -346,7 +346,24 @@ Without `--bounds-only`, `get` adds a `source` field; with it, nothing else shou
 difference in the offsets means the two commands disagree about the span, which is the failure
 that matters — a caller switching between them must not get a different edit location.
 
-Failure: invalid JSON, or stderr text leaking into stdout.
+**Then check the JSON outline carries the whole declaration head.** This is the case that a
+human-only review misses: the human form and the JSON form render the same data by different
+code, so each can be correct alone while they disagree. Find a file with a type alias and a
+generic type, and compare:
+
+```console
+$ /tmp/golens outline <file.go> | grep 'type '
+$ /tmp/golens outline <file.go> --json --compact | jq -c '.[] | .nodes[].children[] | select(.kind=="type")'
+```
+
+Every `type` in the human output must be reconstructible from the JSON node. An alias and a
+defined type over the same underlying type differ **only** in `is_alias`, so if two nodes have
+the same `name` and `detail` and neither carries `is_alias`, one of them is an alias the payload
+cannot express. `type_params` must appear on generic types and functions; `receiver` must appear
+on methods, spelled as the source spells it.
+
+Failure: invalid JSON, stderr text leaking into stdout, or a declaration in the human output that
+the JSON node cannot reproduce.
 
 ☐
 
@@ -840,5 +857,6 @@ worth knowing too.
 | Line ranges | Inclusive at both ends |
 | Exit codes | 0 success · 1 usage · 2 not found or ambiguous · 3 diagnostics · 4 parse or I/O |
 | JSON | `"schema_version": 1` first; payload on stdout, diagnostics on stderr |
+| JSON outline node | Carries `type_params`, `receiver` and `is_alias`; an alias is distinguishable from a defined type |
 | `--compact` | Removes decoration, never information |
 | Out of scope | Unreachable code, type-level conflicts, module import resolution, non-Go languages |

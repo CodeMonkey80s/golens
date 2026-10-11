@@ -258,6 +258,39 @@ and collapsing them would lose one.
 The alternative worth rejecting: skipping `testdata/`. An agent asking what a directory contains
 wants all of it, and silently narrowing the traversal would be a scope decision made invisibly.
 
+### D23 · Every renderer of a declaration head carries the whole head
+
+`Declaration()` in `domain` is the single place that assembles a Go declaration head, and it
+consumes four fields: `Name`, `TypeParams`, `Receiver` and `Detail`, plus `IsAlias`. The human
+outline goes through it. The JSON outline did not — `convertNodes` copied `Name`, `Kind` and
+`Detail` by hand and dropped the rest.
+
+The result was that `outline --json` could not distinguish a type alias from a defined type:
+
+```json
+{"name": "Alias",   "kind": "type", "detail": "Stack[int]"}
+{"name": "Defined", "kind": "type", "detail": "Stack[int]"}
+```
+
+Two identical nodes, two different programs. An agent reconstructing a declaration from either
+writes `type Alias Stack[int]`, which **compiles** — as a defined type, no longer interchangeable
+with `Stack`. This is the same defect the alias fix addressed in `Declaration()`, arriving through
+the other renderer. Generic type parameters and method receivers were dropped the same way, and
+those do not compile when copied.
+
+**The rule: a field that changes the meaning of a rendered declaration belongs in every renderer
+that renders one.** A fix applied to one output format is not a fix to the data. Adding a field
+to the JSON node is therefore not a schema convenience — it is the only way that payload can
+describe the program it was generated from. The three fields are `omitempty`, so a file with no
+generics, no methods and no aliases pays nothing for them.
+
+What generalises: this survived two fixes to the same bug. The first fix taught `Declaration()`
+about `IsAlias`; the second found that the JSON path had never been taught. A test that pins one
+renderer's output pins *that* renderer. `TestJSONDeclarationHeadsMatchSource` now asserts the
+JSON node against the same source constructs `TestDeclarationHeadsMatchSource` pins for the human
+form, and compares the alias against its defined twin — the property is that the two differ, which
+neither test can see from one renderer alone.
+
 ---
 
 ## 3. Resolved ambiguities at a glance

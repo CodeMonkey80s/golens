@@ -47,6 +47,16 @@ golens outline <file|dir> [flags]
 
 **JSON shape.** Always an array of per-file objects, including for a single file, so the schema never varies with input type.
 
+**Node fields carry the whole declaration head.** Each node carries `name`, `kind`, `detail`, `start_line`, `end_line` and `children`, plus three fields that are not decoration:
+
+| Field | Present on | Value |
+|---|---|---|
+| `type_params` | generic types and functions | the bracketed list verbatim, `"[T any]"` |
+| `receiver` | methods | the receiver as the source spells it, `"s *UserStore"` |
+| `is_alias` | type aliases | `true` for `type A = B`, absent for `type A B` |
+
+`name` and `detail` alone cannot express any of the three, so a consumer that reconstructs a declaration head from a node writes a different program than the source describes: `type Stack struct` for `type Stack[T any] struct` does not compile, and `type Alias Stack[int]` for `type Alias = Stack[int]` compiles as a defined type, which is the more dangerous of the two. An alias and a defined type over the same underlying type are otherwise byte-identical nodes, so `is_alias` is the only thing distinguishing them. Each field is omitted when empty or false, so a file with no generics, no methods and no aliases pays nothing.
+
 **`--depth`.** Counts container nesting. Depth 1 emits package-level declarations only — types, funcs, methods, vars and consts — with children suppressed. Depth 2 additionally emits struct fields and method sets. The hierarchy is two levels deep in practice, so depth 3 and above produce output identical to depth 2 and to the unlimited default; a value of 0 is treated as 1.
 
 **Line ranges.** A declaration spanning several lines renders as `(lines 5-8)`; a single-line declaration renders as `(line 10)`.
