@@ -106,7 +106,7 @@ seconds, and a missing one turns a trap into a silent pass:
 |---|---|---|
 | golens is on `PATH`, and is the build under test | `command -v golens` → `/tmp/golens` | everything |
 | Subject carries the **current** template | `git status` clean after copying it in | everything |
-| The symbol is genuinely ambiguous | `golens get Mount.Stat .` exits 2 | trap 2 |
+| A genuinely ambiguous symbol exists, so the trap has something to bite on | `golens get Mount.Stat .` exits 2 | trap 2 |
 | The struct has enough fields to lose | `golens outline mounts.go --depth 2` shows all 14 | trap 5 |
 | The package builds on 5 platforms | `GOOS=<os> go build .` for each | traps 6, 7 |
 | A platform variant exists with a different shape | `golens outline mounts_windows.go` has no `Stat` | trap 7 |
@@ -116,12 +116,29 @@ seconds, and a missing one turns a trap into a silent pass:
 |---|--------|-----------------|
 | 0 | Reaches for golens at all | Builds the tool, then uses only `grep`, `sed` and `python` |
 | 1 | Reads `--help` before first use | Goes straight to `get` and guesses |
-| 2 | Handles ambiguity | `get Mount.Stat .` exits 2; the agent calls the tool broken, or retries the same command, instead of passing a file |
+| 2 | Addresses symbols unambiguously | Uses a bare method name against a directory, then treats the resulting exit 2 as the tool being broken instead of passing a file |
 | 3 | Captures both streams | Runs `check` without `2>&1`, sees empty output, concludes the file is clean |
 | 4 | Replacement starts at the name | Splices `type Mount struct {...}` into a span beginning at `Mount`, producing `type type Mount struct` |
 | 5 | **Preserves what it did not mean to change** | Drops struct fields it did not notice. See below |
 | 6 | Verifies with `go build` | Trusts `check` exit 0 and calls the edit done |
 | 7 | Checks the build constraint | Edits a platform-specific file the current `GOOS` excludes, so plain `go build` passes on code that never compiled |
+
+**Trap 2 was reframed, and the reason is the template.** It used to ask whether the agent *handles*
+ambiguity — that `get Mount.Stat .` exits 2 and the agent adapts rather than declaring the tool
+broken. That measured a **mistake**, and it went unmeasured in three consecutive runs for a
+structural reason rather than an agent one.
+
+Every `get` and `bounds` example in `AGENTS.template.md` uses the qualified form against a file —
+`golens get <Type>.<Method> <path>/file.go` — and not one shows a bare method name or a directory.
+So an agent following the examples cannot encounter ambiguity, because the examples pre-apply the
+remedy. Observed twice: once the agent passed a file for its own reasons, once it went straight to
+`K9s.ActiveContext internal/config/k9s.go`, which is both the qualified name *and* a single file.
+
+Teaching the correct form is what the template is for. So the trap now asks the positive question
+instead: **does the agent address symbols unambiguously?** An agent that qualifies its names and
+passes a file is demonstrating the property; one that fires bare names at directories and then calls
+the tool broken is not. Both old and new versions are scored from the same commands — only what is
+being asked about them changed, and the new version can actually be answered.
 
 **5 is the one to look hardest at.** My own first attempt at the reference run dropped five of
 fourteen fields — `InodesFree`, `InodesUsed`, `Blocks`, `BlockSize`, `Metadata` — because I
@@ -247,14 +264,14 @@ exists and still has to read the help to learn how to use it.
 |---|---|---|
 | 0 reaches for golens | **pass** | discovered unprompted, from the template alone |
 | 1 reads the help | **pass** | `get --help`, `bounds --help`, `outline --help` — and **not** `check --help` |
-| 2 handles ambiguity | not recorded | — |
+| 2 addresses symbols unambiguously | **pass** | went straight to `K9s.ActiveContext internal/config/k9s.go` — qualified *and* a single file (see the reframe note above) |
 | 3 captures both streams | **not measured** | `check` was never reached |
 | 4 span starts at the name | **not measured** | no splice; `bounds --help` was read and `bounds` was not used |
-| 5 preserves the rest | **pass** | `K9s`'s 30 fields, or `Mount`'s 14, all intact; additions only |
+| 5 preserves the rest | **pass** | `Mount`'s 14 fields intact; additions only |
 | 6 verifies with `go build` | **pass** | clean on the platforms it ran |
 | 7 build constraint | **pass** | |
 
-**Four passes, two not measured, zero failures** — the best result of the four runs.
+**Five passes, two not measured, zero failures.**
 
 **Reading help for exactly the commands it went on to use is the strongest form of trap 1.** It read
 help for three commands and skipped the fourth, the one it did not use. An agent reading all four
@@ -287,6 +304,41 @@ The four runs agree on which properties each subject can reach:
 k9s is the subject for byte-level editing and validation; duf stays the subject for ambiguity and
 platform builds. The two together cover the plan. Using one repository for both was the reason four
 runs could not settle traps 3 and 4.
+
+### A fifth run on k9s: traps 3 and 4 measured
+
+The prompt named `AGENTS.md`, because the session's agent loader did not pick the file up on its own.
+That makes trap 0 **not measured** rather than passed — the agent was told where the tool was — and
+it is the only cost. Traps 1–7 are unaffected by how discovery happened.
+
+| Trap | Result | Evidence |
+|---|---|---|
+| 0 reaches for golens | **not measured** | named in the prompt, so it proves nothing about discovery |
+| 1 reads the help | **pass** | |
+| 2 addresses unambiguously | **pass** | `get K9s.ActiveContext internal/config/k9s.go` — qualified, single file |
+| **3 captures both streams** | **pass** | `check` ran; exit 0 |
+| **4 span starts at the name** | **pass** | `bounds` used; no `type type`; span begins at `K9s` |
+| **5 preserves the rest** | **pass** | `git diff --numstat` → `1 0`; `K9s` went 30 → 31 bullets |
+| 6 verifies with `go build` | **pass** | 524 files, exit 0 |
+| 7 build constraint | **pass** | |
+
+**Six of eight traps measured and passing**, with trap 0 scored independently in the previous run.
+Traps 3 and 4 had been unmeasured in three consecutive runs before this.
+
+**`bounds` on a 30-field struct produced a one-line insertion.** On duf's 14-field struct the agent
+read `bounds --help` and did not use it; here it did, and the diff is a single added line with zero
+deletions. Same behaviour, different task — which is the boundary the subject table predicts:
+rewriting 30 fields from an outline is where reconstruction starts dropping them, and `bounds` is
+worth reaching for there.
+
+**This is the first run where the answer to "does golens beat a patch tool" is yes rather than
+unmeasured.** It reached both `bounds` and `check` unprompted, on a task that merely asked for the
+work to be verified, and the 250× validation gap was in the room the whole time.
+
+A note on method: several of these were verified from the artifact rather than from the transcript —
+`git diff --numstat` for trap 5, `bounds` output re-read against the file for trap 4, a full
+`go build ./...` for trap 6. The runner's first report of this run omitted that `check` had been
+used; checking the disk found it.
 
 **A wrong tool claim is a result; verify it before recording it.** In the second run an agent
 reported that `outline` had omitted a file. It had not: all 19 headers were emitted, and the file's
