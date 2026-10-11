@@ -216,23 +216,31 @@ func byteRange(b domain.Bounds) string {
 	return "bytes " + strconv.Itoa(b.StartByte) + "-" + strconv.Itoa(b.EndByte)
 }
 
-// convertNodes maps domain nodes onto their JSON shape.
 // convertNodes maps domain nodes onto their JSON shape, recursing while depth allows.
 //
-// level and depth work as in the human form, so the two outputs select the same declarations.
+// Group nodes are transparent, exactly as in compactNodes: they are a presentation of the
+// hierarchy rather than a level of it, so they are emitted with their children intact and
+// without consuming a depth level. Counting them as a level is what made depth 1 emit group
+// headings with no declarations under them, which made --depth useless to a machine consumer --
+// depth 2 was the only depth that returned anything, and the human form at the same depth
+// returned nine declarations from the standard library's slices/iter.go.
+//
+// The three fields copied below are what Node.Declaration consumes to build a head that matches
+// the source. See OutlineNode.
 func convertNodes(nodes []domain.Node, level, depth int) []OutlineNode {
-	if len(nodes) == 0 || !visible(depth, level) {
-		return nil
-	}
-
 	out := make([]OutlineNode, 0, len(nodes))
 	for _, n := range nodes {
+		if n.IsGroup {
+			out = append(out, convertNodes(n.Children, level, depth)...)
+			continue
+		}
+		if !visible(depth, level) {
+			continue
+		}
+
 		out = append(out, OutlineNode{
-			Name: n.Name,
-			Kind: n.Kind,
-			// The three fields below are what Node.Declaration consumes to build a head
-			// that matches the source. Copying them here is what keeps the JSON outline
-			// describing the same program the human outline does; see OutlineNode.
+			Name:       n.Name,
+			Kind:       n.Kind,
 			Detail:     n.Detail,
 			TypeParams: n.TypeParams,
 			Receiver:   n.Receiver,

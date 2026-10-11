@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -317,6 +318,18 @@ func TestCompactHasNoDuplicateRecords(t *testing.T) {
 
 // TestJSONDepthMatchesHumanDepth confirms the two renderings select the same declarations, as
 // specification 2.1 requires.
+//
+// The comparison runs in both directions. A subset check passes trivially when JSON emits
+// nothing at all, which is exactly the failure this found: at depth 1 the human outline listed
+// nine declarations from the standard library's slices/iter.go and the JSON payload listed zero,
+// because the groups were emitted without their children. Every name in JSON appeared in the human
+// output, so the one-directional assertion was satisfied by an empty set.
+//
+// Depth 1 is specified as "package-level declarations only, with children suppressed" — suppressed
+// means the *nested* children of a declaration. The group nodes are a presentation of the
+// hierarchy, not the hierarchy itself, and a consumer reading the payload has to be able to get at
+// the declarations. Losing them at depth 1 makes --depth useless to a machine consumer, since
+// depth 2 is the only depth that returns anything.
 func TestJSONDepthMatchesHumanDepth(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFixture(t, dir, "store.go", storeFixture)
@@ -332,15 +345,90 @@ func TestJSONDepthMatchesHumanDepth(t *testing.T) {
 		}
 
 		names := collectJSONNames(t, jsonBuf.Bytes())
+		if len(names) == 0 {
+			t.Errorf("depth %d: JSON outline selected no declarations; the human form selected:\n%s",
+				depth, human.String())
+		}
 
+		// JSON must not invent declarations the human form omits.
 		for name := range names {
 			if !strings.Contains(human.String(), name) {
 				t.Errorf("depth %d: %q in JSON but not in human output", depth, name)
 			}
 		}
+
+		// And it must not drop declarations the human form shows. This is the direction that
+		// failed: a payload that loses a declaration is silent, so an agent asking what a file
+		// contains is told it contains less than it does.
+		//
+		// Each human bullet is matched against the JSON name set, so a bullet that names no
+		// node is reported rather than passed over.
+		for _, bullet := range humanDeclarationBullets(human.String()) {
+			if !bulletMatchesAnyName(bullet, names) {
+				t.Errorf("depth %d: human bullet %q has no corresponding JSON node\nJSON names: %v",
+					depth, bullet, keys(names))
+			}
+		}
 	}
 }
 
+// humanDeclarationBullets returns each rendered declaration from human outline output: the bullet
+// text with its trailing line range removed.
+//
+// A bullet carries a line range when it is a declaration; imports render bare and are skipped,
+// since they reach the payload as a separate "imports" array rather than as nodes.
+func humanDeclarationBullets(out string) []string {
+	var bullets []string
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.HasPrefix(line, "  • ") {
+			continue
+		}
+		text := strings.TrimPrefix(line, "  • ")
+		i := strings.Index(text, " (line")
+		if i < 0 {
+			continue
+		}
+		bullets = append(bullets, text[:i])
+	}
+	return bullets
+}
+
+// bulletMatchesAnyName reports whether a rendered declaration contains the name of some node.
+//
+// The rendered head is matched loosely on purpose. A head is assembled from several fields and has
+// no single unambiguous name token -- "func (s *UserStore) GetUser(...)" and "mu sync.Mutex" both
+// carry their name in a different position -- so the test is whether the name appears at all. The
+// alternative, parsing each kind's head shape, would re-implement the formatter in the test.
+func bulletMatchesAnyName(bullet string, names map[string]bool) bool {
+	for _, f := range strings.FieldsFunc(bullet, func(r rune) bool {
+		return r == ' ' || r == '(' || r == ')' || r == '*' || r == '[' || r == ']'
+	}) {
+		if names[f] {
+			return true
+		}
+	}
+	return false
+}
+
+func keys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// humanDeclarationNames extracts the declaration names from human outline output.
+//
+// Rather than parse the rendered head -- which has no unambiguous name token for a method
+// ("func (s *UserStore) GetUser(...)") or a field ("mu sync.Mutex") -- the names are recovered by
+// intersecting against the JSON names and asking which human bullets correspond to a node.
+//
+// A bullet is a declaration when it carries a line range; imports render bare and are skipped,
+// since they reach the payload as a separate "imports" array. Of the remaining bullets, one that
+// begins with a node's kind keyword names that node directly. That covers types, funcs, vars,
+// consts, methods and fields without needing to know each one's shape.
 // TestJSONDeclarationHeadsMatchSource pins the JSON outline against the same constructs
 // TestDeclarationHeadsMatchSource pins for the human form: a generic type, a generic function,
 // a generic receiver, and an alias beside a defined type of the same underlying type.
@@ -388,10 +476,15 @@ func (s *Stack[T]) Push(v T) {}
 	}
 
 	byName := map[string]format.OutlineNode{}
-	for _, group := range files[0].Nodes {
-		for _, decl := range group.Children {
-			byName[decl.Name] = decl
+	for _, f := range files {
+		var walk func(nodes []format.OutlineNode)
+		walk = func(nodes []format.OutlineNode) {
+			for _, n := range nodes {
+				byName[n.Name] = n
+				walk(n.Children)
+			}
 		}
+		walk(f.Nodes)
 	}
 
 	for name, want := range map[string]struct{ params, receiver, detail string }{
@@ -474,6 +567,12 @@ func writeFixture(t *testing.T, dir, name, src string) string {
 	return path
 }
 
+// collectJSONNames gathers every declaration name in a JSON outline payload, descending through
+// whatever nesting the payload uses.
+//
+// Group nodes are transparent in the payload, so the top level is a flat list of declarations
+// rather than a list of groups with children. Descending anyway keeps this correct either way: the
+// point of the assertion is which declarations are present, not how they are arranged.
 func collectJSONNames(t *testing.T, data []byte) map[string]bool {
 	t.Helper()
 
@@ -483,12 +582,15 @@ func collectJSONNames(t *testing.T, data []byte) map[string]bool {
 	}
 
 	names := map[string]bool{}
-	for _, f := range files {
-		for _, group := range f.Nodes {
-			for _, decl := range group.Children {
-				names[decl.Name] = true
-			}
+	var walk func(nodes []format.OutlineNode)
+	walk = func(nodes []format.OutlineNode) {
+		for _, n := range nodes {
+			names[n.Name] = true
+			walk(n.Children)
 		}
+	}
+	for _, f := range files {
+		walk(f.Nodes)
 	}
 	return names
 }
