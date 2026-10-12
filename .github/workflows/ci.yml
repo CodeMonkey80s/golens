@@ -22,6 +22,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Shallow by default, so `git describe --tags` finds nothing and the
+          # uploaded binary reports whatever the toolchain recorded rather than a
+          # release number. A release build stamps the tag itself; it is not
+          # invented here, because a CI artifact claiming to be v0.1.0 would be a
+          # claim about a tag this job cannot see.
+          fetch-depth: 1
 
       - uses: actions/setup-go@v5
         with:
@@ -97,6 +104,14 @@ jobs:
       # is a checker nobody trusts, and this is how the namespace check's false
       # positive on external test packages was caught.
       #
+      # --version is checked here rather than in the tests alone because this is
+      # the binary that gets uploaded. A build that resolves its version wrongly
+      # still passes every unit test, because none of them build the release
+      # flags. Nothing here knows a tag -- actions/checkout is a shallow clone
+      # with no tags, so this binary reports a pseudo-version or (devel). That is
+      # correct: what is asserted is that it reports *something* rather than
+      # nothing, which is what a stripped or mis-built binary would do.
+      #
       # No naming pass here: naming is golens' own house style and is enforced by
       # revive above. A tool that judged its own source would be arguing for the
       # convention rather than following it.
@@ -104,6 +119,13 @@ jobs:
         run: |
           ./golens check ./internal
           ./golens check ./cmd
+
+          version=$(./golens --version)
+          echo "version: $version"
+          if [ -z "$version" ] || [ "$version" = "golens " ]; then
+            echo "the built binary reports no version"
+            exit 1
+          fi
 
       - name: Upload the binary
         uses: actions/upload-artifact@v4

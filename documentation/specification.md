@@ -26,6 +26,14 @@ All commands accept two global flags:
 
 **Schema versioning.** Every JSON payload includes `"schema_version": 1` as its first field.
 
+**Version reporting.** `golens --version` prints the release identifier on one line, prefixed by
+the binary name, and exits `0`. The value is **not** stated in the source: it is stamped at link
+time with `-ldflags "-X …/internal/cli.Version=<v>"`, and when nothing is stamped the binary
+reports the module version the Go toolchain recorded — the tag for `go install module@v0.1.0`, or
+a pseudo-version derived from the nearest tag for a build from a checkout. The release tag is
+therefore the single source of a release number, and no build can report a version that has
+drifted from its tag.
+
 **`--compact` semantics.** Compact output is a lossless subset of the human output: the same information with decoration removed. It is a formatting flag, not a second code path.
 
 ### 2.1 `golens outline`

@@ -37,6 +37,7 @@ the choice is the one that cannot be misread and cannot silently corrupt a file.
 | D21 | A file's build set is name ∧ tag ∧ cgo, over the 47 real GOOS/GOARCH pairs | 70,854 false positives on the standard library until all three were modelled |
 | D22 | `outline` writes every parseable file first, then reports the skips and exits 4 | One broken file must not hide 8,000 others, and exit 0 would be a lie |
 | D23 | A field that changes what a declaration head means reaches every renderer | `outline --json` emitted an alias and a defined type as two byte-identical nodes; the human form was already correct |
+| D24 | The version is stamped at link time; the tag is its only source | `const Version = "0.1.0"` reported v0.1.0 to every build ever made, including those after v0.2.0 |
 
 ---
 
@@ -292,6 +293,47 @@ JSON node against the same source constructs `TestDeclarationHeadsMatchSource` p
 form, and compares the alias against its defined twin — the property is that the two differ, which
 neither test can see from one renderer alone.
 
+### D24 · The version is stamped at link time, and the tag is the only source of it
+
+`--version` shipped as `const Version = "0.1.0"`. That is one line of code and it cannot be
+right for long: every build ever produced reported v0.1.0, including one compiled after v0.2.0
+shipped. A wrong version is worse than none, because a caller that checks it is not told the
+truth — it is told a falsehood that looks authoritative, and nothing fails when it drifts.
+
+The version is now a `var` stamped at link time, and `releaseVersion()` falls back to what
+`debug.ReadBuildInfo()` recorded when nothing was stamped.
+
+The constraint that makes this fragile is worth stating, because it fails in the worst possible
+way. `go help build` documents `-X` as effective only on a variable "initialized to a constant
+string expression", and **the linker honours that by ignoring the flag** — it does not error. So
+replacing
+
+```go
+var Version = develVersion            // works
+```
+
+with the tidier
+
+```go
+var Version = resolveSomething()      // silently unreleasable
+```
+
+produces a binary that builds, passes every test, and reports `(devel)` on every release. That is
+why `Version` carries a comment saying the initialiser must stay constant, and why
+`TestVersionIsInjectedByLdflags` is a **subprocess** test: it builds with a stamp and runs the
+binary. An in-process assertion would have kept passing through exactly that regression, which
+is the failure this decision is about.
+
+The buildinfo fallback is not decoration. `go install module@v0.1.0` is how most people obtain
+a published module, and it passes no `-ldflags`, so without the fallback the primary install path
+would report `(devel)`. What it prints is a pseudo-version derived from the nearest tag — a clean
+checkout at `v0.1.0-1-g1cd5ab9` reports `v0.1.1-0.20261012165945-1cd5ab9df783` — and the first
+attempt to document that got it wrong. `(devel)` appears only where there is no VCS information
+at all. The value is recorded rather than interpreted: golens does not decide whether a commit is
+a release, and a version string that guesses would be the same class of defect as a hardcoded one.
+
+**The rule: state a release number in exactly one place, and make it the tag.**
+
 ---
 
 ## 3. Resolved ambiguities at a glance
@@ -330,12 +372,13 @@ neither test can see from one renderer alone.
 | A6 | `get --bounds-only --json` and `bounds --json` produce identical payloads. |
 | A7 | golens never reports a style violation. A file whose only irregularity is naming produces no diagnostics and exit 0. |
 | A8 | Single-file read+parse is < 5 ms at P95 over a representative corpus (benchmark-gated). |
-| A9 | Release binary < 15 MB. |
+| A9 | Release binary < 15 MiB. |
 | A10 | `go build` with `CGO_ENABLED=0` produces no cgo dependencies. |
 | A11 | `domain` and `usecase` packages import nothing outside the standard library. |
 | A12 | Fixtures include: unicode identifiers, CRLF files, BOM, unparseable file, empty file, file with only comments, duplicate declarations, unused + dot + blank imports. |
 | A13 | A directory containing both a `_linux.go` and a `_windows.go` that declare the same name produces no diagnostics and exit 0, and two untagged files that declare it produce exit 3. |
 | A14 | `outline` over a directory containing an unparseable file writes every parseable file to stdout, names the skipped files on stderr, and exits 4. Under `--json` the stdout payload parses. |
+| A15 | No release number is stated in the source. A binary stamped with `-X …Version=<v>` reports exactly `<v>`, and one built without a stamp reports the version the toolchain recorded. |
 
 ---
 

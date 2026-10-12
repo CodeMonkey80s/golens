@@ -10,7 +10,7 @@ golens bounds <symbol> <file>   byte and line offsets for an edit
 golens check <file|dir>         fast syntax and namespace validation
 ```
 
-Pure Go, no cgo, no daemon, no index. One binary, ~5.3 MB stripped (`-ldflags="-s -w"`), parses a
+Pure Go, no cgo, no daemon, no index. One binary, 5.32 MiB stripped (`-ldflags="-s -w"`), parses a
 typical file in about 20 µs and the largest file in this repository in about 270 µs.
 
 ---
@@ -117,8 +117,8 @@ $ go install github.com/CodeMonkey80s/golens/cmd/golens@latest
 
 Requires the Go version in `go.mod` (currently 1.27.2). Builds with `CGO_ENABLED=0`.
 
-The `go install` binary is ~8.4 MB because it is not stripped; the ~5.3 MB figure quoted
-elsewhere is the `-ldflags="-s -w"` build above. Both are inside the 15 MB budget.
+The `go install` binary is 8.07 MiB because it is not stripped; the 5.32 MiB figure quoted
+elsewhere is the `-ldflags="-s -w"` build above. Both are inside the 15 MiB budget.
 
 ### Version
 
@@ -133,8 +133,10 @@ $ go build -ldflags "-X github.com/CodeMonkey80s/golens/internal/cli.Version=$(g
 ```
 
 With no flags the binary still knows: the toolchain records the module version, so
-`go install …@v0.1.0` reports `v0.1.0` by itself. A plain `go build` from a checkout reports
-`(devel)`, or `v0.1.0+dirty` when the tree carries uncommitted work.
+`go install …@v0.1.0` reports `v0.1.0` by itself. A build from a checkout reports what Go
+recorded for that commit — a pseudo-version like `v0.1.1-0.20261012165945-1cd5ab9df783`
+when the tree is clean, with `+dirty` appended when it is not, and `(devel)` only where
+there is no VCS information at all (a source archive, or `-buildvcs=false`).
 
 ### Making an agent use it
 
@@ -408,7 +410,7 @@ will differ on yours.
 | Budget | Measured here |
 |---|---|
 | Read + parse, single file — 5 ms P95 | ~22 µs typical, ~273 µs on the largest file in this repo |
-| Binary — 15 MB | 5.3 MB stripped (`-ldflags="-s -w"`) |
+| Binary — 15 MiB | 5.32 MiB stripped (`-ldflags="-s -w"`) |
 
 Reproduce with `go test -run XXX -bench Parse -benchtime 500x ./internal/engine/goast`. Expect
 run-to-run variation of roughly ±20%, so treat a single figure as indicative and the budget as the

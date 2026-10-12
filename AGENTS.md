@@ -28,7 +28,7 @@ Feature-complete. There is no next session, and nothing is blocked.
 | Test count by package | arch 6 · cli 81 · domain 15 · goast 45 · format 23 · usecase 144 |
 | Verify with | **`go test -count=1 ./...`** — see the caching trap below |
 | Toolchain | go1.27.2; no `golang.org/x` dependencies, only cobra and its two indirects |
-| Binary | 5.31 MB stripped (budget 15 MB) |
+| Binary | 5.32 MiB stripped, budget 15 MiB |
 | Parse budget | ~22 µs typical, ~273 µs largest file here (budget 5 ms P95) |
 | Lint | `golangci-lint run ./...` — 0 issues, includes `revive` `var-naming` |
 | Self-check | `golens check ./internal` and `./cmd` both exit 0 |
@@ -39,11 +39,14 @@ several analyses. Reproduce with
 `go test -run XXX -bench . ./internal/usecase ./internal/engine/goast`; expect roughly ±20%
 run-to-run, so hold to the budget rather than to a single figure.
 
-The binary size is quoted stripped. `go install` produces ~8.4 MB — the same code without
-`-ldflags="-s -w"` — so do not read the two figures as a contradiction. Both clear the budget.
+The binary size is quoted stripped, in MiB, which is the unit CI prints and budgets in.
+`go install` produces 8.07 MiB — the same code without `-ldflags="-s -w"` — so do not read the
+two figures as a contradiction. Both clear the budget.
 
-**Nothing is blocked.** The only remaining release step is a `v0.1.0` tag; until then `@latest`
-resolves to a pseudo-version, which still installs.
+**The `v0.1.0` tag predates the version injection.** It was cut while `Version` was still a
+hardcoded constant, so `go install …@latest` installs the pre-fix code and reports `0.1.0` from
+the source. `main` has the fix; the next tag ships it. Nothing is blocked, and nothing in the
+tree states a release number — see the injection trap below.
 
 ## Build and test
 
@@ -106,8 +109,12 @@ function breaks releases silently. And the source must stay free of release numb
 `TestVersionIsInjectedByLdflags` builds the binary with a stamp and reads it back;
 `TestVersionDefaultCarriesNoReleaseNumber` fails if a number reappears in the source. Where no
 flag was passed, `releaseVersion()` falls back to what `debug.ReadBuildInfo()` recorded — that is
-what makes `go install …@v0.1.0` report v0.1.0 without anyone passing anything, and a dirty
-checkout honestly reports `v0.1.0+dirty`.
+what makes `go install …@v0.1.0` report v0.1.0 without anyone passing anything. **Read what that
+fallback actually prints before documenting it:** it is a pseudo-version derived from the nearest
+tag, so a clean checkout at `v0.1.0-1-g1cd5ab9` reports `v0.1.1-0.20261012165945-1cd5ab9df783`,
+a dirty one appends `+dirty`, and `(devel)` appears only where there is no VCS information at
+all. A README sentence claiming a plain `go build` prints `(devel)` was wrong for every clone
+that has the tag, and nothing caught it because no test pinned the claim.
 
 **Declaration heads must match the source.** A rendered head that does not is an edit hazard: an
 agent copying `type Stack struct` for a real `type Stack[T any] struct` writes code that will not
@@ -171,7 +178,7 @@ name. When adding a check, bias toward silence and say so in the comment.
 
 ## Acceptance criteria
 
-Fourteen, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
+Fifteen, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
 criteria; this is which test pins each.
 
 | # | Criterion | Evidence |
@@ -184,12 +191,13 @@ criteria; this is which test pins each.
 | A6 | `get --bounds-only` ≡ `bounds` | `TestSpecBoundsOnlyMatchesBounds`, plus format and usecase level |
 | A7 | golens never reports style | `TestCheckDoesNotJudgeStyle`, `TestCheckAcrossFilesReportsNothingStructural` |
 | A8 | Parse < 5 ms P95 | `TestParseP95UnderBudget` |
-| A9 | Binary < 15 MB | 5.31 MB |
+| A9 | Binary < 15 MiB | 5.32 MiB, gated in CI |
 | A10 | No cgo | `TestNoCgoDependency` |
 | A11 | `domain`/`usecase` import nothing external | `internal/arch` |
 | A12 | 12 fixture classes | `TestFixtureClasses` |
 | A13 | Platform variants silent; untagged pair exits 3 | `TestPlatformVariantsDoNotConflict` (5 pairs), `TestCoBuildableFilesStillConflict` (**positive control**), `TestImplicitFilenameConstraints`, `TestFilenameAndTagConstraintsCombine`, `TestCgoFilesAreExcludedWhenCgoIsOff` |
 | A14 | Partial tree: parseable stdout, skipped named, exit 4 | `TestOutlineSkipsUnparseableFilesWithoutHidingTheRest`, `TestOutlineReportsSkippedFilesExitFour`, `TestOutlineJSONStaysParseableWhenAFileIsBroken`, `TestOutlineSingleBrokenFileKeepsTheOriginalMessage` |
+| A15 | No release number in the source; the tag is the only source | `TestVersionIsInjectedByLdflags` (builds with a stamp, runs the binary), `TestVersionDefaultCarriesNoReleaseNumber`, `TestReleaseVersionPrefersTheLinkerValue`, `TestReleaseVersionFallsBackToBuildMetadata` |
 
 A13's positive control is the part that matters: a rule that suppressed every duplicate would
 otherwise pass the five variant cases. `internal/cli/spec_test.go` adds 11 more, each citing the
@@ -281,7 +289,7 @@ any command's help should be followed by `documentation/COLDSTART.md`.
 | Document | Read it for |
 |---|---|
 | `documentation/specification.md` | **Normative.** Change this first, then the code |
-| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A14 stated |
+| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A15 stated |
 | `documentation/AGENTS.template.md` | Copy into a target repo's root so its agents inherit the traps |
 | `TESTING.md` | The 18-case manual plan — run it after any engine, check or formatter change |
 | `documentation/COLDSTART.md` | Tests the instructions rather than the tool. Run after changing help text |
