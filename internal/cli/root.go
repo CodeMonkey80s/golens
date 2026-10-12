@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -69,7 +70,7 @@ you can tell whether the current GOOS compiles an edit before making it.`,
 	// Cobra renders --version as "golens version <v>" using the command's Name, which is
 	// bare, so the template is set to include the binary name.
 	root.SetVersionTemplate("golens {{.Version}}\n")
-	root.Version = Version
+	root.Version = releaseVersion()
 
 	root.AddCommand(
 		newOutlineCmd(env),
@@ -119,12 +120,40 @@ type AmbiguousError interface {
 	Candidates() []string
 }
 
-// Version is the release identifier reported by --version.
+// Version is the release identifier reported by --version. It is set at link time:
 //
-// It is a constant rather than a derived value so the command works from any build, including
-// one made with `go build` rather than the module proxy, which is how most people obtain it
-// while it is unpublished.
-const Version = "0.1.0"
+//	go build -ldflags "-X github.com/CodeMonkey80s/golens/internal/cli.Version=v0.1.0"
+//
+// It has to stay a variable initialised to a constant string expression. The linker's -X is
+// documented to ignore a variable whose initialiser is a call, so the default below is a
+// literal rather than a call to the resolver: swapping it for one would silently break
+// injection while the binary still built, which is the shape of failure this repository
+// keeps running into.
+//
+// Nothing in the source states a release number. The tag is the single source of truth, and
+// TestVersionIsInjectedByLdflags fails if this stops working.
+var Version = develVersion
+
+// develVersion is what an uninstrumented build reports: a plain `go build` from a checkout,
+// or `go test`, where no release was ever stamped in.
+const develVersion = "(devel)"
+
+// releaseVersion resolves what --version prints.
+//
+// The link-time value wins when there is one. Otherwise the module version the toolchain
+// stamps into the binary is used, so `go install module@v0.1.0` reports v0.1.0 with no flags
+// at all — and since that is how most people obtain a published module, hardcoding a number
+// here would report a stale release to everyone who installed it.
+func releaseVersion() string {
+	if Version != develVersion {
+		return Version
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info.Main.Version == "" || info.Main.Version == develVersion {
+		return Version
+	}
+	return info.Main.Version
+}
 
 // exitCodeFor maps an error to the documented exit code.
 //

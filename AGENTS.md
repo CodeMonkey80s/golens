@@ -24,8 +24,8 @@ Feature-complete. There is no next session, and nothing is blocked.
 
 | Field | Value |
 |---|---|
-| Tests | 307 (incl. subtests), 7 packages, all passing |
-| Test count by package | arch 6 · cli 74 · domain 15 · goast 45 · format 23 · usecase 144 |
+| Tests | 314 (incl. subtests), 6 packages with tests, all passing |
+| Test count by package | arch 6 · cli 81 · domain 15 · goast 45 · format 23 · usecase 144 |
 | Verify with | **`go test -count=1 ./...`** — see the caching trap below |
 | Toolchain | go1.27.2; no `golang.org/x` dependencies, only cobra and its two indirects |
 | Binary | 5.31 MB stripped (budget 15 MB) |
@@ -94,6 +94,20 @@ history is in "Not doing, and why" below.
 **`domain.Node.Receiver` is the receiver as the source spells it**, `"s *UserStore"`, not a bare
 type. If you change it, grep for `Receiver` in `internal/usecase` — the naming check that once
 consumed it is gone, but the format is still load-bearing for `get` and `bounds`.
+
+**The release number is injected, never declared.** `cli.Version` is a `var` initialised to a
+constant string expression, set at link time with `-X`. It was `const Version = "0.1.0"`, so
+every build ever produced reported v0.1.0 — including a build made after v0.2.0 shipped, which is
+worse than reporting nothing, because a caller checking the version is told a falsehood. Two
+things follow, and both are load-bearing. The variable must stay initialised to a **constant
+string expression**: the linker documents `-X` as ignoring a variable whose initialiser is a
+call, and it does so **without failing the build**, so replacing the literal with a resolver
+function breaks releases silently. And the source must stay free of release numbers.
+`TestVersionIsInjectedByLdflags` builds the binary with a stamp and reads it back;
+`TestVersionDefaultCarriesNoReleaseNumber` fails if a number reappears in the source. Where no
+flag was passed, `releaseVersion()` falls back to what `debug.ReadBuildInfo()` recorded — that is
+what makes `go install …@v0.1.0` report v0.1.0 without anyone passing anything, and a dirty
+checkout honestly reports `v0.1.0+dirty`.
 
 **Declaration heads must match the source.** A rendered head that does not is an edit hazard: an
 agent copying `type Stack struct` for a real `type Stack[T any] struct` writes code that will not

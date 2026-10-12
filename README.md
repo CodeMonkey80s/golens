@@ -120,6 +120,22 @@ Requires the Go version in `go.mod` (currently 1.27.2). Builds with `CGO_ENABLED
 The `go install` binary is ~8.4 MB because it is not stripped; the ~5.3 MB figure quoted
 elsewhere is the `-ldflags="-s -w"` build above. Both are inside the 15 MB budget.
 
+### Version
+
+`--version` reports the version the **tag** decides. Nothing in the source states a release
+number — it was `const Version = "0.1.0"` once, which meant every build ever produced reported
+v0.1.0, including one built after v0.2.0 shipped.
+
+For a release build, stamp it at link time:
+
+```console
+$ go build -ldflags "-X github.com/CodeMonkey80s/golens/internal/cli.Version=$(git describe --tags)" -o golens ./cmd/golens
+```
+
+With no flags the binary still knows: the toolchain records the module version, so
+`go install …@v0.1.0` reports `v0.1.0` by itself. A plain `go build` from a checkout reports
+`(devel)`, or `v0.1.0+dirty` when the tree carries uncommitted work.
+
 ### Making an agent use it
 
 golens is built for agents, so the interesting question is how one finds it. There is no plugin and
@@ -346,6 +362,15 @@ $ go build -o golens ./cmd/golens
 than about their own test inputs — `internal/arch` shells out to `go list -deps`, and
 `selfcheck_test.go` and `TestRepositoryPassesItsOwnCheck` walk the tree. Go's test cache does not
 invalidate on those, so a stale `ok` is possible. This has hidden a real failure once.
+
+A release build adds the version stamp and strips the binary:
+
+```console
+$ go build -ldflags "-s -w -X github.com/CodeMonkey80s/golens/internal/cli.Version=$(git describe --tags)" -o golens ./cmd/golens
+```
+
+Cut one by tagging the commit and pushing the tag. Nothing in the source changes, so there is
+nothing to remember to bump.
 
 `golens check ./internal` and `./cmd` both exit 0 on this repository. The tool checks itself in CI,
 which is how a false positive in its namespace check was caught.
