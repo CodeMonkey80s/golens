@@ -32,15 +32,18 @@ Feature-complete. There is no next session, and nothing is blocked.
 | Parse budget | ~22 µs typical, ~273 µs largest file here (budget 5 ms P95) |
 | Lint | `golangci-lint run ./...` — 0 issues, includes `revive` `var-naming` |
 | Self-check | `golens check ./internal` and `./cmd` both exit 0 |
-| Remote | **none configured** — nothing has been or can be pushed |
+| Remote | `github.com/CodeMonkey80s/golens`, public; `go install ...@latest` verified working |
 
 Parse dominates three of the four commands, and `check` is about ten times a parse because it runs
 several analyses. Reproduce with
 `go test -run XXX -bench . ./internal/usecase ./internal/engine/goast`; expect roughly ±20%
 run-to-run, so hold to the budget rather than to a single figure.
 
-`go install ...@latest` therefore cannot work. README leads with a checkout and says so, and
-**tagging and publishing is the only thing standing between this code and use.**
+The binary size is quoted stripped. `go install` produces ~8.4 MB — the same code without
+`-ldflags="-s -w"` — so do not read the two figures as a contradiction. Both clear the budget.
+
+**Nothing is blocked.** The only remaining release step is a `v0.1.0` tag; until then `@latest`
+resolves to a pseudo-version, which still installs.
 
 ## Build and test
 

@@ -109,11 +109,16 @@ $ git clone https://github.com/CodeMonkey80s/golens
 $ cd golens && go build -o golens ./cmd/golens
 ```
 
-Once the module is published to a public proxy, `go install
-github.com/CodeMonkey80s/golens/cmd/golens@latest` will work too. It does not yet: this
-repository has no remote, so the install path fails at the fetch.
+Or install it directly:
+
+```console
+$ go install github.com/CodeMonkey80s/golens/cmd/golens@latest
+```
 
 Requires the Go version in `go.mod` (currently 1.27.2). Builds with `CGO_ENABLED=0`.
+
+The `go install` binary is ~8.4 MB because it is not stripped; the ~5.3 MB figure quoted
+elsewhere is the `-ldflags="-s -w"` build above. Both are inside the 15 MB budget.
 
 ### Making an agent use it
 
