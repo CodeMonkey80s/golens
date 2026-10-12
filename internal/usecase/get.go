@@ -4,6 +4,7 @@ import (
 	"io"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/CodeMonkey80s/golens/internal/domain"
 	"github.com/CodeMonkey80s/golens/internal/format"
@@ -52,6 +53,11 @@ func Resolve(engine domain.Engine, name, target string) (domain.Symbol, domain.D
 	var matchDoc domain.Document
 	var skipped Skipped
 	skipped.Total = len(paths)
+	// pkgNames records every namespace the search parsed, so a query that opens with a
+	// package name can be told the form is not accepted instead of being answered with a
+	// bare "not found". It is populated only from files that parsed, so the error names a
+	// package that was really searched rather than one the query invented.
+	pkgNames := make(map[string]bool)
 	// packages counts the distinct namespaces the matches fall in, so a name declared once
 	// in `p` and once in `p_test` can be told apart from one declared twice in `p`.
 	packages := make(map[string][]int)
@@ -62,6 +68,7 @@ func Resolve(engine domain.Engine, name, target string) (domain.Symbol, domain.D
 			skipped.Files = append(skipped.Files, ParseError{Path: path, Err: parseErr})
 			continue
 		}
+		pkgNames[doc.Package] = true
 		for _, sym := range doc.Lookup(name) {
 			sym.File = path
 			matches = append(matches, sym)
@@ -81,6 +88,9 @@ func Resolve(engine domain.Engine, name, target string) (domain.Symbol, domain.D
 			// Nothing parsed, so nothing could have resolved. Reporting "symbol not found"
 			// would be a confident wrong answer; the parse failure is the real one.
 			return domain.Symbol{}, domain.Document{}, skipped, skipped.Files[0]
+		}
+		if pq, ok := packageQualified(name, pkgNames, skipped); ok {
+			return domain.Symbol{}, domain.Document{}, skipped, pq
 		}
 		return domain.Symbol{}, domain.Document{}, skipped, notFoundAmong(name, skipped)
 	case 1:
@@ -165,6 +175,32 @@ func (s Skipped) asError() error {
 // noise. With some skipped it is not the truth: the declaration may sit in a file that
 // could not be read, and an agent told only "not found" would rename or delete a symbol
 // that exists.
+// packageQualified reports a query that opened with the name of a package the search parsed.
+//
+// `domain.Node` and `main.main` both look like the way to name a symbol in its package, and
+// outline prints its candidates as `file: Type.Method`, so the dotted form reads as
+// supported. It is not: Lookup matches a bare name or a qualified method name and nothing
+// else. Letting that read as "the symbol does not exist" is the failure — that is the answer
+// a caller acts on by renaming or deleting code — so say which segment was a package and
+// which form resolves instead.
+//
+// Only wired into the zero-match branch, so it can never override a symbol that did resolve,
+// and it needs at least two segments: `Type.Method` is a legal query and its first segment
+// is a type name that will not match a package name anyway.
+func packageQualified(name string, pkgs map[string]bool, skipped Skipped) (PackageQualifiedSymbol, bool) {
+	prefix, rest, found := strings.Cut(name, ".")
+	if !found || rest == "" || !pkgs[prefix] {
+		return PackageQualifiedSymbol{}, false
+	}
+	return PackageQualifiedSymbol{
+		Name:    name,
+		Package: prefix,
+		Symbol:  rest,
+		Skipped: len(skipped.Files),
+		Total:   skipped.Total,
+	}, true
+}
+
 func notFoundAmong(name string, skipped Skipped) error {
 	if len(skipped.Files) == 0 {
 		return NotFoundSymbol(name)

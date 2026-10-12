@@ -24,8 +24,8 @@ Feature-complete. There is no next session, and nothing is blocked.
 
 | Field | Value |
 |---|---|
-| Tests | 370 (incl. subtests), 6 packages with tests, all passing |
-| Test count by package | arch 6 · cli 98 · domain 15 · goast 55 · format 23 · usecase 173 |
+| Tests | 379 (incl. subtests), 6 packages with tests, all passing |
+| Test count by package | arch 6 · cli 99 · domain 15 · goast 57 · format 23 · usecase 179 |
 | Verify with | **`go test -count=1 ./...`** — see the caching trap below |
 | Toolchain | go1.27.2; no `golang.org/x` dependencies, only cobra and its two indirects |
 | Binary | 5.35 MiB stripped, budget 15 MiB |

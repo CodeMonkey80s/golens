@@ -163,6 +163,49 @@ func (e CrossPackageSymbol) Advice() string {
 // corrects its input rather than retrying the same command.
 func (e CrossPackageSymbol) IsNotFound() bool { return true }
 
+// PackageQualifiedSymbol reports a query whose first dotted segment named a package the
+// search covered — `domain.Node` when the target holds `package domain`.
+//
+// It exists because plain NotFoundSymbol answers "no such symbol" to a query that names a
+// perfectly real symbol in a form the tool does not accept, and the caller cannot tell the
+// two apart. Go namespaces by package and the path argument already selects one, so writing
+// the package first is the reasonable guess; `Type.Method` is the only dotted form Lookup
+// resolves, and it addresses a method within a type. Package-qualified lookup is v0.3 work
+// with its own specification change, so the narrow fix is to name the form that resolves
+// rather than to resolve this one.
+//
+// Skipped and Total travel with it because the answer is partial whenever files could not
+// be parsed, and a partial search must not read like a complete one.
+type PackageQualifiedSymbol struct {
+	Name string
+	// Package is the package the query's first segment named.
+	Package string
+	// Symbol is the remainder — the bare name that does resolve.
+	Symbol string
+	// Skipped counts files in the search that could not be parsed, and Total how many were
+	// searched.
+	Skipped int
+	Total   int
+}
+
+func (e PackageQualifiedSymbol) Error() string {
+	msg := fmt.Sprintf("symbol %q not found", e.Name)
+	if e.Skipped > 0 {
+		msg += fmt.Sprintf("; %d of %d files could not be parsed and may declare it", e.Skipped, e.Total)
+	}
+	return msg
+}
+
+// Advice names the form that resolves. Without it the caller retries the same dotted name,
+// gets the same answer, and has to read the source to work out why.
+func (e PackageQualifiedSymbol) Advice() string {
+	return fmt.Sprintf("  %q is the package, and the target already selects it: pass %q, or Type.Method for a method within a type", e.Package, e.Symbol)
+}
+
+// IsNotFound keeps the exit code at 2, the same as any other miss: the caller has to correct
+// the query, which is what 2 means, and nothing is being claimed about the source.
+func (e PackageQualifiedSymbol) IsNotFound() bool { return true }
+
 // UnreadableFilesError reports files that could not be opened at all, as distinct from files
 // that were opened and did not parse.
 //

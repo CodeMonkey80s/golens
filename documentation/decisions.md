@@ -44,6 +44,7 @@ the choice is the one that cannot be misread and cannot silently corrupt a file.
 | D28 | An interface lists its method set; a type union lists nothing | An interface rendered bare, and its method set is the entire content of the type. "Method sets" in §2.1 means what a Go programmer reads it to mean |
 | D29 | A name found in two packages of one directory is not an ambiguity; the remedy is a file | `check` keyed its namespace on directory *and* package, `get` did not, so the two disagreed about whether a conflict existed — and the old advice recommended a qualified name, which cannot select a package |
 | D30 | `check` exits 4 for a file it could not open, 3 for a problem in the code; 4 wins when both occur | An I/O failure was reported as a finding, so `check` exited 3 where `outline` exited 4 on the very same file — and 3 tells a caller to edit code that is fine |
+| D31 | A query opening with a package name is told the form that resolves, not merely "not found" | `get domain.Node .` returned the message an absent symbol returns, so a caller could not tell an unsupported form from a missing declaration; package-qualified lookup is its own spec change |
 
 ---
 
@@ -546,6 +547,33 @@ Only the *root* is resolved. Symlinks within a tree are still not followed, whic
 protection, and `TestSymlinkedDirectoryIsWalked` fails if that ever changes. Paths are reported
 under the directory the caller named rather than its resolved target, because a caller must be
 able to open the paths it was shown from the tree it asked about.
+
+---
+
+### D31 · A package-prefixed query is told the form that resolves
+
+`golens get domain.Node internal/domain` answered `symbol "domain.Node" not found` — the
+message a genuinely absent symbol gets. The query named a real declaration of a real package;
+what was wrong was the *form*. Go namespaces by package and the path argument already selects
+one, so prefixing it is the reasonable guess, and the outline prints its candidates as
+`file: Type.Method`, so a dotted name reads as supported. The caller could not tell "you used
+a form this tool does not accept" from "there is no such declaration", and it acts on the
+second — by renaming, rewriting or deleting a symbol that exists.
+
+`Lookup` matches a bare name or a qualified *method* name and nothing else. Package-qualified
+lookup is a v0.3 feature with its own spec change, so the narrow fix is the message, not the
+resolution: exit stays `2` — the query must be corrected — and the error carries a line naming
+the form that resolves. `PackageQualifiedSymbol.Advice()` is printed by the same branch that
+prints the cross-package and ambiguity advice, so `get` and `bounds`, which share `Resolve`,
+answer alike.
+
+Two properties are load-bearing, and each has a test. It fires **only** in the zero-match
+branch, so a symbol that did resolve is never reclassified, and only when the prefix matches a
+package the search actually parsed — `Node.Head` resolves as a method, `Node.Frob` still gets
+the plain miss, and `golens.main` against a directory holding `package cli` gets no advice at
+all. And it carries the skipped-file count, because a package-prefixed query over a partial
+search must not read like a complete one: the declaration may sit in a file that would not
+parse, exactly as for any other miss.
 
 ---
 

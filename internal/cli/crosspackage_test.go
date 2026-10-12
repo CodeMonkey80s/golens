@@ -42,6 +42,35 @@ func TestCrossPackageNameIsReportedAsSuchAtTheCLI(t *testing.T) {
 	}
 }
 
+// TestPackageQualifiedQueryAdviceReachesStderr is the user-visible half of the
+// package-qualified miss: `golens get p.Node .` answered "symbol not found", the same message
+// an absent symbol gets, so a caller had no way to learn that the dotted form is not a lookup
+// here. It is still exit 2 — the query must be corrected — but it now says which form resolves,
+// and that line has to reach stderr to be of any use.
+func TestPackageQualifiedQueryAdviceReachesStderr(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a.go", "package domain\n\ntype Node struct{}\n")
+
+	stdout, stderr, code := run(t, "get", "domain.Node", dir)
+	if code != 2 {
+		t.Errorf("exit = %d, want 2: the caller must correct the query", code)
+	}
+	if stdout != "" {
+		t.Errorf("stdout should stay empty:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, `symbol "domain.Node" not found`) {
+		t.Errorf("stderr does not report the query:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, `pass "Node"`) {
+		t.Errorf("stderr carries no advice naming the form that resolves:\n%s", stderr)
+	}
+
+	// bounds shares the resolver, so it must not disagree about the same query.
+	if _, bstderr, bcode := run(t, "bounds", "domain.Node", filepath.Join(dir, "a.go")); bcode != 2 || !strings.Contains(bstderr, `pass "Node"`) {
+		t.Errorf("bounds disagrees with get: exit %d\n%s", bcode, bstderr)
+	}
+}
+
 // TestAdviceIsPrintedWithoutACandidateList isolates the Execute change, which was its own bug
 // independent of what triggered it.
 func TestAdviceIsPrintedWithoutACandidateList(t *testing.T) {
