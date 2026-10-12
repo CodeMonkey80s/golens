@@ -116,6 +116,53 @@ func (e NotFoundSymbolWithSkips) Unwrap() error {
 	return e.Files[0]
 }
 
+// CrossPackageGroup is one package's declarations of a symbol found in a directory that holds
+// more than one package.
+type CrossPackageGroup struct {
+	Package string
+	// Files names the declarations, in path order.
+	Files []string
+}
+
+// CrossPackageSymbol reports a name that resolved in more than one package in the same
+// directory.
+//
+// It exists because AmbiguousSymbol is the wrong answer for this case, and the wrong answer is
+// actively misleading. A directory may hold `package p` beside an external test `package p_test`,
+// and both may declare `A` without either redeclaring anything — the test package is a separate
+// namespace. Calling that "ambiguous" with candidate lines to choose between implies a duplicate
+// declaration to go and fix, and there is none. `check` already agrees: packageSymbols keys its
+// namespace on directory *and* package name, so the two commands disagreed about whether a
+// conflict existed.
+//
+// The advice names a file rather than a qualified name. A qualified name addresses a method
+// within a type ("UserStore.GetUser"); it cannot express a package, and the previous advice
+// recommended one that `get p.A` does not resolve.
+type CrossPackageSymbol struct {
+	Name   string
+	Groups []CrossPackageGroup
+}
+
+func (e CrossPackageSymbol) Error() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "symbol %q is declared in %d packages, not ambiguous within one:", e.Name, len(e.Groups))
+	for _, g := range e.Groups {
+		fmt.Fprintf(&b, "\n  package %s: %s", g.Package, strings.Join(g.Files, ", "))
+	}
+	return b.String()
+}
+
+// Advice states the remedy that works. The previous message suggested a qualified name, which
+// addresses a method within a type and cannot select a package — a caller who followed it hit
+// "symbol not found" and had no reason to connect the two.
+func (e CrossPackageSymbol) Advice() string {
+	return "  pass the specific file; a qualified name selects a method within a type, not a package"
+}
+
+// IsNotFound keeps the exit code at 2. The caller must still choose, and an agent reacting to 2
+// corrects its input rather than retrying the same command.
+func (e CrossPackageSymbol) IsNotFound() bool { return true }
+
 // NotFoundSymbol reports a name that matched nothing.
 type NotFoundSymbol string
 

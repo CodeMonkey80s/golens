@@ -105,9 +105,13 @@ func Execute(root *cobra.Command) int {
 		for _, candidate := range amb.Candidates() {
 			fmt.Fprintln(root.ErrOrStderr(), "  "+candidate) //nolint:errcheck // diagnostic write
 		}
-		if advised, ok := classified.(interface{ Advice() string }); ok {
-			fmt.Fprintln(root.ErrOrStderr(), advised.Advice()) //nolint:errcheck // diagnostic write
-		}
+	}
+	// Advice is printed on its own, not inside the candidate loop above. An error can offer a
+	// remedy without carrying a candidate list — a name found in two packages of one directory
+	// has no duplicate declaration to choose between, so it has candidates to print and
+	// advice to give, and nesting one inside the other silently dropped the advice.
+	if advised, ok := classified.(interface{ Advice() string }); ok {
+		fmt.Fprintln(root.ErrOrStderr(), advised.Advice()) //nolint:errcheck // diagnostic write
 	}
 
 	return code

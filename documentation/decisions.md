@@ -42,6 +42,7 @@ the choice is the one that cannot be misread and cannot silently corrupt a file.
 | D26 | A directory argument is resolved before being walked; symlinks inside are not | `os.Stat` follows a link and `WalkDir` does not, so a symlinked tree reported "no .go files found", exit 2 |
 | D27 | One outline node per field name, each with its own span | `A, B int` is one `ast.Field`, so `B` was absent from every rendering; the third omission defect, after the alias `=` and `is_alias` |
 | D28 | An interface lists its method set; a type union lists nothing | An interface rendered bare, and its method set is the entire content of the type. "Method sets" in §2.1 means what a Go programmer reads it to mean |
+| D29 | A name found in two packages of one directory is not an ambiguity; the remedy is a file | `check` keyed its namespace on directory *and* package, `get` did not, so the two disagreed about whether a conflict existed — and the old advice recommended a qualified name, which cannot select a package |
 
 ---
 
@@ -365,6 +366,51 @@ the point: the caller branched on 4 should know the tree was not fully readable.
 quietly returns one match from a directory it could only read half of is the failure mode this
 tool exists to prevent — it is a confident answer built on an incomplete search.
 
+### D29 · Two packages in one directory is not an ambiguity
+
+`check` keys its namespace on directory **and** package name, and documents why at length: a
+directory may hold an external test package beside the package under test, and those two share a
+directory but not a namespace. `Resolve` had no such notion. A name declared once in `package p`
+and once in `package p_test` — legal Go, neither a redeclaration — came back as:
+
+```
+golens: A is ambiguous, matches: [a.go: A b_test.go: A]
+  pass a specific file instead of a directory, or the qualified name, to disambiguate
+```
+
+Two things are wrong and they compound. The claim is wrong: there is no duplicate declaration, so
+"ambiguous … choose one" sends the caller hunting for a conflict that does not exist, while
+`check .` on the same directory exits 0. **The two commands disagreeing about whether a conflict
+exists is the defect**, not the wording. And the remedy is worse than useless — a qualified name
+is `Type.Method`, addressing a method within a type:
+
+```
+$ golens get p.A .        → symbol "p.A" not found
+$ golens get p_test.A .   → symbol "p_test.A" not found
+```
+
+There is no way to express a package. The advice pointed at something that cannot work, and a
+caller who followed it got "not found" with no reason to connect the two.
+
+The fix is a distinct error rather than a reworded one, because `AmbiguousSymbol` asserts a
+conflict and this is the absence of one. `CrossPackageSymbol` reports the packages and their
+files, keeps exit 2 (the caller must still choose, and 2 is what tells an agent to correct its
+input), and advises a file. `TestCrossPackageAdviceDoesNotRecommendAQualifiedName` asserts the
+advice stays away from `p.A` and `p_test.A` by checking that neither resolves.
+
+The narrower fix is deliberate. Package-qualified *lookup* — making `p.A` work — is a real
+feature: new resolution syntax, a spec change, a decision about which package wins when a
+directory holds three. That is v0.3, and shipping it as a drive-by would have been the same
+error as guessing a winner here.
+
+One unrelated bug surfaced on the way. `Execute` printed `Advice()` from *inside* the branch that
+prints candidate lines, so any error carrying advice but no candidates printed no advice at all —
+which is exactly the new error's shape. Unwinding the two `if`s is the fix;
+`TestAdviceIsPrintedWithoutACandidateList` pins it. Nesting two independent behaviours is what
+made it invisible.
+
+**The rule: an error that names a problem must also be true about it, and its remedy must work.**
+
 ### D28 · An interface lists its method set, and a type union lists nothing
 
 Specification 2.1 says depth 2 emits "struct fields and method sets". The code handled
@@ -505,6 +551,7 @@ able to open the paths it was shown from the tree it asked about.
 | A17 | A symlinked directory argument is walked, and paths are reported under the name the caller used. Symlinks inside a tree are not followed. |
 | A18 | Every struct field appears in the outline, one node per name, and each node's bounds select exactly its own name from the source. |
 | A19 | An interface lists its method set, spelled as the source spells it and compilable when pasted back. An embedded interface is listed by name; a type union contributes nothing. |
+| A20 | A name declared in two packages of one directory is reported as cross-package, not as ambiguity; advice names a file and never a qualified name. A genuine duplicate in one package is still reported as ambiguity. |
 
 ---
 

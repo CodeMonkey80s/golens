@@ -3,6 +3,7 @@ package usecase
 import (
 	"io"
 	"path/filepath"
+	"sort"
 
 	"github.com/CodeMonkey80s/golens/internal/domain"
 	"github.com/CodeMonkey80s/golens/internal/format"
@@ -17,6 +18,13 @@ import (
 //   - Zero matches is a NotFoundSymbol, exit 2.
 //   - More than one match is an AmbiguousSymbol carrying the candidates, also exit 2, so
 //     the CLI lists them instead of guessing.
+//
+// A bare name matching declarations in more than one *package* is reported differently from a
+// real conflict within one package. A directory may legitimately hold `package p` beside an
+// external test `package p_test`, and both may declare `A` without either redeclaring anything.
+// check already keys its namespace on directory and package name for exactly this reason
+// (packageSymbols), so the two commands disagreeing about whether a conflict exists is the
+// defect. See CrossPackageSymbol.
 //
 // Resolution walks files in lexical order, so which candidate is reported first in an
 // error message is deterministic.
@@ -44,6 +52,9 @@ func Resolve(engine domain.Engine, name, target string) (domain.Symbol, domain.D
 	var matchDoc domain.Document
 	var skipped Skipped
 	skipped.Total = len(paths)
+	// packages counts the distinct namespaces the matches fall in, so a name declared once
+	// in `p` and once in `p_test` can be told apart from one declared twice in `p`.
+	packages := make(map[string][]int)
 
 	for _, path := range paths {
 		doc, parseErr := engine.Parse(path)
@@ -57,6 +68,10 @@ func Resolve(engine domain.Engine, name, target string) (domain.Symbol, domain.D
 			if len(matches) == 1 {
 				matchDoc = doc
 			}
+			if _, seen := packages[doc.Package]; !seen {
+				packages[doc.Package] = nil
+			}
+			packages[doc.Package] = append(packages[doc.Package], len(matches)-1)
 		}
 	}
 
@@ -71,6 +86,9 @@ func Resolve(engine domain.Engine, name, target string) (domain.Symbol, domain.D
 	case 1:
 		return matches[0], matchDoc, skipped, nil
 	default:
+		if len(packages) > 1 {
+			return domain.Symbol{}, domain.Document{}, skipped, crossPackage(name, matches, packages)
+		}
 		names := make([]string, 0, len(matches))
 		for _, m := range matches {
 			names = append(names, filepath.ToSlash(m.File)+": "+m.QualifiedName)
@@ -82,6 +100,37 @@ func Resolve(engine domain.Engine, name, target string) (domain.Symbol, domain.D
 			Total:   len(paths),
 		}
 	}
+}
+
+// crossPackage builds the error for a name that matched in more than one package.
+//
+// It is deliberately not AmbiguousSymbol. Nothing is ambiguous about `A` in a directory holding
+// `package p` and `package p_test`: neither redeclares anything, and check already says so by
+// keying its namespace on directory and package. Reporting a conflict that does not exist sends
+// the caller looking for a duplicate to fix, and there isn't one.
+//
+// The remedy is a file, not a qualified name, because a qualified name addresses a method within
+// a type ("UserStore.GetUser") and cannot express a package. The advice says so, which the
+// previous message did not: it recommended the qualified name, and `get p.A` does not resolve.
+func crossPackage(name string, matches []domain.Symbol, packages map[string][]int) error {
+	grouped := make([]CrossPackageGroup, 0, len(packages))
+	for _, pkg := range sortedKeys(packages) {
+		var paths []string
+		for _, idx := range packages[pkg] {
+			paths = append(paths, filepath.ToSlash(matches[idx].File))
+		}
+		grouped = append(grouped, CrossPackageGroup{Package: pkg, Files: paths})
+	}
+	return CrossPackageSymbol{Name: name, Groups: grouped}
+}
+
+func sortedKeys(m map[string][]int) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Skipped records the files a search could not parse, alongside the size of that search.

@@ -82,6 +82,11 @@ A method promoted from an embedded field belongs to the type that declares it.
 Given "type Derived struct { Base }", "get Derived.Lock" exits 2 and "get Lock"
 returns Base.Lock. golens resolves declarations, not the method set.
 
+A directory may hold package p beside an external test package p_test, and
+both may declare the same name without either redeclaring it. That exits 2
+as well, but it is reported as a name found in two packages rather than as
+an ambiguity, because there is no duplicate to fix. Pass the file.
+
 A file that does not parse is skipped, exactly as for outline. The symbol is
 resolved from the files that did parse, the skipped ones are named on stderr,
 and the run still exits 4 -- the answer was found, but the search that produced

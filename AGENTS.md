@@ -24,11 +24,11 @@ Feature-complete. There is no next session, and nothing is blocked.
 
 | Field | Value |
 |---|---|
-| Tests | 343 (incl. subtests), 6 packages with tests, all passing |
-| Test count by package | arch 6 · cli 87 · domain 15 · goast 55 · format 23 · usecase 157 |
+| Tests | 350 (incl. subtests), 6 packages with tests, all passing |
+| Test count by package | arch 6 · cli 90 · domain 15 · goast 55 · format 23 · usecase 161 |
 | Verify with | **`go test -count=1 ./...`** — see the caching trap below |
 | Toolchain | go1.27.2; no `golang.org/x` dependencies, only cobra and its two indirects |
-| Binary | 5.34 MiB stripped, budget 15 MiB |
+| Binary | 5.35 MiB stripped, budget 15 MiB |
 | Parse budget | ~22 µs typical, ~273 µs largest file here (budget 5 ms P95) |
 | Lint | `golangci-lint run ./...` — 0 issues, includes `revive` `var-naming` |
 | Self-check | `golens check ./internal` and `./cmd` both exit 0 |
@@ -150,6 +150,22 @@ ever looked at the human path. When you add a field that a declaration head depe
 `format.OutlineNode` too; `TestRenderersAgreeOnTheWholeCorpus` in `internal/format` then checks
 every declaration in this repository rather than the constructs a test remembered to name.
 
+**`check` and `get` must agree about what a conflict is.** `check` keys its namespace on directory
+*and* package name, because a directory may hold an external test `package p_test` beside
+`package p`. `Resolve` had no such notion, so a name declared once in each — legal Go, no
+redeclaration anywhere — came back as *"ambiguous, choose one"*, sending the caller to fix a
+duplicate that does not exist while `check .` on the same directory exited 0. **Two commands
+disagreeing about whether a conflict exists is the defect**, not the wording. The advice was worse
+than useless: it recommended a qualified name, and `get p.A` does not resolve, because a qualified
+name is `Type.Method` and cannot express a package. Package-qualified *lookup* is real v0.3 work
+with its own spec change — the narrow fix is to tell the truth, not to guess a winner.
+
+**An error's remedy must actually work, and must actually print.** `Execute` printed `Advice()`
+from *inside* the branch that prints candidate lines, so an error carrying advice but no
+candidates printed no advice — which is exactly the shape of the cross-package error, so the fix
+appeared not to work until the nesting was unwound. Two independent behaviours nested inside each
+other is how that stayed invisible; `TestAdviceIsPrintedWithoutACandidateList` pins it.
+
 **An interface's method set is its content, so rendering none of it says nothing.** The spec says
 depth 2 emits "struct fields and method sets", which is what a Go programmer reads it to mean,
 and the code handled `*ast.StructType` only. `type I interface` came out bare — for a struct the
@@ -230,7 +246,7 @@ name. When adding a check, bias toward silence and say so in the comment.
 
 ## Acceptance criteria
 
-Nineteen, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
+Twenty, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
 criteria; this is which test pins each.
 
 | # | Criterion | Evidence |
@@ -243,7 +259,7 @@ criteria; this is which test pins each.
 | A6 | `get --bounds-only` ≡ `bounds` | `TestSpecBoundsOnlyMatchesBounds`, plus format and usecase level |
 | A7 | golens never reports style | `TestCheckDoesNotJudgeStyle`, `TestCheckAcrossFilesReportsNothingStructural` |
 | A8 | Parse < 5 ms P95 | `TestParseP95UnderBudget` |
-| A9 | Binary < 15 MiB | 5.34 MiB, gated in CI |
+| A9 | Binary < 15 MiB | 5.35 MiB, gated in CI |
 | A10 | No cgo | `TestNoCgoDependency` |
 | A11 | `domain`/`usecase` import nothing external | `internal/arch` |
 | A12 | 12 fixture classes | `TestFixtureClasses` |
@@ -254,6 +270,7 @@ criteria; this is which test pins each.
 | A17 | A symlinked directory is walked; paths reported under the name given; inner symlinks still not followed | `TestSymlinkedDirectoryIsWalked`, `TestSymlinkedDirectoryIsNotEmpty` |
 | A18 | Every struct field appears in the outline, one node per name, each with bounds selecting its own name | `TestMultiNameStructFieldsAreNotDropped`, `TestMultiNameFieldsGetTheirOwnBounds`, `TestEmbeddedFieldIsStillOneNode` |
 | A19 | An interface lists its method set, spelled as source spells it (`Close() error`, no `func`); an embedded interface is listed, a type union is not | `TestInterfaceMethodSetIsListed`, `TestEmbeddedInterfaceIsListedAndUnionsAreNot`, `TestInterfaceMethodsHaveTheirOwnBounds`, `TestNonStructTypeMembersStayEmpty` |
+| A20 | A name in two packages of one directory is cross-package, not ambiguity; advice names a file, never a qualified name. A real duplicate stays ambiguous | `TestCrossPackageNameIsNotReportedAsAmbiguous`, `TestCrossPackageAdviceDoesNotRecommendAQualifiedName`, `TestSamePackageAmbiguityIsUnchanged`, `TestCrossPackageNameIsReportedAsSuchAtTheCLI`, `TestAdviceIsPrintedWithoutACandidateList` |
 
 A13's positive control is the part that matters: a rule that suppressed every duplicate would
 otherwise pass the five variant cases. `internal/cli/spec_test.go` adds 11 more, each citing the
@@ -345,7 +362,7 @@ any command's help should be followed by `documentation/COLDSTART.md`.
 | Document | Read it for |
 |---|---|
 | `documentation/specification.md` | **Normative.** Change this first, then the code |
-| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A19 stated |
+| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A20 stated |
 | `documentation/AGENTS.template.md` | Copy into a target repo's root so its agents inherit the traps |
 | `TESTING.md` | The 18-case manual plan — run it after any engine, check or formatter change |
 | `documentation/COLDSTART.md` | Tests the instructions rather than the tool. Run after changing help text |

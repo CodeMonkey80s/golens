@@ -156,6 +156,8 @@ golens get <symbol> <file|dir> [flags]
 
 **Symbol ambiguity.** A bare method name is accepted when it is unique in the package. Any ambiguity exits `2` and lists the candidates on stderr rather than guessing.
 
+**Packages are distinct namespaces.** A directory may hold `package p` beside an external test `package p_test`, and both may declare the same name without either redeclaring anything. When a bare name resolves in more than one package, the run exits `2` and reports the packages and their files — **it does not call this ambiguous**, because there is no duplicate declaration to fix. A qualified name (`Type.Method`) selects a method within a type and cannot select a package, so the stated remedy is a file.
+
 **Unparseable files in the search.** A file that does not parse is skipped rather than fatal, exactly as for `outline`. The symbol is resolved from the files that did parse, and the skipped files are named on stderr with the run still exiting `4` — the answer was found, but the search that produced it was incomplete, and exit `0` would claim otherwise. When the symbol resolves nowhere, the run still exits `2`, and the message says how many files could not be parsed: "not found" from a partial search is not the same answer as "not found" from a complete one, and the declaration may sit in a file that would not parse. Pointed at a single broken file there is nothing to salvage, so the parse error alone is the answer.
 
 **Human Output Format (`golens get UserStore.GetUser user.go`)**

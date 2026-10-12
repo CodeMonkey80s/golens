@@ -10,7 +10,7 @@ golens bounds <symbol> <file>   byte and line offsets for an edit
 golens check <file|dir>         fast syntax and namespace validation
 ```
 
-Pure Go, no cgo, no daemon, no index. One binary, 5.34 MiB stripped (`-ldflags="-s -w"`), parses a
+Pure Go, no cgo, no daemon, no index. One binary, 5.35 MiB stripped (`-ldflags="-s -w"`), parses a
 typical file in about 20 µs and the largest file in this repository in about 270 µs.
 
 ---
@@ -117,7 +117,7 @@ $ go install github.com/CodeMonkey80s/golens/cmd/golens@latest
 
 Requires the Go version in `go.mod` (currently 1.27.2). Builds with `CGO_ENABLED=0`.
 
-The `go install` binary is 8.07 MiB because it is not stripped; the 5.34 MiB figure quoted
+The `go install` binary is 8.07 MiB because it is not stripped; the 5.35 MiB figure quoted
 elsewhere is the `-ldflags="-s -w"` build above. Both are inside the 15 MiB budget.
 
 ### Version
@@ -208,6 +208,11 @@ exported and unexported identifiers resolve. Passing a directory searches the wh
 
 A bare method name is accepted when it is unique. When two receivers share a name the command
 exits `2` and lists the candidates rather than guessing.
+
+A directory may hold `package p` beside an external test `package p_test`, and both may declare
+the same name without either redeclaring anything. That is reported separately — as a name found
+in two packages, not as an ambiguity — and the remedy is a file, because a qualified name selects
+a method within a type and cannot select a package.
 
 A file that will not parse is skipped rather than fatal, as with `outline`. The symbol is resolved
 from the files that did parse, the skipped ones are named on stderr, and the run **still exits
@@ -425,7 +430,7 @@ will differ on yours.
 | Budget | Measured here |
 |---|---|
 | Read + parse, single file — 5 ms P95 | ~22 µs typical, ~273 µs on the largest file in this repo |
-| Binary — 15 MiB | 5.34 MiB stripped (`-ldflags="-s -w"`) |
+| Binary — 15 MiB | 5.35 MiB stripped (`-ldflags="-s -w"`) |
 
 Reproduce with `go test -run XXX -bench Parse -benchtime 500x ./internal/engine/goast`. Expect
 run-to-run variation of roughly ±20%, so treat a single figure as indicative and the budget as the
