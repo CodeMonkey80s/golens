@@ -24,11 +24,11 @@ Feature-complete. There is no next session, and nothing is blocked.
 
 | Field | Value |
 |---|---|
-| Tests | 336 (incl. subtests), 6 packages with tests, all passing |
-| Test count by package | arch 6 · cli 87 · domain 15 · goast 48 · format 23 · usecase 157 |
+| Tests | 343 (incl. subtests), 6 packages with tests, all passing |
+| Test count by package | arch 6 · cli 87 · domain 15 · goast 55 · format 23 · usecase 157 |
 | Verify with | **`go test -count=1 ./...`** — see the caching trap below |
 | Toolchain | go1.27.2; no `golang.org/x` dependencies, only cobra and its two indirects |
-| Binary | 5.33 MiB stripped, budget 15 MiB |
+| Binary | 5.34 MiB stripped, budget 15 MiB |
 | Parse budget | ~22 µs typical, ~273 µs largest file here (budget 5 ms P95) |
 | Lint | `golangci-lint run ./...` — 0 issues, includes `revive` `var-naming` |
 | Self-check | `golens check ./internal` and `./cmd` both exit 0 |
@@ -150,6 +150,26 @@ ever looked at the human path. When you add a field that a declaration head depe
 `format.OutlineNode` too; `TestRenderersAgreeOnTheWholeCorpus` in `internal/format` then checks
 every declaration in this repository rather than the constructs a test remembered to name.
 
+**An interface's method set is its content, so rendering none of it says nothing.** The spec says
+depth 2 emits "struct fields and method sets", which is what a Go programmer reads it to mean,
+and the code handled `*ast.StructType` only. `type I interface` came out bare — for a struct the
+fields *are* the content, and for an interface the method set is. Three details took real work
+and each has a test: an interface method's `Detail` must omit the `func` keyword, because
+`func` is a syntax error inside an interface body and printing an `*ast.FuncType` directly
+yields it — a declaration head that does not compile, which is the one class of bug this tool
+exists to prevent; a **type union is a single `*ast.BinaryExpr` with `token.OR`, not one entry
+per element**, so a first attempt that looked for tilde expressions missed it entirely; and an
+embedded interface *is* a member, so it is listed by name while the union is not listed at all.
+The renderer also needed a second spacing rule — a `Detail` opening with `(` attaches directly
+to the name, since Go spells `Close() error`, not `Close () error`.
+
+**Two functions with one name are not the same function.** The interface change first reused
+`fieldNodes`, which renders *parameters*, for struct fields. `fieldNodes` skips a nameless entry
+— which is exactly what an embedded struct field is — so embedded fields silently vanished from
+the outline, and the multi-name test failed. They are separate functions now, and
+`TestEmbeddedFieldIsStillOneNode` guards the branch. Reusing a helper is not free: its
+preconditions are part of what it means.
+
 **A missing field is worse than a wrong line number.** `typeChildren` emitted one node per
 `ast.Field`, but `A, B int` is one `ast.Field` holding two names. `B` was absent from the human
 outline, the JSON outline and the compact outline alike — not mis-rendered, *absent* — so the
@@ -210,7 +230,7 @@ name. When adding a check, bias toward silence and say so in the comment.
 
 ## Acceptance criteria
 
-Eighteen, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
+Nineteen, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
 criteria; this is which test pins each.
 
 | # | Criterion | Evidence |
@@ -223,7 +243,7 @@ criteria; this is which test pins each.
 | A6 | `get --bounds-only` ≡ `bounds` | `TestSpecBoundsOnlyMatchesBounds`, plus format and usecase level |
 | A7 | golens never reports style | `TestCheckDoesNotJudgeStyle`, `TestCheckAcrossFilesReportsNothingStructural` |
 | A8 | Parse < 5 ms P95 | `TestParseP95UnderBudget` |
-| A9 | Binary < 15 MiB | 5.33 MiB, gated in CI |
+| A9 | Binary < 15 MiB | 5.34 MiB, gated in CI |
 | A10 | No cgo | `TestNoCgoDependency` |
 | A11 | `domain`/`usecase` import nothing external | `internal/arch` |
 | A12 | 12 fixture classes | `TestFixtureClasses` |
@@ -233,6 +253,7 @@ criteria; this is which test pins each.
 | A16 | `get` survives a broken neighbour: returns the symbol, exits 4, names the skips; a miss still exits 2 and says the search was incomplete | `TestGetSkipsUnparseableFilesRatherThanAborting`, `TestGetSkipsUnparseableFiles`, `TestNotFoundNamesSkipsOnlyWhenItMust` |
 | A17 | A symlinked directory is walked; paths reported under the name given; inner symlinks still not followed | `TestSymlinkedDirectoryIsWalked`, `TestSymlinkedDirectoryIsNotEmpty` |
 | A18 | Every struct field appears in the outline, one node per name, each with bounds selecting its own name | `TestMultiNameStructFieldsAreNotDropped`, `TestMultiNameFieldsGetTheirOwnBounds`, `TestEmbeddedFieldIsStillOneNode` |
+| A19 | An interface lists its method set, spelled as source spells it (`Close() error`, no `func`); an embedded interface is listed, a type union is not | `TestInterfaceMethodSetIsListed`, `TestEmbeddedInterfaceIsListedAndUnionsAreNot`, `TestInterfaceMethodsHaveTheirOwnBounds`, `TestNonStructTypeMembersStayEmpty` |
 
 A13's positive control is the part that matters: a rule that suppressed every duplicate would
 otherwise pass the five variant cases. `internal/cli/spec_test.go` adds 11 more, each citing the
@@ -324,7 +345,7 @@ any command's help should be followed by `documentation/COLDSTART.md`.
 | Document | Read it for |
 |---|---|
 | `documentation/specification.md` | **Normative.** Change this first, then the code |
-| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A18 stated |
+| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A19 stated |
 | `documentation/AGENTS.template.md` | Copy into a target repo's root so its agents inherit the traps |
 | `TESTING.md` | The 18-case manual plan — run it after any engine, check or formatter change |
 | `documentation/COLDSTART.md` | Tests the instructions rather than the tool. Run after changing help text |

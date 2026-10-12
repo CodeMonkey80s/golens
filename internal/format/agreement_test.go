@@ -157,11 +157,21 @@ func jsonDeclarationHeads(t *testing.T, data []byte) []string {
 // hide a field that never made it into the payload.
 func nodeDeclaration(n format.OutlineNode) string {
 	// A field renders as "name detail" with no keyword, matching format.entry.
+	//
+	// A Detail opening with "(" is a signature -- an interface method -- and a signature
+	// attaches to the name with no separating space, so "Close() error" and not
+	// "Close () error". This mirror was written when every Detail was a type, and left
+	// stale by interface methods: the corpus walk then reported a disagreement between the
+	// two renderings that did not exist, because this function was the only thing modelling
+	// the human one.
 	if n.Kind == domain.KindField {
-		if n.Detail != "" {
-			return n.Name + " " + n.Detail
+		if n.Detail == "" {
+			return n.Name
 		}
-		return n.Name
+		if strings.HasPrefix(n.Detail, "(") {
+			return n.Name + n.Detail
+		}
+		return n.Name + " " + n.Detail
 	}
 
 	keyword := string(n.Kind)
@@ -271,7 +281,7 @@ func TestCorpusContainsTheConstructsThatBroke(t *testing.T) {
 	root := repoRoot(t)
 	fset := token.NewFileSet()
 
-	var genericType, genericFunc, genericReceiver, alias, embedded, multiNameField, method int
+	var genericType, genericFunc, genericReceiver, alias, embedded, multiNameField, ifaceMethod, typeUnion, method int
 	for _, path := range goFilesUnder(t, root) {
 		f, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
@@ -301,13 +311,31 @@ func TestCorpusContainsTheConstructsThatBroke(t *testing.T) {
 					// Embedded and multi-name fields live on the struct type, not in
 					// GenDecl.Specs. "A, B int" is one ast.Field holding two names, and
 					// emitting one node for it dropped B from the outline entirely.
-					if st, ok := s.Type.(*ast.StructType); ok && st.Fields != nil {
-						for _, f := range st.Fields.List {
-							switch {
-							case len(f.Names) == 0:
-								embedded++
-							case len(f.Names) > 1:
-								multiNameField++
+					//
+					// An interface method set and a tilde union are counted separately:
+					// one is a declaration the outline must list, the other is a type term
+					// it must not, and a corpus that carried only one of them could not
+					// tell a rule that skips both from a rule that skips neither.
+					switch t := s.Type.(type) {
+					case *ast.StructType:
+						if t.Fields != nil {
+							for _, f := range t.Fields.List {
+								switch {
+								case len(f.Names) == 0:
+									embedded++
+								case len(f.Names) > 1:
+									multiNameField++
+								}
+							}
+						}
+					case *ast.InterfaceType:
+						if t.Methods != nil {
+							for _, m := range t.Methods.List {
+								if _, ok := m.Type.(*ast.FuncType); ok {
+									ifaceMethod++
+								} else if _, ok := m.Type.(*ast.BinaryExpr); ok {
+									typeUnion++
+								}
 							}
 						}
 					}
@@ -330,6 +358,8 @@ func TestCorpusContainsTheConstructsThatBroke(t *testing.T) {
 		{"type aliases", alias},
 		{"embedded fields", embedded},
 		{"multi-name fields", multiNameField},
+		{"interface methods", ifaceMethod},
+		{"type unions", typeUnion},
 		{"methods", method},
 	} {
 		if c.got == 0 {

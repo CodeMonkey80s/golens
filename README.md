@@ -10,7 +10,7 @@ golens bounds <symbol> <file>   byte and line offsets for an edit
 golens check <file|dir>         fast syntax and namespace validation
 ```
 
-Pure Go, no cgo, no daemon, no index. One binary, 5.33 MiB stripped (`-ldflags="-s -w"`), parses a
+Pure Go, no cgo, no daemon, no index. One binary, 5.34 MiB stripped (`-ldflags="-s -w"`), parses a
 typical file in about 20 µs and the largest file in this repository in about 270 µs.
 
 ---
@@ -117,7 +117,7 @@ $ go install github.com/CodeMonkey80s/golens/cmd/golens@latest
 
 Requires the Go version in `go.mod` (currently 1.27.2). Builds with `CGO_ENABLED=0`.
 
-The `go install` binary is 8.07 MiB because it is not stripped; the 5.33 MiB figure quoted
+The `go install` binary is 8.07 MiB because it is not stripped; the 5.34 MiB figure quoted
 elsewhere is the `-ldflags="-s -w"` build above. Both are inside the 15 MiB budget.
 
 ### Version
@@ -172,7 +172,10 @@ template and two needed it named in the prompt, with the same file in the same p
 
 Structural map of a file or directory: imports, types, funcs and methods, vars and consts.
 
-Struct fields are listed one per name, so `A, B int` is two entries rather than one.
+Struct fields are listed one per name, so `A, B int` is two entries rather than one. An
+interface lists its method set — for an interface that *is* the content of the type. A type
+union like `interface{ ~int | ~string }` is a constraint rather than a method set, so it lists
+nothing.
 
 | Flag | Effect |
 |---|---|
@@ -422,7 +425,7 @@ will differ on yours.
 | Budget | Measured here |
 |---|---|
 | Read + parse, single file — 5 ms P95 | ~22 µs typical, ~273 µs on the largest file in this repo |
-| Binary — 15 MiB | 5.33 MiB stripped (`-ldflags="-s -w"`) |
+| Binary — 15 MiB | 5.34 MiB stripped (`-ldflags="-s -w"`) |
 
 Reproduce with `go test -run XXX -bench Parse -benchtime 500x ./internal/engine/goast`. Expect
 run-to-run variation of roughly ±20%, so treat a single figure as indicative and the budget as the

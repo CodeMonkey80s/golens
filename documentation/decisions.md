@@ -41,6 +41,7 @@ the choice is the one that cannot be misread and cannot silently corrupt a file.
 | D25 | `get` skips unparseable files, returns the symbol, and still exits 4 naming them | One broken neighbour made every symbol in a directory unreachable; `outline` and `check` already survived this |
 | D26 | A directory argument is resolved before being walked; symlinks inside are not | `os.Stat` follows a link and `WalkDir` does not, so a symlinked tree reported "no .go files found", exit 2 |
 | D27 | One outline node per field name, each with its own span | `A, B int` is one `ast.Field`, so `B` was absent from every rendering; the third omission defect, after the alias `=` and `is_alias` |
+| D28 | An interface lists its method set; a type union lists nothing | An interface rendered bare, and its method set is the entire content of the type. "Method sets" in §2.1 means what a Go programmer reads it to mean |
 
 ---
 
@@ -364,6 +365,46 @@ the point: the caller branched on 4 should know the tree was not fully readable.
 quietly returns one match from a directory it could only read half of is the failure mode this
 tool exists to prevent — it is a confident answer built on an incomplete search.
 
+### D28 · An interface lists its method set, and a type union lists nothing
+
+Specification 2.1 says depth 2 emits "struct fields and method sets". The code handled
+`*ast.StructType` and returned nil for everything else, so `type I interface` rendered bare.
+
+This one is different from D25 through D27 in where the fault lies. Those were the code
+contradicting itself. Here the code was self-consistent and the **specification** was ambiguous:
+read narrowly, "method sets" means the methods declared on named types, which is what shipped.
+Read as a Go programmer reads it — `reflect.Type.Method`, the method set of an interface type —
+interfaces are included. A reasonable reader would expect the method list and get a type name.
+
+The gap matters more than the ambiguity does. For a struct, the fields are the content of the
+type. For an interface, the method set *is* the content, so omitting it produced a declaration
+with nothing in it — and an agent asking "what does this interface require?" was pushed back to
+grep. That is the one job this tool has.
+
+Three details, each of which produced wrong output before it produced right output:
+
+- **No `func` keyword.** An interface method's `Detail` is the parameter and result list, and
+  printing an `*ast.FuncType` directly yields `func(id int) (*User, error)`. That is a **syntax
+  error inside an interface body**, so the very first implementation emitted declaration heads
+  that do not compile — the one class of defect this tool exists to prevent, introduced while
+  closing a different one.
+- **A type union is a single `*ast.BinaryExpr` with `token.OR`, not one entry per element.**
+  The first attempt looked for `*ast.UnaryExpr` with a tilde, which is how a union *element*
+  looks, and found nothing: `interface{ ~int | ~string }` is one entry, so the guard never fired
+  and the union rendered as a member named `~int | ~string`. Dumped the AST rather than reasoning
+  about it; the shape is not what the syntax suggests.
+- **An embedded interface is a member.** `interface { Reader; Open() error }` declares two
+  methods, one by name. It is listed; the union is not listed at all.
+
+The renderer gained a second spacing rule to match: a `Detail` opening with `(` attaches directly
+to the name, because Go spells `Close() error` and not `Close () error`. That required fixing
+`nodeDeclaration` in `agreement_test.go` too — the corpus walk models the human renderer by hand,
+so a renderer change that the walk did not follow reports a disagreement that does not exist. It
+reported exactly that, and was right to: the mirror really had gone stale.
+
+**The rule: an omitted member is a wrong answer, and a member that will not compile is a worse
+one. Both are checked by pasting the output back.**
+
 ### D27 · One outline node per field name, not per `ast.Field`
 
 `A, B int` is a single `ast.Field` holding two names. `typeChildren` emitted one node for it and
@@ -463,6 +504,7 @@ able to open the paths it was shown from the tree it asked about.
 | A16 | `get` over a directory containing an unparseable file still returns a symbol that resolves, exits 4, and names the skipped files; a miss still exits 2 and says the search was incomplete. |
 | A17 | A symlinked directory argument is walked, and paths are reported under the name the caller used. Symlinks inside a tree are not followed. |
 | A18 | Every struct field appears in the outline, one node per name, and each node's bounds select exactly its own name from the source. |
+| A19 | An interface lists its method set, spelled as the source spells it and compilable when pasted back. An embedded interface is listed by name; a type union contributes nothing. |
 
 ---
 

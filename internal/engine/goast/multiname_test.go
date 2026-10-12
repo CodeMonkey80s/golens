@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CodeMonkey80s/golens/internal/domain"
 	"github.com/CodeMonkey80s/golens/internal/engine/goast"
 )
 
@@ -140,16 +139,4 @@ type S struct {
 	if mu := s.Children[0]; mu.Detail != "" {
 		t.Errorf("embedded field Detail = %q, want empty", mu.Detail)
 	}
-}
-
-func findNode(nodes []domain.Node, name string) *domain.Node {
-	for i := range nodes {
-		if nodes[i].Name == name {
-			return &nodes[i]
-		}
-		if child := findNode(nodes[i].Children, name); child != nil {
-			return child
-		}
-	}
-	return nil
 }

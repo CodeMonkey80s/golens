@@ -68,7 +68,11 @@ always yields byte-identical output.
 
 `name` and `detail` alone cannot express any of the three, so a consumer that reconstructs a declaration head from a node writes a different program than the source describes: `type Stack struct` for `type Stack[T any] struct` does not compile, and `type Alias Stack[int]` for `type Alias = Stack[int]` compiles as a defined type, which is the more dangerous of the two. An alias and a defined type over the same underlying type are otherwise byte-identical nodes, so `is_alias` is the only thing distinguishing them. Each field is omitted when empty or false, so a file with no generics, no methods and no aliases pays nothing.
 
-**`--depth`.** Counts container nesting. Depth 1 emits package-level declarations only — types, funcs, methods, vars and consts — with children suppressed. Depth 2 additionally emits struct fields and method sets. The hierarchy is two levels deep in practice, so depth 3 and above produce output identical to depth 2 and to the unlimited default; a value of 0 is treated as 1.
+**`--depth`.** Counts container nesting. Depth 1 emits package-level declarations only — types, funcs, methods, vars and consts — with children suppressed. Depth 2 additionally emits struct fields and the method set of an interface. The hierarchy is two levels deep in practice, so depth 3 and above produce output identical to depth 2 and to the unlimited default; a value of 0 is treated as 1.
+
+**An interface's method set is its content.** An interface is listed with its methods beneath it, each with its own span, so a caller can see what a type requires without opening the file. An embedded interface is listed by name, because it is a method of the enclosing one. A **type union is not a method** — `interface{ ~int | ~string }` is a constraint and contributes no entries, since its terms are type requirements rather than declarations.
+
+**Interface methods are spelled as the source spells them.** A method renders as `Close() error`, with the parameter list attached directly to the name and no `func` keyword, because `func` is a syntax error inside an interface body. This differs from a struct field's `Name Type` spacing, and the distinction is deliberate: a declaration head that compiles is the point of the whole exercise.
 
 **Line ranges.** A declaration spanning several lines renders as `(lines 5-8)`; a single-line declaration renders as `(line 10)`.
 

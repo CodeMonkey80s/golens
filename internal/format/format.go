@@ -171,12 +171,26 @@ func WriteGetHuman(w io.Writer, sym domain.Symbol, file, source string, compact 
 // leading field and therefore not repeated inside the text.
 func compactEntry(n domain.Node) string {
 	if n.Kind == domain.KindField {
-		if n.Detail != "" {
-			return n.Name + " " + n.Detail
-		}
-		return n.Name
+		return fieldText(n)
 	}
 	return entry(n)
+}
+
+// fieldText renders a field or an interface method as "Name Detail".
+//
+// A Detail that opens with "(" is a signature rather than a type, and a signature attaches to
+// the name directly: Go spells an interface method "Close() error", not "Close () error". The
+// separating space is there for "A int", and adding one to a signature renders text that
+// differs from the source without changing what it means — the kind of quiet divergence between
+// a declaration head and the declaration it came from that this tool exists to avoid.
+func fieldText(n domain.Node) string {
+	if n.Detail == "" {
+		return n.Name
+	}
+	if strings.HasPrefix(n.Detail, "(") {
+		return n.Name + n.Detail
+	}
+	return n.Name + " " + n.Detail
 }
 
 // unquotePath strips the surrounding quotes from a Go import path literal.
@@ -438,10 +452,7 @@ func entry(n domain.Node) string {
 		}
 		return unquotePath(n.Detail)
 	case domain.KindField:
-		if n.Detail != "" {
-			return n.Name + " " + n.Detail
-		}
-		return n.Name
+		return fieldText(n)
 	default:
 		// Types and funcs render as declaration heads: "func (s *T) Name(args)",
 		// "type Name struct". Detail for these kinds is already parameter/result text

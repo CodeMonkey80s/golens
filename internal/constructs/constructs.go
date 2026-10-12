@@ -48,6 +48,28 @@ type Multi struct {
 	Named   string
 }
 
+// Reader has a method set, which for an interface is the entire content of the type. It used
+// to render as a bare "type Reader interface" with nothing under it.
+type Reader interface {
+	Read(p []byte) (int, error)
+	Close() error
+}
+
+// ReadBoth embeds an interface alongside a method, so both shapes appear in one body.
+//
+// The embedded name IS a member of the enclosing interface. Comparable's tilde union is a
+// type constraint and is NOT, and the two are indistinguishable by shape in the AST — which
+// is why both live here rather than only the easy case.
+type ReadBoth interface {
+	Reader
+	Open() error
+}
+
+// Comparable is a constraint, not a method set. Its union arrives as a single BinaryExpr with
+// token.OR rather than one entry per element, which is the first thing to get wrong when
+// reading this file.
+type Comparable interface{ ~int | ~string }
+
 // Alias and Defined share an underlying type and must not render identically. An alias is
 // interchangeable with its target; a defined type is not, so dropping the "=" compiles and
 // means something else.

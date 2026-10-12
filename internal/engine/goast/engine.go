@@ -401,28 +401,52 @@ func (b *builder) nodes(file *ast.File) []domain.Node {
 	return nodes
 }
 
-// typeChildren exposes struct fields at depth 2, per specification 2.1.
+// typeChildren exposes a type's members at depth 2, per specification 2.1: the fields of a
+// struct, and the method set of an interface.
 //
-// One node is emitted per field NAME, not per ast.Field. "A, B int" is a single ast.Field
+// The interface case was added because "method sets" in the specification means what a Go
+// programmer expects it to mean, and for an interface the method set is the entire content of
+// the type. An interface rendering as a bare "type I interface" told a caller that a type
+// whose whole purpose is its method list had nothing in it.
+//
+// One node is emitted per member NAME, not per ast.Field. "A, B int" is a single ast.Field
 // holding two names, and taking only the first dropped B from the outline entirely — it was
 // absent from the human form, the JSON form and the compact form alike, so a caller reading
 // the field list before editing a struct was told it had fewer fields than it has. Parameters
 // were already handled per name by fieldNodes, which is why the bug showed up in structs and
 // not in signatures.
 func (b *builder) typeChildren(expr ast.Expr) []domain.Node {
-	st, ok := expr.(*ast.StructType)
-	if !ok || st.Fields == nil || st.Fields.NumFields() == 0 {
+	switch t := expr.(type) {
+	case *ast.StructType:
+		return b.structFields(t.Fields)
+	case *ast.InterfaceType:
+		return b.interfaceMethods(t.Methods)
+	default:
+		// A named map, slice, chan or func type has no members worth listing, and a union
+		// constraint's elements are type terms rather than declarations.
+		return nil
+	}
+}
+
+// structFields emits one node per field of a struct.
+//
+// This is deliberately not fieldNodes. That one renders function parameters, where every
+// entry has names, and it drops a nameless entry -- which is exactly what an embedded struct
+// field is. Reusing it here made embedded fields disappear from the outline, so the two are
+// kept separate and this one handles the embedded case explicitly.
+func (b *builder) structFields(fields *ast.FieldList) []domain.Node {
+	if fields == nil || len(fields.List) == 0 {
 		return nil
 	}
 
-	out := make([]domain.Node, 0, st.Fields.NumFields())
-	for _, field := range st.Fields.List {
+	out := make([]domain.Node, 0, fields.NumFields())
+	for _, field := range fields.List {
 		detail := exprString(field.Type)
 
 		if len(field.Names) == 0 {
-			// Embedded field: the type expression is the whole declaration, so it is
-			// the name and there is no separate type to show. Repeating it as Detail
-			// would render "sync.Mutex sync.Mutex", which is not valid Go.
+			// Embedded field: the type expression is the whole declaration, so it is the
+			// name and there is no separate type to show. Repeating it as Detail would
+			// render "sync.Mutex sync.Mutex", which is not valid Go.
 			out = append(out, domain.Node{
 				Name:   detail,
 				Kind:   domain.KindField,
@@ -443,6 +467,68 @@ func (b *builder) typeChildren(expr ast.Expr) []domain.Node {
 		}
 	}
 	return out
+}
+
+// interfaceMethods emits one node per method spec in an interface's method list.
+//
+// A constraint interface -- `interface{ ~int | ~string }` -- has no methods and yields no
+// nodes. Its elements arrive here as tilde unary expressions, which are type terms rather
+// than methods, and rendering "~int | ~string" as a child of the interface would put a
+// non-declaration in the outline. An embedded interface is a method of one, so it is listed
+// by its type expression.
+func (b *builder) interfaceMethods(methods *ast.FieldList) []domain.Node {
+	if methods == nil || len(methods.List) == 0 {
+		return nil
+	}
+
+	out := make([]domain.Node, 0, len(methods.List))
+	for _, spec := range methods.List {
+		fn, ok := spec.Type.(*ast.FuncType)
+		if !ok {
+			// Not a method: either an embedded interface, whose type expression is the
+			// whole declaration, or a type-union element, which is not a declaration at all.
+			if len(spec.Names) == 0 && !isUnionElement(spec.Type) {
+				if name := exprString(spec.Type); name != "" {
+					out = append(out, domain.Node{
+						Name:   name,
+						Kind:   domain.KindField,
+						Bounds: nodeBounds(b.tf, spec.Pos(), spec.End()),
+					})
+				}
+			}
+			continue
+		}
+
+		// The Detail is the parameter and result list WITHOUT the "func" keyword. Printing
+		// the *ast.FuncType directly yields "func(id int) (*User, error)", which is what a
+		// function declaration looks like and is a syntax error inside an interface body --
+		// so a caller pasting the outline back would not compile. An interface method is
+		// spelled "Get(id int) (*User, error)".
+		detail := funcSignature(fn)
+
+		for _, name := range spec.Names {
+			out = append(out, domain.Node{
+				Name:   name.Name,
+				Kind:   domain.KindField,
+				Detail: detail,
+				Bounds: nodeBounds(b.tf, name.Pos(), name.End()),
+			})
+		}
+	}
+	return out
+}
+
+// isUnionElement reports whether expr is a type-union rather than an embedded interface.
+//
+// `interface{ ~int | ~string }` and `interface{ int | string }` both parse to a single
+// BinaryExpr with token.OR in the method list -- not one entry per element, which is the
+// first thing to get wrong here. An embedded interface is an Ident or a SelectorExpr.
+//
+// Rendering the union as a member would put "~int | ~string" in the outline as though the
+// interface declared it, and `interface{ A | B }` is a constraint, not a method set.
+func isUnionElement(expr ast.Expr) bool {
+	binary, ok := expr.(*ast.BinaryExpr)
+	return ok && binary.Op == token.OR
 }
 
 // children exposes function parameters at depth 2. Parameters have no further

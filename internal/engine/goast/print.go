@@ -52,6 +52,26 @@ func signature(fn *ast.FuncDecl) string {
 	return truncate(sb.String())
 }
 
+// funcSignature renders a function type's parameter and result lists without the leading
+// "func" keyword: "(ctx context.Context, id int) (*User, error)".
+//
+// The keyword is omitted because this renders interface methods, where the declaration is
+// "Get(ctx context.Context, id int) (*User, error)" and a "func" keyword is a syntax error.
+// Printing an *ast.FuncType directly would include it.
+func funcSignature(fn *ast.FuncType) string {
+	if fn == nil {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fieldListString(fn.Params))
+	if results := resultsString(fn.Results); results != "" {
+		sb.WriteString(" ")
+		sb.WriteString(results)
+	}
+	return truncate(sb.String())
+}
+
 // fieldListString renders a parameter list as "(ctx context.Context, id int)".
 //
 // A FieldList is not an ast.Expr, so it cannot go through exprString. Parameter names are
