@@ -284,6 +284,16 @@ report a declaration rather than a position — an unused import is attributed t
 is written on, not to the package clause. `--json` carries the same facts as
 `severity`, `file`, `line`, `column` and `message`.
 
+**Exit codes distinguish a finding about the code from a failure to read it.** A syntax error, an
+unused import, a malformed import path and a duplicate declaration are findings about the source,
+and the run exits `3`. A file that could not be opened — a dangling symlink, a permission bit —
+is not a finding about the source; the tool did not do its job, and the run exits `4`, the same
+code `outline` gives for the same file. The two are told apart by whether the failure carries a
+position: a diagnostic at `1:1` with no position is a file that could not be read. When both occur
+in one run the text for both reaches stderr and the run exits `4`, because a caller told `3` would
+believe every file was readable. Under `--json` the unreadable file appears in the payload and
+stderr stays empty, as the stream contract requires.
+
 ## 3. Project Constraints & Guidelines
 
 ### 3.1 Codebase Standards

@@ -131,6 +131,19 @@ func (e SkippedFilesError) Unwrap() error {
 	return e.Failures[0]
 }
 
+// Located reports whether the failure carries a source position, which is what distinguishes a
+// file that does not parse from a file that could not be opened.
+//
+// The engine returns *ParseError — reachable through LocatedErrors — for a syntax error, and a
+// plain wrapped os error for an I/O failure. That distinction decides an exit code: a syntax
+// error is a finding about the code, so `check` reports it as a diagnostic and exits 3, while an
+// unreadable file means the tool could not do its job and must exit 4. Collapsing both into
+// "diagnostics found" made check disagree with outline about the same file.
+func (e ParseError) Located() bool {
+	var pe interface{ LocatedErrors() []domain.LocatedError }
+	return errors.As(e.Err, &pe)
+}
+
 // Diagnostics returns one Diagnostic per parse error, each carrying the line and column the
 // parser reported. A failure that is not a parse error -- an I/O failure, say -- becomes a single
 // diagnostic at 1:1, since there is no position to report.

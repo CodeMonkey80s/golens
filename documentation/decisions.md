@@ -43,6 +43,7 @@ the choice is the one that cannot be misread and cannot silently corrupt a file.
 | D27 | One outline node per field name, each with its own span | `A, B int` is one `ast.Field`, so `B` was absent from every rendering; the third omission defect, after the alias `=` and `is_alias` |
 | D28 | An interface lists its method set; a type union lists nothing | An interface rendered bare, and its method set is the entire content of the type. "Method sets" in §2.1 means what a Go programmer reads it to mean |
 | D29 | A name found in two packages of one directory is not an ambiguity; the remedy is a file | `check` keyed its namespace on directory *and* package, `get` did not, so the two disagreed about whether a conflict existed — and the old advice recommended a qualified name, which cannot select a package |
+| D30 | `check` exits 4 for a file it could not open, 3 for a problem in the code; 4 wins when both occur | An I/O failure was reported as a finding, so `check` exited 3 where `outline` exited 4 on the very same file — and 3 tells a caller to edit code that is fine |
 
 ---
 
@@ -366,6 +367,50 @@ the point: the caller branched on 4 should know the tree was not fully readable.
 quietly returns one match from a directory it could only read half of is the failure mode this
 tool exists to prevent — it is a confident answer built on an incomplete search.
 
+### D30 · `check` exits 4 when it could not read a file, and 3 when the code is at fault
+
+A file that cannot be opened — a dangling symlink, a permission bit — was reported as a diagnostic,
+so `check` exited **3**. `outline` exited **4** for the identical file. The contract has exactly one
+code for I/O failure:
+
+| Code | Meaning |
+|---|---|
+| `3` | `check` found diagnostics |
+| `4` | Parse or **I/O** failure |
+
+So the two commands disagreed about what had happened to the same file, and `check` was the one
+contradicting the specification.
+
+The cost is not the wrong number. It is the wrong *response*. Exit 3 is what an agent reads as
+"the code has problems, go and fix them". A file it cannot open is a different problem with a
+different remedy — chase a stale link, fix a permission bit — and telling it to edit source would
+send it after something that is not broken. The class of harm is the one this project keeps
+avoiding: a confident answer that points at the wrong thing.
+
+**The discriminator was already in the code.** `ParseError.Diagnostics` branches on whether the
+engine attached a position: a syntax error yields a located error with a real line and column, and
+anything else yields a diagnostic at `1:1` because it has no position. That distinction decided
+nothing, because `Check` folded both into one slice. `ParseError.Located()` exposes it, and `Check`
+now partitions on it — located failures are findings, unlocated ones are I/O.
+
+**Precedence: 4 wins.** A run can hold both a syntax error and an unreadable file. Reporting 3
+would assert every file was readable, and one was not; the same reasoning as `get` skipping files
+in D25. Both texts still reach stderr, because suppressing the syntax error to justify an exit code
+would trade one loss of information for another.
+
+Two things had to be true at once, and each was wrong on the first attempt:
+
+- **The JSON payload must carry the unreadable file.** A `--json` consumer is told *not* to add
+  `2>&1`, so a payload omitting it leaves the caller with exit 4 and nothing to explain it.
+- **stderr must stay empty under `--json`.** The first version returned a normal error, which
+  `Execute` printed to stderr, breaking the documented stream contract — exactly when the caller is
+  most likely to be parsing. Errors now carry `Silent()`, which the CLI honours, so the usecase
+  layer decides based on the output format and the cli layer needs no knowledge of which command is
+  running.
+
+**The rule: two commands must not disagree about the same input, and an exit code is a claim about
+what kind of problem the caller has.**
+
 ### D29 · Two packages in one directory is not an ambiguity
 
 `check` keys its namespace on directory **and** package name, and documents why at length: a
@@ -554,6 +599,7 @@ able to open the paths it was shown from the tree it asked about.
 | A20 | A name declared in two packages of one directory is reported as cross-package, not as ambiguity; advice names a file and never a qualified name. A genuine duplicate in one package is still reported as ambiguity. |
 | A21 | The skipped-files message never emits a separator welded to a following entry, and its truncation marker is separated like every other entry, at one, three, exactly five and many failures. |
 | A22 | The skipped-files summary names the outcome rather than the cause, and never claims a parse failure for a file it could not open. Each entry still carries its own cause. |
+| A23 | `check` and `outline` return the same exit code for the same unreadable file; findings about code still exit 3; 4 wins when both kinds occur; `--json` keeps the file in the payload and stderr empty. |
 
 ---
 

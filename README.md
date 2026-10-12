@@ -254,6 +254,12 @@ $ echo $?
 Every diagnostic carries `file:line:column`. The column is the parser's position for a syntax error
 and `1` for the checks that report a declaration rather than a position.
 
+**Exit 3 means the code has a problem; exit 4 means the tool could not read something.** A syntax
+error, unused import or duplicate declaration exits `3`. A file that could not be opened — a
+dangling symlink, a permission bit — exits `4`, the same code `outline` gives for the same file.
+When both happen in one run, both texts are reported and the run exits `4`, because a caller told
+`3` would believe every file was readable.
+
 **Out of scope by design:** unreachable code, type-level conflicts, and module import resolution.
 The last two need `go/types` and a module graph, which cannot coexist with the stateless,
 sub-millisecond design. See `documentation/specification.md` §2.4.

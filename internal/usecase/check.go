@@ -85,16 +85,55 @@ func Check(engine domain.Engine, target string, stdout, stderr io.Writer, opts f
 	for _, doc := range docs {
 		diags = append(diags, analyse(doc, &pkg)...)
 	}
+
+	// Parse failures and I/O failures are both reported, but they are not the same kind of
+	// news and they do not earn the same exit code.
+	//
+	// A syntax error is a finding about the code: the caller wants to fix it, and exit 3 is
+	// the documented code for "check ran and found something". A file that cannot be opened
+	// is a finding about the machine — a dangling symlink, a permission bit — and exit 4 is
+	// the documented code for "parse or I/O failure". Reporting both as diagnostics made
+	// check exit 3 where outline exited 4 on the very same file, so the two commands
+	// disagreed about what had happened.
+	//
+	// ParseError.Located separates them: the engine attaches a position to a syntax error
+	// and to nothing else, and an I/O diagnostic has no position to report.
+	var unreadable []ParseError
 	for _, pe := range parseErrs {
-		// A zero ParseError means the parse succeeded; only real errors become diagnostics.
-		if pe.Err != nil {
-			diags = append(diags, pe.Diagnostics()...)
+		// A zero ParseError means the parse succeeded; only real errors are reported.
+		if pe.Err == nil {
+			continue
 		}
+		if pe.Located() {
+			diags = append(diags, pe.Diagnostics()...)
+			continue
+		}
+		unreadable = append(unreadable, pe)
+		// The text still goes out as a diagnostic. It is how the caller learns which file
+		// could not be opened and why, and suppressing it to justify an exit code would
+		// trade one loss of information for another.
+		diags = append(diags, pe.Diagnostics()...)
 	}
 
 	diags = append(diags, pkg.duplicates()...)
 
-	return emit(diags, stdout, stderr, opts)
+	// emit writes the findings and reports HasDiagnostics when there were any. Its error is
+	// deliberately not returned directly: it would short-circuit the exit-4 condition below,
+	// which is exactly the mistake an earlier draft of this made — the branch was written,
+	// unreachable, and the test looked like it passed because emit never got that far.
+	emitErr := emit(diags, stdout, stderr, opts)
+
+	// Exit 4 dominates exit 3. Both may hold, and the caller must still resolve the I/O
+	// failure before the tree is fully read — the same reasoning as `get` skipping files
+	// (D25). Reporting 3 would assert that every file was readable, and one was not.
+	//
+	// The per-file text has already gone out as a diagnostic above, so this error carries
+	// only the count. Naming the files again printed the same line twice on stderr, which
+	// reads as two failures where there was one.
+	if len(unreadable) > 0 {
+		return UnreadableFilesError{Count: len(unreadable), Total: len(paths), Quiet: opts.JSON}
+	}
+	return emitErr
 }
 
 // analyse runs the per-document checks. Package-level symbols are handed to pkg, which owns

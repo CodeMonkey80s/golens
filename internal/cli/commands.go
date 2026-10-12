@@ -164,8 +164,15 @@ func newCheckCmd(env Env) *cobra.Command {
   Output   human form: diagnostics to stderr, stdout empty
           --json:    payload to stdout, stderr empty -- do not add 2>&1
   Capture  golens check . 2>&1    -- stdout alone looks like a clean result
-  Exit     3 = ran and found diagnostics, 0 = found none
+  Exit     3 = ran and found a problem in the code
+           4 = a file could not be read, so the run is incomplete
   Limits   build constraints ignored; unused-import check is best-effort
+
+Exit 3 and exit 4 are different questions. 3 is about the source: fix the
+syntax, the import or the redeclaration. 4 is about the machine: a dangling
+symlink or a permission bit, not a defect to edit. When both occur, both
+are reported and the run exits 4 -- told 3, a caller would believe every
+file was readable.
 
 This is NOT a type checker. It validates syntax, import usage and duplicate
 declarations, and nothing else. Exit 0 does not mean the file compiles: an

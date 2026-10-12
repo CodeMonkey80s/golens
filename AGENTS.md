@@ -24,8 +24,8 @@ Feature-complete. There is no next session, and nothing is blocked.
 
 | Field | Value |
 |---|---|
-| Tests | 362 (incl. subtests), 6 packages with tests, all passing |
-| Test count by package | arch 6 · cli 90 · domain 15 · goast 55 · format 23 · usecase 173 |
+| Tests | 370 (incl. subtests), 6 packages with tests, all passing |
+| Test count by package | arch 6 · cli 98 · domain 15 · goast 55 · format 23 · usecase 173 |
 | Verify with | **`go test -count=1 ./...`** — see the caching trap below |
 | Toolchain | go1.27.2; no `golang.org/x` dependencies, only cobra and its two indirects |
 | Binary | 5.35 MiB stripped, budget 15 MiB |
@@ -150,6 +150,23 @@ ever looked at the human path. When you add a field that a declaration head depe
 `format.OutlineNode` too; `TestRenderersAgreeOnTheWholeCorpus` in `internal/format` then checks
 every declaration in this repository rather than the constructs a test remembered to name.
 
+**Two commands must not disagree about the same input, and an exit code is a claim.** `check`
+reported an unreadable file as a diagnostic and exited `3`; `outline` exited `4` for the identical
+file. The contract gives I/O failure exactly one code, and the wrong one is worse than a wrong
+number: `3` is what an agent reads as *"the code has problems, go and fix them"*, so a dangling
+symlink or a permission bit sent it after source that is not broken. The discriminator was already
+in the code — a syntax error carries a position, an I/O failure has none and reports `1:1` — but
+`Check` folded both into one slice and the distinction decided nothing. `ParseError.Located()`
+exposes it. Where both kinds occur, **4 wins**: told `3`, a caller would believe every file was
+readable.
+
+**A fix that breaks a documented stream contract is worse than the bug.** The first version of the
+above returned an ordinary error, which `Execute` prints to stderr — so `check --json` stopped
+keeping stderr empty, the contract it explicitly promises and warns you about ("do not add
+`2>&1`"). Errors now carry `Silent()`, so the usecase layer decides from the output format and the
+cli layer needs no knowledge of which command is running. The `--json` payload must still *carry*
+the unreadable file, or a consumer has exit 4 and nothing explaining it.
+
 **A summary must not assert a cause it did not check.** The skipped-files line mixed two failures
 — a file that does not parse and a file that cannot be opened — and said *"could not be parsed"*
 for both. An agent reading that goes and repairs the syntax of a file it cannot open, and has to
@@ -264,7 +281,7 @@ name. When adding a check, bias toward silence and say so in the comment.
 
 ## Acceptance criteria
 
-Twenty-two, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
+Twenty-three, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
 criteria; this is which test pins each.
 
 | # | Criterion | Evidence |
@@ -291,6 +308,7 @@ criteria; this is which test pins each.
 | A20 | A name in two packages of one directory is cross-package, not ambiguity; advice names a file, never a qualified name. A real duplicate stays ambiguous | `TestCrossPackageNameIsNotReportedAsAmbiguous`, `TestCrossPackageAdviceDoesNotRecommendAQualifiedName`, `TestSamePackageAmbiguityIsUnchanged`, `TestCrossPackageNameIsReportedAsSuchAtTheCLI`, `TestAdviceIsPrintedWithoutACandidateList` |
 | A21 | The skipped-files message has no welded separator and truncates like every other entry, at 0/1/3/5/6/14 failures | `TestSkippedFilesMessageSeparators`, `TestSkippedFilesMessageKeepsTheExactCount`, `TestSkippedFilesMessageIsDeterministic` |
 | A22 | The skipped-files summary never claims a parse failure for an unreadable file; each entry still carries its own cause | `TestSkippedFilesSummaryDoesNotClaimAParseFailure` |
+| A23 | `check` and `outline` agree on the exit code for the same unreadable file; code findings still exit 3; 4 wins when both occur; `--json` keeps the file in the payload and stderr empty | `TestCheckAndOutlineAgreeOnAnIOFailure`, `TestCheckKeepsExitThreeForFindingsAboutCode`, `TestCheckExitsFourWhenBothKindsOccur`, `TestCheckJSONCarriesTheUnreadableFile`, `TestUnreadableFileIsNotReportedTwice` |
 
 A13's positive control is the part that matters: a rule that suppressed every duplicate would
 otherwise pass the five variant cases. `internal/cli/spec_test.go` adds 11 more, each citing the
@@ -382,7 +400,7 @@ any command's help should be followed by `documentation/COLDSTART.md`.
 | Document | Read it for |
 |---|---|
 | `documentation/specification.md` | **Normative.** Change this first, then the code |
-| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A22 stated |
+| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A23 stated |
 | `documentation/AGENTS.template.md` | Copy into a target repo's root so its agents inherit the traps |
 | `TESTING.md` | The 18-case manual plan — run it after any engine, check or formatter change |
 | `documentation/COLDSTART.md` | Tests the instructions rather than the tool. Run after changing help text |

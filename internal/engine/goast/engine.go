@@ -38,7 +38,11 @@ func New() *Engine { return &Engine{} }
 func (e *Engine) Parse(path string) (domain.Document, error) {
 	src, err := os.ReadFile(path)
 	if err != nil {
-		return domain.Document{}, fmt.Errorf("read %s: %w", path, err)
+		// The path is not added here. os.ReadFile's error already names it -- "open
+		// /abs/path: no such file or directory" -- and ParseError prepends the path a caller
+		// asked about, so wrapping it as well printed the same path three times in one
+		// diagnostic. The caller already knows which file it asked to read.
+		return domain.Document{}, err
 	}
 
 	doc, err := e.ParseSource(path, src)

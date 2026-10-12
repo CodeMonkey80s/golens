@@ -98,7 +98,13 @@ func Execute(root *cobra.Command) int {
 	// Exit 3 is a successful check that found problems, so the message goes to stderr and
 	// the caller reads the diagnostics that were already written there. Every other code
 	// means the command did not do its job and the message explains why.
-	if code != int(domain.ExitDiagnostics) {
+	//
+	// A silent error is the exception. `check --json` promises stderr stays empty so the
+	// payload pipes cleanly, and telling it not to add 2>&1; a failure that writes there
+	// anyway breaks the documented contract exactly when the caller is most likely to be
+	// parsing. The exit code still carries the news, and every silent error has already
+	// put its detail where the output format puts it.
+	if code != int(domain.ExitDiagnostics) && !isSilent(classified) {
 		fmt.Fprintln(root.ErrOrStderr(), "golens: "+classified.Error()) //nolint:errcheck // diagnostic write; a failure here is not actionable
 	}
 	if amb, ok := classified.(AmbiguousError); ok {
@@ -115,6 +121,16 @@ func Execute(root *cobra.Command) int {
 	}
 
 	return code
+}
+
+// isSilent reports whether err asks not to be written to stderr.
+//
+// The usecase layer sets this so the cli layer need not know which command is running: a
+// `check --json` failure is already fully described by its payload and its exit code, and the
+// stream contract says stderr stays empty.
+func isSilent(err error) bool {
+	s, ok := err.(interface{ Silent() bool })
+	return ok && s.Silent()
 }
 
 // AmbiguousError exposes the candidate list of an ambiguous-symbol error without the cli

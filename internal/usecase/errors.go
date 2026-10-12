@@ -163,6 +163,40 @@ func (e CrossPackageSymbol) Advice() string {
 // corrects its input rather than retrying the same command.
 func (e CrossPackageSymbol) IsNotFound() bool { return true }
 
+// UnreadableFilesError reports files that could not be opened at all, as distinct from files
+// that were opened and did not parse.
+//
+// It carries no per-file listing. The diagnostic for each unreadable file has already been
+// written — to stderr in the human form, and into the diagnostics array under --json, so a
+// machine consumer is not left with exit 4 and a payload that silently omits the file. Naming
+// them a second time here printed the same line twice on stderr, which reads as two failures
+// where there was one.
+//
+// Its job is the exit code. 3 means "check ran and found something about the code"; a file that
+// could not be opened is not that, and the documented code for it is 4. outline and check were
+// disagreeing about the same file before this type existed.
+type UnreadableFilesError struct {
+	// Count is how many files could not be opened.
+	Count int
+	// Total is how many files the run covered.
+	Total int
+	// Quiet asks the CLI not to write this to stderr.
+	//
+	// Set when the output format has already said everything. Under --json the per-file
+	// diagnostic is in the payload and the exit code is 4, and the documented stream contract
+	// is that stderr stays empty — the caller is told not to add 2>&1. In the human form the
+	// summary is worth keeping: it is the difference between one unreadable file and a tree
+	// with several.
+	Quiet bool
+}
+
+func (e UnreadableFilesError) Error() string {
+	return fmt.Sprintf("%d of %d files could not be read", e.Count, e.Total)
+}
+
+// Silent reports whether the CLI should keep this off stderr. See Quiet.
+func (e UnreadableFilesError) Silent() bool { return e.Quiet }
+
 // NotFoundSymbol reports a name that matched nothing.
 type NotFoundSymbol string
 
