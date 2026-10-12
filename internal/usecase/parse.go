@@ -79,6 +79,12 @@ type SkippedFilesError struct {
 // Each entry renders the engine's own message, which carries the position for a parse failure
 // and the path alone for an I/O failure. Printing only the paths would leave the caller with no
 // way to tell a syntax error from an unreadable file without re-running golens per file.
+//
+// The entries are collected and joined rather than written one at a time. Writing them
+// incrementally meant the separator was emitted before each entry and the truncation marker was
+// appended after the loop, so a run past maxListedFailures produced "...found '{';: next..." —
+// a semicolon welded to a colon — and then a comma where the fifth entry should have ended. The
+// defect only appeared beyond five failures, so no test that named fewer files could see it.
 func (e SkippedFilesError) Error() string {
 	var b strings.Builder
 	// The wording is command-neutral on purpose. outline and get share this type, and an
@@ -87,16 +93,27 @@ func (e SkippedFilesError) Error() string {
 	// handed a symbol.
 	fmt.Fprintf(&b, "%d of %d files could not be parsed and were skipped",
 		len(e.Failures), e.Total)
-	for i, f := range e.Failures {
-		if i == maxListedFailures {
-			fmt.Fprintf(&b, ", and %d more", len(e.Failures)-maxListedFailures)
-			break
-		}
-		if i > 0 {
-			b.WriteString(";")
-		}
-		b.WriteString(": " + f.Error())
+
+	listed := e.Failures
+	extra := 0
+	if len(listed) > maxListedFailures {
+		listed = listed[:maxListedFailures]
+		extra = len(e.Failures) - maxListedFailures
 	}
+
+	parts := make([]string, 0, len(listed)+1)
+	for _, f := range listed {
+		parts = append(parts, f.Error())
+	}
+	if extra > 0 {
+		parts = append(parts, fmt.Sprintf("and %d more", extra))
+	}
+	if len(parts) == 0 {
+		return b.String()
+	}
+
+	b.WriteString(": ")
+	b.WriteString(strings.Join(parts, "; "))
 	return b.String()
 }
 

@@ -24,8 +24,8 @@ Feature-complete. There is no next session, and nothing is blocked.
 
 | Field | Value |
 |---|---|
-| Tests | 350 (incl. subtests), 6 packages with tests, all passing |
-| Test count by package | arch 6 · cli 90 · domain 15 · goast 55 · format 23 · usecase 161 |
+| Tests | 359 (incl. subtests), 6 packages with tests, all passing |
+| Test count by package | arch 6 · cli 90 · domain 15 · goast 55 · format 23 · usecase 170 |
 | Verify with | **`go test -count=1 ./...`** — see the caching trap below |
 | Toolchain | go1.27.2; no `golang.org/x` dependencies, only cobra and its two indirects |
 | Binary | 5.35 MiB stripped, budget 15 MiB |
@@ -150,6 +150,16 @@ ever looked at the human path. When you add a field that a declaration head depe
 `format.OutlineNode` too; `TestRenderersAgreeOnTheWholeCorpus` in `internal/format` then checks
 every declaration in this repository rather than the constructs a test remembered to name.
 
+**A boundary nobody crosses is a boundary nobody checks.** `SkippedFilesError` wrote its entries
+one at a time, each carrying its own separator, and appended the truncation marker after the loop.
+Past five failures that produced `...found '{';: next` — a semicolon welded to a colon — and a
+comma where the fifth entry ended, so `, and N more` was glued to the last filename. It survived
+because the defect needs **more than** `maxListedFailures` failures, and every test that touched
+the message named one or two. Entries are now collected and joined, so the marker is one of the
+joined parts and cannot be separated differently from the rest. The v0.1.2 commit reworded this
+message for `get` and kept the separator logic without ever rendering past five files — reworking
+a line of output and not exercising the branch you reworked is how the next one ships broken.
+
 **`check` and `get` must agree about what a conflict is.** `check` keys its namespace on directory
 *and* package name, because a directory may hold an external test `package p_test` beside
 `package p`. `Resolve` had no such notion, so a name declared once in each — legal Go, no
@@ -246,7 +256,7 @@ name. When adding a check, bias toward silence and say so in the comment.
 
 ## Acceptance criteria
 
-Twenty, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
+Twenty-one, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
 criteria; this is which test pins each.
 
 | # | Criterion | Evidence |
@@ -271,6 +281,7 @@ criteria; this is which test pins each.
 | A18 | Every struct field appears in the outline, one node per name, each with bounds selecting its own name | `TestMultiNameStructFieldsAreNotDropped`, `TestMultiNameFieldsGetTheirOwnBounds`, `TestEmbeddedFieldIsStillOneNode` |
 | A19 | An interface lists its method set, spelled as source spells it (`Close() error`, no `func`); an embedded interface is listed, a type union is not | `TestInterfaceMethodSetIsListed`, `TestEmbeddedInterfaceIsListedAndUnionsAreNot`, `TestInterfaceMethodsHaveTheirOwnBounds`, `TestNonStructTypeMembersStayEmpty` |
 | A20 | A name in two packages of one directory is cross-package, not ambiguity; advice names a file, never a qualified name. A real duplicate stays ambiguous | `TestCrossPackageNameIsNotReportedAsAmbiguous`, `TestCrossPackageAdviceDoesNotRecommendAQualifiedName`, `TestSamePackageAmbiguityIsUnchanged`, `TestCrossPackageNameIsReportedAsSuchAtTheCLI`, `TestAdviceIsPrintedWithoutACandidateList` |
+| A21 | The skipped-files message has no welded separator and truncates like every other entry, at 0/1/3/5/6/14 failures | `TestSkippedFilesMessageSeparators`, `TestSkippedFilesMessageKeepsTheExactCount`, `TestSkippedFilesMessageIsDeterministic` |
 
 A13's positive control is the part that matters: a rule that suppressed every duplicate would
 otherwise pass the five variant cases. `internal/cli/spec_test.go` adds 11 more, each citing the
@@ -362,7 +373,7 @@ any command's help should be followed by `documentation/COLDSTART.md`.
 | Document | Read it for |
 |---|---|
 | `documentation/specification.md` | **Normative.** Change this first, then the code |
-| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A20 stated |
+| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A21 stated |
 | `documentation/AGENTS.template.md` | Copy into a target repo's root so its agents inherit the traps |
 | `TESTING.md` | The 18-case manual plan — run it after any engine, check or formatter change |
 | `documentation/COLDSTART.md` | Tests the instructions rather than the tool. Run after changing help text |
