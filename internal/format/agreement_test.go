@@ -271,7 +271,7 @@ func TestCorpusContainsTheConstructsThatBroke(t *testing.T) {
 	root := repoRoot(t)
 	fset := token.NewFileSet()
 
-	var genericType, genericFunc, genericReceiver, alias, embedded, method int
+	var genericType, genericFunc, genericReceiver, alias, embedded, multiNameField, method int
 	for _, path := range goFilesUnder(t, root) {
 		f, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
@@ -298,12 +298,16 @@ func TestCorpusContainsTheConstructsThatBroke(t *testing.T) {
 					if s.Assign.IsValid() {
 						alias++
 					}
-					// Embedded fields live on the struct type, not in GenDecl.Specs: a
-					// field with no name is embedded.
+					// Embedded and multi-name fields live on the struct type, not in
+					// GenDecl.Specs. "A, B int" is one ast.Field holding two names, and
+					// emitting one node for it dropped B from the outline entirely.
 					if st, ok := s.Type.(*ast.StructType); ok && st.Fields != nil {
 						for _, f := range st.Fields.List {
-							if len(f.Names) == 0 {
+							switch {
+							case len(f.Names) == 0:
 								embedded++
+							case len(f.Names) > 1:
+								multiNameField++
 							}
 						}
 					}
@@ -325,6 +329,7 @@ func TestCorpusContainsTheConstructsThatBroke(t *testing.T) {
 		{"methods on generic receivers", genericReceiver},
 		{"type aliases", alias},
 		{"embedded fields", embedded},
+		{"multi-name fields", multiNameField},
 		{"methods", method},
 	} {
 		if c.got == 0 {

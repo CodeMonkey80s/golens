@@ -120,6 +120,11 @@ it is walked, so a symlinked source tree is outlined as the directory of files i
 reported as empty. Paths in the output start from the directory as named, not from its resolved
 target, so a caller can open what it was shown. Symlinks *within* a tree are not followed.
 
+**Every struct field is listed, one entry per name.** A field written with several names,
+`A, B int`, declares two fields and produces two entries — in the human, JSON and compact
+renderings alike. Each entry carries the span of its own name, so the two are independently
+addressable rather than sharing the bounds of the whole line.
+
 ### 2.2 `golens get`
 
 Extracts the exact source code content for a specific AST symbol.

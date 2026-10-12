@@ -40,6 +40,7 @@ the choice is the one that cannot be misread and cannot silently corrupt a file.
 | D24 | The version is stamped at link time; the tag is its only source | `const Version = "0.1.0"` reported v0.1.0 to every build ever made, including those after v0.2.0 |
 | D25 | `get` skips unparseable files, returns the symbol, and still exits 4 naming them | One broken neighbour made every symbol in a directory unreachable; `outline` and `check` already survived this |
 | D26 | A directory argument is resolved before being walked; symlinks inside are not | `os.Stat` follows a link and `WalkDir` does not, so a symlinked tree reported "no .go files found", exit 2 |
+| D27 | One outline node per field name, each with its own span | `A, B int` is one `ast.Field`, so `B` was absent from every rendering; the third omission defect, after the alias `=` and `is_alias` |
 
 ---
 
@@ -363,6 +364,40 @@ the point: the caller branched on 4 should know the tree was not fully readable.
 quietly returns one match from a directory it could only read half of is the failure mode this
 tool exists to prevent — it is a confident answer built on an incomplete search.
 
+### D27 · One outline node per field name, not per `ast.Field`
+
+`A, B int` is a single `ast.Field` holding two names. `typeChildren` emitted one node for it and
+took `field.Names[0]`, so **`B` did not appear in the outline at all** — not mis-rendered,
+absent. The same held for every render: human, JSON and compact all omitted it, because the data
+was never built.
+
+It matters more than a display defect because the field list is what a caller reads before
+editing a struct. A dropped field is worse than a wrong line number: an agent working from this
+output believes the struct has fewer fields than it has, and there is nothing in the output to
+contradict it.
+
+The tell was an asymmetry. `fieldNodes`, which renders function parameters, already looped over
+every name, so `func F(a, b int)` correctly showed two children while `struct { A, B int }`
+showed one. Same source construct, same package, two behaviours. The sibling function was the
+specification for the fix.
+
+Each name now gets its own node **and its own span**, which matters independently: one node for
+the whole `ast.Field` would give `A` and `B` identical bounds, and two fields with identical
+bounds is the addressability problem a grouped `const` has. `TestMultiNameFieldsGetTheirOwnBounds`
+asserts the byte invariant at field level — each span must select exactly its own name from the
+real source.
+
+This is the **third defect in this project to work by omission**, after the alias `=` and the
+dropped `is_alias`. All three shipped because the corpus happened not to contain the construct:
+`internal/constructs` had no multi-name field, and `TestRenderersAgreeOnTheWholeCorpus` passed
+over 1,300 declarations while proving nothing about one. `Multi` now declares it, and
+`TestCorpusContainsTheConstructsThatBroke` counts `multiNameField` alongside generics, aliases
+and embedded fields, so removing the construct fails a test rather than silently narrowing the
+walk.
+
+**The rule: when the AST can hand you several declarations in one node, ask how many, and emit
+one of yours per declaration — with bounds that select it.**
+
 ### D26 · A directory argument is resolved before it is walked
 
 `Files` asked `os.Stat` whether the target was a directory — which follows a symlink — and then
@@ -427,6 +462,7 @@ able to open the paths it was shown from the tree it asked about.
 | A15 | No release number is stated in the source. A binary stamped with `-X …Version=<v>` reports exactly `<v>`, and one built without a stamp reports the version the toolchain recorded. |
 | A16 | `get` over a directory containing an unparseable file still returns a symbol that resolves, exits 4, and names the skipped files; a miss still exits 2 and says the search was incomplete. |
 | A17 | A symlinked directory argument is walked, and paths are reported under the name the caller used. Symlinks inside a tree are not followed. |
+| A18 | Every struct field appears in the outline, one node per name, and each node's bounds select exactly its own name from the source. |
 
 ---
 

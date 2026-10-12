@@ -402,6 +402,13 @@ func (b *builder) nodes(file *ast.File) []domain.Node {
 }
 
 // typeChildren exposes struct fields at depth 2, per specification 2.1.
+//
+// One node is emitted per field NAME, not per ast.Field. "A, B int" is a single ast.Field
+// holding two names, and taking only the first dropped B from the outline entirely — it was
+// absent from the human form, the JSON form and the compact form alike, so a caller reading
+// the field list before editing a struct was told it had fewer fields than it has. Parameters
+// were already handled per name by fieldNodes, which is why the bug showed up in structs and
+// not in signatures.
 func (b *builder) typeChildren(expr ast.Expr) []domain.Node {
 	st, ok := expr.(*ast.StructType)
 	if !ok || st.Fields == nil || st.Fields.NumFields() == 0 {
@@ -410,20 +417,30 @@ func (b *builder) typeChildren(expr ast.Expr) []domain.Node {
 
 	out := make([]domain.Node, 0, st.Fields.NumFields())
 	for _, field := range st.Fields.List {
-		node := domain.Node{
-			Kind:   domain.KindField,
-			Bounds: nodeBounds(b.tf, field.Pos(), field.End()),
-		}
+		detail := exprString(field.Type)
+
 		if len(field.Names) == 0 {
 			// Embedded field: the type expression is the whole declaration, so it is
 			// the name and there is no separate type to show. Repeating it as Detail
 			// would render "sync.Mutex sync.Mutex", which is not valid Go.
-			node.Name = exprString(field.Type)
-		} else {
-			node.Name = field.Names[0].Name
-			node.Detail = exprString(field.Type)
+			out = append(out, domain.Node{
+				Name:   detail,
+				Kind:   domain.KindField,
+				Bounds: nodeBounds(b.tf, field.Pos(), field.End()),
+			})
+			continue
 		}
-		out = append(out, node)
+
+		// Each name gets its own span, so the fields stay independently addressable and
+		// two fields written on one line are not reported with the same bounds.
+		for _, name := range field.Names {
+			out = append(out, domain.Node{
+				Name:   name.Name,
+				Kind:   domain.KindField,
+				Detail: detail,
+				Bounds: nodeBounds(b.tf, name.Pos(), name.End()),
+			})
+		}
 	}
 	return out
 }

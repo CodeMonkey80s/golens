@@ -39,6 +39,15 @@ type Pair[K comparable, V any] struct {
 	Val V
 }
 
+// Multi names several fields in one ast.Field: "A, B int" is two fields the parser hands
+// over as one node, and taking only the first name dropped B from every outline. Nothing
+// else in this repository used the form, which is exactly why 333 tests passed while the
+// field list lied.
+type Multi struct {
+	A, B, C int
+	Named   string
+}
+
 // Alias and Defined share an underlying type and must not render identically. An alias is
 // interchangeable with its target; a defined type is not, so dropping the "=" compiles and
 // means something else.

@@ -24,11 +24,11 @@ Feature-complete. There is no next session, and nothing is blocked.
 
 | Field | Value |
 |---|---|
-| Tests | 333 (incl. subtests), 6 packages with tests, all passing |
-| Test count by package | arch 6 · cli 87 · domain 15 · goast 45 · format 23 · usecase 157 |
+| Tests | 336 (incl. subtests), 6 packages with tests, all passing |
+| Test count by package | arch 6 · cli 87 · domain 15 · goast 48 · format 23 · usecase 157 |
 | Verify with | **`go test -count=1 ./...`** — see the caching trap below |
 | Toolchain | go1.27.2; no `golang.org/x` dependencies, only cobra and its two indirects |
-| Binary | 5.32 MiB stripped, budget 15 MiB |
+| Binary | 5.33 MiB stripped, budget 15 MiB |
 | Parse budget | ~22 µs typical, ~273 µs largest file here (budget 5 ms P95) |
 | Lint | `golangci-lint run ./...` — 0 issues, includes `revive` `var-naming` |
 | Self-check | `golens check ./internal` and `./cmd` both exit 0 |
@@ -150,6 +150,18 @@ ever looked at the human path. When you add a field that a declaration head depe
 `format.OutlineNode` too; `TestRenderersAgreeOnTheWholeCorpus` in `internal/format` then checks
 every declaration in this repository rather than the constructs a test remembered to name.
 
+**A missing field is worse than a wrong line number.** `typeChildren` emitted one node per
+`ast.Field`, but `A, B int` is one `ast.Field` holding two names. `B` was absent from the human
+outline, the JSON outline and the compact outline alike — not mis-rendered, *absent* — so the
+field list an agent reads before editing a struct simply disagreed with the struct. Parameters
+were already handled per name by `fieldNodes`, which is why the tell was the asymmetry between
+the two: the same source construct worked in a signature and not in a struct. This is the third
+defect in this repository to work by **omission** (after the alias `=` and the dropped
+`is_alias`), and the third to ship because the corpus did not contain the construct. That is why
+`internal/constructs` now declares a multi-name field, and why
+`TestCorpusContainsTheConstructsThatBroke` counts `multiNameField` alongside the rest — otherwise
+the cross-renderer walk passes at 1,300 declarations while proving nothing about it.
+
 **An invariant nobody enumerates is an invariant nobody checks.** The alias `=` broke twice — once
 in `Declaration`, once in the JSON path — because the tests named the constructs they remembered.
 `TestRenderersAgreeOnTheWholeCorpus` walks every non-test `.go` file here and compares the two
@@ -198,7 +210,7 @@ name. When adding a check, bias toward silence and say so in the comment.
 
 ## Acceptance criteria
 
-Seventeen, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
+Eighteen, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
 criteria; this is which test pins each.
 
 | # | Criterion | Evidence |
@@ -211,7 +223,7 @@ criteria; this is which test pins each.
 | A6 | `get --bounds-only` ≡ `bounds` | `TestSpecBoundsOnlyMatchesBounds`, plus format and usecase level |
 | A7 | golens never reports style | `TestCheckDoesNotJudgeStyle`, `TestCheckAcrossFilesReportsNothingStructural` |
 | A8 | Parse < 5 ms P95 | `TestParseP95UnderBudget` |
-| A9 | Binary < 15 MiB | 5.32 MiB, gated in CI |
+| A9 | Binary < 15 MiB | 5.33 MiB, gated in CI |
 | A10 | No cgo | `TestNoCgoDependency` |
 | A11 | `domain`/`usecase` import nothing external | `internal/arch` |
 | A12 | 12 fixture classes | `TestFixtureClasses` |
@@ -220,6 +232,7 @@ criteria; this is which test pins each.
 | A15 | No release number in the source; the tag is the only source | `TestVersionIsInjectedByLdflags` (builds with a stamp, runs the binary), `TestVersionDefaultCarriesNoReleaseNumber`, `TestReleaseVersionPrefersTheLinkerValue`, `TestReleaseVersionFallsBackToBuildMetadata` |
 | A16 | `get` survives a broken neighbour: returns the symbol, exits 4, names the skips; a miss still exits 2 and says the search was incomplete | `TestGetSkipsUnparseableFilesRatherThanAborting`, `TestGetSkipsUnparseableFiles`, `TestNotFoundNamesSkipsOnlyWhenItMust` |
 | A17 | A symlinked directory is walked; paths reported under the name given; inner symlinks still not followed | `TestSymlinkedDirectoryIsWalked`, `TestSymlinkedDirectoryIsNotEmpty` |
+| A18 | Every struct field appears in the outline, one node per name, each with bounds selecting its own name | `TestMultiNameStructFieldsAreNotDropped`, `TestMultiNameFieldsGetTheirOwnBounds`, `TestEmbeddedFieldIsStillOneNode` |
 
 A13's positive control is the part that matters: a rule that suppressed every duplicate would
 otherwise pass the five variant cases. `internal/cli/spec_test.go` adds 11 more, each citing the
@@ -311,7 +324,7 @@ any command's help should be followed by `documentation/COLDSTART.md`.
 | Document | Read it for |
 |---|---|
 | `documentation/specification.md` | **Normative.** Change this first, then the code |
-| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A17 stated |
+| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A18 stated |
 | `documentation/AGENTS.template.md` | Copy into a target repo's root so its agents inherit the traps |
 | `TESTING.md` | The 18-case manual plan — run it after any engine, check or formatter change |
 | `documentation/COLDSTART.md` | Tests the instructions rather than the tool. Run after changing help text |
