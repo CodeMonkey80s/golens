@@ -32,7 +32,7 @@ func deps(t *testing.T, pkg string) []string {
 	}
 
 	var external []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -63,7 +63,7 @@ func depsIncludingStdlib(t *testing.T, pkg string) []string {
 	}
 
 	var all []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			all = append(all, line)
 		}
@@ -203,7 +203,7 @@ func TestNoCgoDependency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("go list: %v", err)
 	}
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		if strings.TrimSpace(line) == "runtime/cgo" {
 			t.Error("build depends on runtime/cgo; the specification requires CGO_ENABLED=0")
 		}

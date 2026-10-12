@@ -471,7 +471,7 @@ func TestOutlineCompactFlag(t *testing.T) {
 	}
 
 	// The first line carries path and package, tab separated.
-	first := strings.SplitN(compact, "\n", 2)[0]
+	first, _, _ := strings.Cut(compact, "\n")
 	if !strings.Contains(first, "user.go") || !strings.Contains(first, "store") {
 		t.Errorf("compact first line = %q, want path and package", first)
 	}

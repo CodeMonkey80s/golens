@@ -23,7 +23,7 @@ import (
 func buildConstraintText(src []byte) string {
 	var goBuild, plusBuild constraint.Expr
 
-	for _, line := range strings.Split(string(src), "\n") {
+	for line := range strings.SplitSeq(string(src), "\n") {
 		// Constraints live in the header comment block; the package clause ends the search.
 		if strings.HasPrefix(line, "package ") {
 			break

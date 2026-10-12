@@ -210,10 +210,7 @@ func parseOne(engine domain.Engine, path string) (domain.Document, ParseError) {
 // supplies the happens-before edge that makes them safe to read. The token channel caps parses
 // in flight without a semaphore type.
 func parseConcurrent(engine domain.Engine, paths []string, docs []domain.Document, errs []ParseError) ([]domain.Document, []ParseError) {
-	limit := runtime.GOMAXPROCS(0)
-	if limit > len(paths) {
-		limit = len(paths)
-	}
+	limit := min(runtime.GOMAXPROCS(0), len(paths))
 
 	var wg sync.WaitGroup
 	tokens := make(chan struct{}, limit)

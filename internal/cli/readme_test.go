@@ -141,7 +141,7 @@ func blockAfter(t *testing.T, doc, prompt string) string {
 	}
 
 	var out []string
-	for _, line := range strings.Split(rest, "\n") {
+	for line := range strings.SplitSeq(rest, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(line, "```") {
 			break // end of the fence

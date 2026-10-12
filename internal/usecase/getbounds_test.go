@@ -449,7 +449,7 @@ func declarationPrefix(name, slice string) string {
 		return ""
 	case strings.Contains(name, "."):
 		// A method: the receiver is not part of the span, so it must be restored.
-		receiver := strings.SplitN(name, ".", 2)[0]
+		receiver, _, _ := strings.Cut(name, ".")
 		return "func (recv *" + receiver + ") "
 	default:
 		return "type "

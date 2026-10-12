@@ -1,6 +1,7 @@
 package goast
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -51,7 +52,6 @@ func TestBoundsAreHalfOpen(t *testing.T) {
 	}
 
 	for _, sym := range doc.Symbols {
-		sym := sym
 		t.Run(sym.QualifiedName, func(t *testing.T) {
 			src := sym.Bounds.Source([]byte(handChecked))
 			if src == "" {
@@ -596,10 +596,5 @@ func names(doc domain.Document) []string {
 }
 
 func contains(haystack []string, needle string) bool {
-	for _, h := range haystack {
-		if h == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(haystack, needle)
 }

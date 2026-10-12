@@ -52,7 +52,7 @@ func TestAdviceIsPrintedWithoutACandidateList(t *testing.T) {
 	_, stderr, _ := run(t, "get", "A", dir)
 
 	advised := 0
-	for _, line := range strings.Split(stderr, "\n") {
+	for line := range strings.SplitSeq(stderr, "\n") {
 		if strings.Contains(line, "pass ") {
 			advised++
 		}

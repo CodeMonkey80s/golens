@@ -306,7 +306,7 @@ func TestCompactHasNoDuplicateRecords(t *testing.T) {
 	}
 
 	seen := map[string]int{}
-	for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimRight(buf.String(), "\n"), "\n") {
 		seen[line]++
 	}
 	for line, n := range seen {
@@ -379,16 +379,16 @@ func TestJSONDepthMatchesHumanDepth(t *testing.T) {
 // since they reach the payload as a separate "imports" array rather than as nodes.
 func humanDeclarationBullets(out string) []string {
 	var bullets []string
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if !strings.HasPrefix(line, "  • ") {
 			continue
 		}
 		text := strings.TrimPrefix(line, "  • ")
-		i := strings.Index(text, " (line")
-		if i < 0 {
+		before, _, ok := strings.Cut(text, " (line")
+		if !ok {
 			continue
 		}
-		bullets = append(bullets, text[:i])
+		bullets = append(bullets, before)
 	}
 	return bullets
 }

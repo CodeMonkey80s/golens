@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -105,12 +106,7 @@ func skipDir(name string) bool {
 	if strings.HasPrefix(name, ".") {
 		return true
 	}
-	for _, skip := range skippedDirs {
-		if name == skip {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(skippedDirs, name)
 }
 
 // statFile validates that target is a single Go file, returning it unchanged.

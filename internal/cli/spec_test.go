@@ -364,9 +364,9 @@ func firstKey(payload string) string {
 		return ""
 	}
 	rest := trimmed[start+1:]
-	end := strings.Index(rest, `"`)
-	if end < 0 {
+	before, _, ok := strings.Cut(rest, `"`)
+	if !ok {
 		return ""
 	}
-	return rest[:end]
+	return before
 }

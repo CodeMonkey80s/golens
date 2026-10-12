@@ -304,7 +304,7 @@ func (p *packageSymbols) duplicates() []Diagnostic {
 // file earlier in the walk is the real conflict.
 func (p *packageSymbols) firstConflict(ns string, sites []symbolSite, i int) (int, bool) {
 	here := p.builtIn[ns][sites[i].path]
-	for j := 0; j < i; j++ {
+	for j := range i {
 		if couldCoBuild(here, p.builtIn[ns][sites[j].path]) {
 			return j, true
 		}

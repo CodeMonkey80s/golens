@@ -79,7 +79,7 @@ func TestRepositoryPassesItsOwnCheck(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err = usecase.Check(goast.New(), root, &stdout, &stderr, format.Options{})
 	if err != nil {
-		for _, line := range strings.Split(strings.TrimRight(stderr.String(), "\n"), "\n") {
+		for line := range strings.SplitSeq(strings.TrimRight(stderr.String(), "\n"), "\n") {
 			if strings.Contains(line, "/testdata/") {
 				continue // fixtures are intentionally imperfect
 			}

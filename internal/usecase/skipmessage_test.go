@@ -178,7 +178,7 @@ func TestSkippedFilesMessageIsDeterministic(t *testing.T) {
 	err := SkippedFilesError{Failures: failures, Total: 12}
 
 	first := err.Error()
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		if got := err.Error(); got != first {
 			t.Fatalf("message changed between calls:\n%s\n%s", first, got)
 		}

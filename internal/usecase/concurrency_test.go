@@ -57,7 +57,7 @@ func TestConcurrentCheckMatchesSerial(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		name := fmt.Sprintf("f%02d.go", i)
 		// Every file has an unused import, so diagnostics are plentiful and their order
 		// depends on traversal, which is exactly what concurrency could disturb.
@@ -88,7 +88,7 @@ func TestConcurrentDeterministicAcrossRuns(t *testing.T) {
 	dir := buildTree(t, 16)
 
 	first := outlineWithProcs(t, dir, usecase.DepthUnlimited, format.Options{}, runtime.GOMAXPROCS(0))
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		again := outlineWithProcs(t, dir, usecase.DepthUnlimited, format.Options{}, runtime.GOMAXPROCS(0))
 		if again != first {
 			t.Fatalf("run %d differed from the first:\n%s", i, firstDifference(first, again))
@@ -126,12 +126,12 @@ func TestConcurrentReportsParseFailureDeterministically(t *testing.T) {
 	// Two broken files, so which one is reported first is a real question.
 	testfixture.Write(t, dir, "a_broken.go", testfixture.Broken)
 	testfixture.Write(t, dir, "b_broken.go", testfixture.Broken)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		testfixture.Write(t, dir, fmt.Sprintf("ok%02d.go", i), fmt.Sprintf("package p\n\nfunc F%02d() {}\n", i))
 	}
 
 	first := ""
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		var buf bytes.Buffer
 		err := usecase.Outline(goast.New(), dir, usecase.DepthUnlimited, &buf, format.Options{})
 
@@ -197,7 +197,7 @@ func buildTree(t *testing.T, n int) string {
 	t.Helper()
 
 	dir := t.TempDir()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		// Names are zero-padded so lexical order matches numeric order, which keeps the
 		// expected ordering obvious when a test fails.
 		name := fmt.Sprintf("f%03d.go", i)

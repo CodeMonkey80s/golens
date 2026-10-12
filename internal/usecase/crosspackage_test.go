@@ -32,8 +32,7 @@ func TestCrossPackageNameIsNotReportedAsAmbiguous(t *testing.T) {
 		t.Fatalf("err = %v (%T), want CrossPackageSymbol, not AmbiguousSymbol", err, err)
 	}
 
-	var amb usecase.AmbiguousSymbol
-	if errors.As(err, &amb) {
+	if _, ok := errors.AsType[usecase.AmbiguousSymbol](err); ok {
 		t.Error("the error also satisfies AmbiguousSymbol; that type claims a conflict that does not exist")
 	}
 
@@ -65,8 +64,7 @@ func TestCrossPackageAdviceDoesNotRecommendAQualifiedName(t *testing.T) {
 	var out bytes.Buffer
 	err := usecase.Get(goast.New(), "A", dir, true, &out, format.Options{})
 
-	var cross usecase.CrossPackageSymbol
-	if !errors.As(err, &cross) {
+	if _, ok := errors.AsType[usecase.CrossPackageSymbol](err); !ok {
 		t.Fatalf("err = %v (%T), want CrossPackageSymbol", err, err)
 	}
 

@@ -159,7 +159,7 @@ func TestUnreadableFileIsNotReportedTwice(t *testing.T) {
 	// diagnostic line -- the file field and the underlying os error both carry it -- so the
 	// assertion is about which lines report it, not how often the path is spelled.
 	var reporting []string
-	for _, line := range strings.Split(strings.TrimSpace(stderr), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(stderr), "\n") {
 		if strings.Contains(line, "dangling.go") && !strings.HasPrefix(line, "golens:") {
 			reporting = append(reporting, line)
 		}
@@ -169,7 +169,7 @@ func TestUnreadableFileIsNotReportedTwice(t *testing.T) {
 	}
 
 	summary := ""
-	for _, line := range strings.Split(strings.TrimSpace(stderr), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(stderr), "\n") {
 		if strings.HasPrefix(line, "golens:") {
 			summary = line
 		}

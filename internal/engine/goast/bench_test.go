@@ -3,6 +3,7 @@ package goast
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -60,7 +61,7 @@ func TestParseP95UnderBudget(t *testing.T) {
 	const iterations = 50
 	samples := make([]time.Duration, 0, iterations)
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		start := time.Now()
 		if _, err := engine.ParseSource("user.go", src); err != nil {
 			t.Fatalf("ParseSource: %v", err)
@@ -68,7 +69,7 @@ func TestParseP95UnderBudget(t *testing.T) {
 		samples = append(samples, time.Since(start))
 	}
 
-	sort.Slice(samples, func(a, b int) bool { return samples[a] < samples[b] })
+	slices.Sort(samples)
 
 	// P95 of 50 samples is the 48th, using nearest-rank indexing.
 	p95 := samples[(iterations*95)/100-1]
