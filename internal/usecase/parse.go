@@ -81,7 +81,11 @@ type SkippedFilesError struct {
 // way to tell a syntax error from an unreadable file without re-running golens per file.
 func (e SkippedFilesError) Error() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d of %d files could not be parsed and are missing from the outline",
+	// The wording is command-neutral on purpose. outline and get share this type, and an
+	// earlier version said "missing from the outline" here — which is accurate for outline
+	// and nonsense under get, where nothing is outlined at all and the caller has just been
+	// handed a symbol.
+	fmt.Fprintf(&b, "%d of %d files could not be parsed and were skipped",
 		len(e.Failures), e.Total)
 	for i, f := range e.Failures {
 		if i == maxListedFailures {

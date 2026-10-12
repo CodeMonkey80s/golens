@@ -24,8 +24,8 @@ Feature-complete. There is no next session, and nothing is blocked.
 
 | Field | Value |
 |---|---|
-| Tests | 314 (incl. subtests), 6 packages with tests, all passing |
-| Test count by package | arch 6 · cli 81 · domain 15 · goast 45 · format 23 · usecase 144 |
+| Tests | 333 (incl. subtests), 6 packages with tests, all passing |
+| Test count by package | arch 6 · cli 87 · domain 15 · goast 45 · format 23 · usecase 157 |
 | Verify with | **`go test -count=1 ./...`** — see the caching trap below |
 | Toolchain | go1.27.2; no `golang.org/x` dependencies, only cobra and its two indirects |
 | Binary | 5.32 MiB stripped, budget 15 MiB |
@@ -116,6 +116,26 @@ a dirty one appends `+dirty`, and `(devel)` appears only where there is no VCS i
 all. A README sentence claiming a plain `go build` prints `(devel)` was wrong for every clone
 that has the tag, and nothing caught it because no test pinned the claim.
 
+**Two syscalls can disagree about the same path.** `Files` asked `os.Stat` whether the target
+was a directory — which follows a symlink — then handed the same path to `filepath.WalkDir`,
+which does not follow one. The walk received the symlink itself as a non-directory, the
+callback treated it as a file, and the run collected nothing. `golens outline link` reported "no
+.go files found" and **exit `2`** — the code this tool defines as *"you named something that is
+not there"* — for a directory holding real source. Symlinked trees are ordinary, not exotic.
+Only the root is resolved now (D26); a test fails if inner symlinks ever start being followed,
+because that is loop protection.
+
+**A partial search must not answer like a complete one.** `get` returned on the first parse
+error, so one half-edited file made every symbol in the directory unreachable — while `outline`
+and `check` both survived it. The asymmetry was invisible because `get` returns one symbol and
+"partial output" has no obvious meaning there. It does have meaning: the symbol either resolves
+or it does not, and the unreadable files bear only on whether the answer is complete. So `get`
+returns the symbol, names the skips, and **still exits `4`** — a caller that branched on 0 was
+told the tree was fully readable, and it was not. A miss still exits `2`, and says how many files
+could not be parsed, because "not found" from a partial search is not the claim "not found" makes
+from a complete one. Ambiguity gets the same caveat: the candidate list may have a gap in it.
+An honest exit code that looks like failure on a successful lookup is the correct trade.
+
 **Declaration heads must match the source.** A rendered head that does not is an edit hazard: an
 agent copying `type Stack struct` for a real `type Stack[T any] struct` writes code that will not
 compile. `TestDeclarationHeadsMatchSource` in `internal/engine/goast` pins the constructs that
@@ -178,7 +198,7 @@ name. When adding a check, bias toward silence and say so in the comment.
 
 ## Acceptance criteria
 
-Fifteen, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
+Seventeen, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
 criteria; this is which test pins each.
 
 | # | Criterion | Evidence |
@@ -198,6 +218,8 @@ criteria; this is which test pins each.
 | A13 | Platform variants silent; untagged pair exits 3 | `TestPlatformVariantsDoNotConflict` (5 pairs), `TestCoBuildableFilesStillConflict` (**positive control**), `TestImplicitFilenameConstraints`, `TestFilenameAndTagConstraintsCombine`, `TestCgoFilesAreExcludedWhenCgoIsOff` |
 | A14 | Partial tree: parseable stdout, skipped named, exit 4 | `TestOutlineSkipsUnparseableFilesWithoutHidingTheRest`, `TestOutlineReportsSkippedFilesExitFour`, `TestOutlineJSONStaysParseableWhenAFileIsBroken`, `TestOutlineSingleBrokenFileKeepsTheOriginalMessage` |
 | A15 | No release number in the source; the tag is the only source | `TestVersionIsInjectedByLdflags` (builds with a stamp, runs the binary), `TestVersionDefaultCarriesNoReleaseNumber`, `TestReleaseVersionPrefersTheLinkerValue`, `TestReleaseVersionFallsBackToBuildMetadata` |
+| A16 | `get` survives a broken neighbour: returns the symbol, exits 4, names the skips; a miss still exits 2 and says the search was incomplete | `TestGetSkipsUnparseableFilesRatherThanAborting`, `TestGetSkipsUnparseableFiles`, `TestNotFoundNamesSkipsOnlyWhenItMust` |
+| A17 | A symlinked directory is walked; paths reported under the name given; inner symlinks still not followed | `TestSymlinkedDirectoryIsWalked`, `TestSymlinkedDirectoryIsNotEmpty` |
 
 A13's positive control is the part that matters: a rule that suppressed every duplicate would
 otherwise pass the five variant cases. `internal/cli/spec_test.go` adds 11 more, each citing the
@@ -289,7 +311,7 @@ any command's help should be followed by `documentation/COLDSTART.md`.
 | Document | Read it for |
 |---|---|
 | `documentation/specification.md` | **Normative.** Change this first, then the code |
-| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A15 stated |
+| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A17 stated |
 | `documentation/AGENTS.template.md` | Copy into a target repo's root so its agents inherit the traps |
 | `TESTING.md` | The 18-case manual plan — run it after any engine, check or formatter change |
 | `documentation/COLDSTART.md` | Tests the instructions rather than the tool. Run after changing help text |

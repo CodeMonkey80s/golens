@@ -357,7 +357,7 @@ func TestResolveAcrossFixtureClasses(t *testing.T) {
 	t.Run("grouped const and var", func(t *testing.T) {
 		path := testfixture.Write(t, dir, "grouped.go", "package grouped\n\nconst (\n\tAlpha = 1\n\tBeta  = 2\n)\n\nvar (\n\tGamma = 3\n\tDelta = 4\n)\n")
 		for _, name := range []string{"Alpha", "Beta", "Gamma", "Delta"} {
-			if _, _, err := usecase.Resolve(goast.New(), name, path); err != nil {
+			if _, _, _, err := usecase.Resolve(goast.New(), name, path); err != nil {
 				t.Errorf("Resolve %s: %v", name, err)
 			}
 		}
@@ -365,7 +365,7 @@ func TestResolveAcrossFixtureClasses(t *testing.T) {
 
 	t.Run("unicode identifier", func(t *testing.T) {
 		path := testfixture.Write(t, dir, "unicode.go", testfixture.Unicode)
-		sym, doc, err := usecase.Resolve(goast.New(), "Ünïcödé", path)
+		sym, doc, _, err := usecase.Resolve(goast.New(), "Ünïcödé", path)
 		if err != nil {
 			t.Fatalf("Resolve: %v", err)
 		}
@@ -376,7 +376,7 @@ func TestResolveAcrossFixtureClasses(t *testing.T) {
 
 	t.Run("CRLF source", func(t *testing.T) {
 		path := testfixture.Write(t, dir, "crlf.go", testfixture.Crlf)
-		sym, doc, err := usecase.Resolve(goast.New(), "f", path)
+		sym, doc, _, err := usecase.Resolve(goast.New(), "f", path)
 		if err != nil {
 			t.Fatalf("Resolve: %v", err)
 		}
@@ -387,19 +387,19 @@ func TestResolveAcrossFixtureClasses(t *testing.T) {
 
 	t.Run("file with no declarations", func(t *testing.T) {
 		path := testfixture.Write(t, dir, "comments.go", testfixture.CommentsOnly)
-		if _, _, err := usecase.Resolve(goast.New(), "anything", path); err == nil {
+		if _, _, _, err := usecase.Resolve(goast.New(), "anything", path); err == nil {
 			t.Error("expected not-found for a file with no declarations")
 		}
 	})
 
 	t.Run("bare method name is ambiguous", func(t *testing.T) {
 		path := testfixture.Write(t, dir, "ambiguous.go", testfixture.Ambiguous)
-		_, _, err := usecase.Resolve(goast.New(), "Save", path)
+		_, _, _, err := usecase.Resolve(goast.New(), "Save", path)
 		if err == nil {
 			t.Fatal("expected ambiguity")
 		}
 		// The qualified form must resolve.
-		if _, _, err := usecase.Resolve(goast.New(), "Alpha.Save", path); err != nil {
+		if _, _, _, err := usecase.Resolve(goast.New(), "Alpha.Save", path); err != nil {
 			t.Errorf("qualified name should resolve: %v", err)
 		}
 	})

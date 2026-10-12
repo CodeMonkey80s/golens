@@ -1,6 +1,9 @@
 package usecase
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // errNotGoFile reports a non-Go file passed where source was expected.
 type errNotGoFile string
@@ -39,10 +42,22 @@ func (e errNoGoFiles) IsNotFound() bool { return true }
 type AmbiguousSymbol struct {
 	Name    string
 	Matches []string
+	// Skipped counts files in the search that could not be parsed, and Total how many were
+	// searched. Both are zero for the ordinary single-file case.
+	//
+	// The candidate list is incomplete whenever Skipped is non-zero: a file that would not
+	// parse may declare the same name again. Without saying so, a caller picking the first
+	// candidate to edit would be picking from a list that is known to have a gap in it.
+	Skipped int
+	Total   int
 }
 
 func (e AmbiguousSymbol) Error() string {
-	return fmt.Sprintf("%s is ambiguous, matches: %v", e.Name, e.Matches)
+	msg := fmt.Sprintf("%s is ambiguous, matches: %v", e.Name, e.Matches)
+	if e.Skipped > 0 {
+		msg += fmt.Sprintf("; %d of %d files could not be parsed and may declare it too", e.Skipped, e.Total)
+	}
+	return msg
 }
 
 // Advice returns the line to print beneath the candidate list.
@@ -62,6 +77,44 @@ func (e AmbiguousSymbol) IsNotFound() bool { return true }
 // Candidates returns the qualified names that matched. The cli layer prints these beneath
 // the error so the caller can correct the symbol instead of guessing.
 func (e AmbiguousSymbol) Candidates() []string { return e.Matches }
+
+// NotFoundSymbolWithSkips reports a symbol that resolved nowhere while some of the files
+// searched could not be parsed.
+//
+// It exists because plain NotFoundSymbol is a confident answer and this one is not. The
+// declaration may sit in a file that could not be read, and an agent told only "not found"
+// would go looking for a symbol to rename or a call site to fix. Saying which files were
+// unreadable keeps the answer honest without changing its exit code: the caller still has to
+// correct the name or disambiguate, which is what 2 means.
+type NotFoundSymbolWithSkips struct {
+	Name string
+	// Total is how many files the search covered, so the message can say how complete it was.
+	Total int
+	// Files names those that could not be parsed, in path order.
+	Files []ParseError
+}
+
+func (e NotFoundSymbolWithSkips) Error() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "symbol %q not found", e.Name)
+	if len(e.Files) > 0 {
+		fmt.Fprintf(&b, "; %d of %d files could not be parsed and may declare it", len(e.Files), e.Total)
+	}
+	return b.String()
+}
+
+// IsNotFound marks it under exit 2, the same code as a plain miss: the caller must correct
+// the name or disambiguate either way.
+func (e NotFoundSymbolWithSkips) IsNotFound() bool { return true }
+
+// Unwrap reaches the first parse failure, so a caller wanting the position rather than the
+// summary still finds it.
+func (e NotFoundSymbolWithSkips) Unwrap() error {
+	if len(e.Files) == 0 {
+		return nil
+	}
+	return e.Files[0]
+}
 
 // NotFoundSymbol reports a name that matched nothing.
 type NotFoundSymbol string

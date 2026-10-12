@@ -227,7 +227,7 @@ func TestResolveAmbiguityExitsTwo(t *testing.T) {
 	write(t, dir, "a.go", "package p\n\ntype A struct{}\n\nfunc (A) Save() {}\n")
 	write(t, dir, "b.go", "package p\n\ntype B struct{}\n\nfunc (B) Save() {}\n")
 
-	_, _, err := Resolve(engine(), "Save", dir)
+	_, _, _, err := Resolve(engine(), "Save", dir)
 	if err == nil {
 		t.Fatal("expected ambiguity error")
 	}
@@ -245,7 +245,7 @@ func TestResolveNotFound(t *testing.T) {
 	dir := t.TempDir()
 	path := write(t, dir, "user.go", userGo)
 
-	_, _, err := Resolve(engine(), "NoSuchSymbol", path)
+	_, _, _, err := Resolve(engine(), "NoSuchSymbol", path)
 	if err == nil {
 		t.Fatal("expected not-found error")
 	}

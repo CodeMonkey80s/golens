@@ -45,8 +45,25 @@ func Files(target string) ([]string, error) {
 		return []string{target}, nil
 	}
 
+	// A symlinked directory has to be resolved before it is walked.
+	//
+	// os.Stat above follows the link and reports a directory, but WalkDir lstats its root:
+	// the callback receives the symlink itself as a non-directory, the name does not end in
+	// .go, and the walk collects nothing. The run then reports "no .go files found" and
+	// exits 2 — the "you named something that is not there" code — for a directory holding
+	// hundreds of files. Symlinked source trees are ordinary (worktrees, $GOPATH/src, editor
+	// setups), so this is not an exotic layout; a tool for agents must not tell one it is
+	// looking at an empty directory when it is not.
+	//
+	// Only the root is resolved. Symlinks *within* the tree are still not followed, which
+	// is loop protection and stays as it is.
+	root := target
+	if resolved, err := filepath.EvalSymlinks(target); err == nil {
+		root = resolved
+	}
+
 	var found []string
-	err = filepath.WalkDir(target, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// A directory that cannot be read should not abort the whole traversal; the
 			// files already collected are still valid output.
@@ -57,7 +74,7 @@ func Files(target string) ([]string, error) {
 		}
 
 		if d.IsDir() {
-			if path != target && skipDir(d.Name()) {
+			if path != root && skipDir(d.Name()) {
 				return fs.SkipDir
 			}
 			return nil
@@ -73,6 +90,14 @@ func Files(target string) ([]string, error) {
 	}
 
 	sort.Strings(found)
+
+	// Paths are reported under the directory the caller named, not the resolved one, so a
+	// caller that reads a path out of the output can open it from the tree it asked about.
+	if root != target {
+		for i, path := range found {
+			found[i] = filepath.Join(target, strings.TrimPrefix(path, root))
+		}
+	}
 	return found, nil
 }
 

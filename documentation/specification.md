@@ -115,6 +115,11 @@ the rest of a tree — and because stdout is still a complete JSON payload when 
 machine consumer is never handed a truncated document. Pointed at a single broken file there is
 nothing partial to deliver, so the parse error is reported alone.
 
+**Directory arguments follow symlinks.** A directory given on the command line is resolved before
+it is walked, so a symlinked source tree is outlined as the directory of files it is rather than
+reported as empty. Paths in the output start from the directory as named, not from its resolved
+target, so a caller can open what it was shown. Symlinks *within* a tree are not followed.
+
 ### 2.2 `golens get`
 
 Extracts the exact source code content for a specific AST symbol.
@@ -141,6 +146,8 @@ golens get <symbol> <file|dir> [flags]
 **The span starts at the name, not the keyword.** For a func the span starts at `func`; for a type, var or const it starts at the declared name, leaving the `type` / `var` / `const` keyword outside the range. Grouped declarations make this unavoidable — `const ( A = 1; B = 2 )` is one clause, so a clause-wide span would give `A` and `B` identical offsets and an edit to one would overwrite the other. A consumer writing replacement text must therefore begin at the name; writing back the text `golens get` returned for the same symbol always satisfies this.
 
 **Symbol ambiguity.** A bare method name is accepted when it is unique in the package. Any ambiguity exits `2` and lists the candidates on stderr rather than guessing.
+
+**Unparseable files in the search.** A file that does not parse is skipped rather than fatal, exactly as for `outline`. The symbol is resolved from the files that did parse, and the skipped files are named on stderr with the run still exiting `4` — the answer was found, but the search that produced it was incomplete, and exit `0` would claim otherwise. When the symbol resolves nowhere, the run still exits `2`, and the message says how many files could not be parsed: "not found" from a partial search is not the same answer as "not found" from a complete one, and the declaration may sit in a file that would not parse. Pointed at a single broken file there is nothing to salvage, so the parse error alone is the answer.
 
 **Human Output Format (`golens get UserStore.GetUser user.go`)**
 

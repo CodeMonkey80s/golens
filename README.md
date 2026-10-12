@@ -182,6 +182,10 @@ A directory is walked recursively. `.git`, `vendor`, `node_modules` and hidden d
 skipped, and only `.go` files are read. Files are emitted in lexical order, so output is
 deterministic.
 
+A directory argument is resolved before it is walked, so a symlinked source tree is listed as the
+directory of files it is rather than reported as empty. Paths in the output start from the
+directory as you named it. Symlinks *inside* a tree are not followed.
+
 `--json` always returns an array, even for a single file, so the schema never changes shape with
 the input.
 
@@ -199,6 +203,12 @@ exported and unexported identifiers resolve. Passing a directory searches the wh
 
 A bare method name is accepted when it is unique. When two receivers share a name the command
 exits `2` and lists the candidates rather than guessing.
+
+A file that will not parse is skipped rather than fatal, as with `outline`. The symbol is resolved
+from the files that did parse, the skipped ones are named on stderr, and the run **still exits
+`4`** — the answer was found, but the search that produced it was incomplete, and exit `0` would
+claim otherwise. A symbol that resolves nowhere still exits `2`, and says how many files could not
+be parsed, because it may be sitting in one of them.
 
 ### `bounds <symbol> <file>`
 

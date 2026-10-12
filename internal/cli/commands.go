@@ -28,6 +28,11 @@ func newOutlineCmd(env Env) *cobra.Command {
 
 Structural, not semantic: imports, types, functions, methods, vars and consts.
 
+A directory argument is resolved before it is walked, so a symlinked source
+tree is listed as the directory of files it is rather than reported as empty.
+Paths in the output start from the directory as you named it. Symlinks inside
+a tree are not followed.
+
 Build constraints are ignored on purpose -- the question is what the tree
 contains, not what this machine compiles. The header therefore reports each
 file's constraint so you can tell which edits the current GOOS will compile:
@@ -63,6 +68,7 @@ func newGetCmd(env Env) *cobra.Command {
   Safe    the result is the file's own bytes -- write it back verbatim
   Method  address it as Type.Method
   Miss    symbol not found OR ambiguous -- both exit 2
+  Partial a file that will not parse is skipped, not fatal
 
 Safest round trip available: the text get returns is exactly the span bounds
 reports, so replacing one with the other cannot corrupt the file.
@@ -74,7 +80,15 @@ nothing to stdout, and lists candidates on stderr. Pass a file, not a directory:
 
 A method promoted from an embedded field belongs to the type that declares it.
 Given "type Derived struct { Base }", "get Derived.Lock" exits 2 and "get Lock"
-returns Base.Lock. golens resolves declarations, not the method set.`,
+returns Base.Lock. golens resolves declarations, not the method set.
+
+A file that does not parse is skipped, exactly as for outline. The symbol is
+resolved from the files that did parse, the skipped ones are named on stderr,
+and the run still exits 4 -- the answer was found, but the search that produced
+it was incomplete, and exit 0 would claim otherwise. A symbol that resolves
+nowhere still exits 2, and the message says how many files could not be
+parsed: it may be sitting in one of them. Pointed at a single broken file there
+is nothing to salvage and the parse error is the whole answer.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			boundsOnly, _ := cmd.Flags().GetBool("bounds-only")

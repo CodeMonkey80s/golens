@@ -826,7 +826,7 @@ Look for: **`outline` exits 4 with a populated stdout**, and stderr naming the s
 how complete the answer is:
 
 ```text
-golens: 45 of 7134 files could not be parsed and are missing from the outline: cmd/compile/...
+golens: 45 of 7134 files could not be parsed and were skipped: cmd/compile/...
 ```
 
 The count is exact; the enumeration is capped at five entries followed by "and N more".

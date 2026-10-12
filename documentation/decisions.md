@@ -38,6 +38,8 @@ the choice is the one that cannot be misread and cannot silently corrupt a file.
 | D22 | `outline` writes every parseable file first, then reports the skips and exits 4 | One broken file must not hide 8,000 others, and exit 0 would be a lie |
 | D23 | A field that changes what a declaration head means reaches every renderer | `outline --json` emitted an alias and a defined type as two byte-identical nodes; the human form was already correct |
 | D24 | The version is stamped at link time; the tag is its only source | `const Version = "0.1.0"` reported v0.1.0 to every build ever made, including those after v0.2.0 |
+| D25 | `get` skips unparseable files, returns the symbol, and still exits 4 naming them | One broken neighbour made every symbol in a directory unreachable; `outline` and `check` already survived this |
+| D26 | A directory argument is resolved before being walked; symlinks inside are not | `os.Stat` follows a link and `WalkDir` does not, so a symlinked tree reported "no .go files found", exit 2 |
 
 ---
 
@@ -334,6 +336,50 @@ a release, and a version string that guesses would be the same class of defect a
 
 **The rule: state a release number in exactly one place, and make it the tag.**
 
+### D25 · `get` skips unparseable files rather than aborting, and says so
+
+`get` returned on the first parse error, so a directory containing one half-edited file made
+every symbol in it unreachable. That contradicted D22 directly: `outline` had already been
+rebuilt to survive exactly this, and `check` reports the failure as one diagnostic among many.
+`get` was the last command still treating a broken neighbour as fatal.
+
+The obvious objection is that `get` returns one symbol, so "partial output" has no meaning the
+way it does for a list of files. It does have meaning: the symbol either resolves or it does not,
+and the unreadable files bear only on whether the answer is complete. So the rule is:
+
+- The symbol resolves from the files that parsed. **stdout carries the answer.**
+- The skipped files are named on stderr and the run **still exits `4`**, because the search was
+  incomplete and exit `0` asserts it was not.
+- When nothing resolves, the run exits `2` as before and the message states how many files could
+  not be parsed. "Not found" from a partial search is a different claim from "not found" from a
+  complete one, and an agent told the first will rename or delete a symbol that exists.
+- Ambiguity gets the same caveat, for the same reason: the candidate list may have a gap in it,
+  and a caller picking the first candidate to edit is picking from a list known to be incomplete.
+- One broken file and no others is unchanged. The parse error is the whole answer, and "1 of 1
+  files" says less than the diagnostic does.
+
+The honest version costs an exit code that looks like failure on a successful lookup, and that is
+the point: the caller branched on 4 should know the tree was not fully readable. A `get` that
+quietly returns one match from a directory it could only read half of is the failure mode this
+tool exists to prevent — it is a confident answer built on an incomplete search.
+
+### D26 · A directory argument is resolved before it is walked
+
+`Files` asked `os.Stat` whether the target was a directory — which follows a symlink — and then
+handed the same path to `filepath.WalkDir`, which does not follow one. The two disagreed: the
+walk received the symlink itself as a non-directory, the callback treated it as a file, the name
+did not end in `.go`, and the run collected nothing.
+
+So `golens outline link` reported "no .go files found" and **exit `2`** — the code this tool
+defines as "you named something that is not there" — for a directory holding real source.
+Symlinked source trees are ordinary: worktrees, `$GOPATH/src`, editor setups. Reporting a
+populated directory as empty is the worst direction available for a tool an agent will act on.
+
+Only the *root* is resolved. Symlinks within a tree are still not followed, which is loop
+protection, and `TestSymlinkedDirectoryIsWalked` fails if that ever changes. Paths are reported
+under the directory the caller named rather than its resolved target, because a caller must be
+able to open the paths it was shown from the tree it asked about.
+
 ---
 
 ## 3. Resolved ambiguities at a glance
@@ -379,6 +425,8 @@ a release, and a version string that guesses would be the same class of defect a
 | A13 | A directory containing both a `_linux.go` and a `_windows.go` that declare the same name produces no diagnostics and exit 0, and two untagged files that declare it produce exit 3. |
 | A14 | `outline` over a directory containing an unparseable file writes every parseable file to stdout, names the skipped files on stderr, and exits 4. Under `--json` the stdout payload parses. |
 | A15 | No release number is stated in the source. A binary stamped with `-X …Version=<v>` reports exactly `<v>`, and one built without a stamp reports the version the toolchain recorded. |
+| A16 | `get` over a directory containing an unparseable file still returns a symbol that resolves, exits 4, and names the skipped files; a miss still exits 2 and says the search was incomplete. |
+| A17 | A symlinked directory argument is walked, and paths are reported under the name the caller used. Symlinks inside a tree are not followed. |
 
 ---
 
