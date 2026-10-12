@@ -494,6 +494,23 @@ say an agent captures streams from a repository-wide sweep — it says the agent
 That is the property worth having, it survived being re-tested on a second subject, and the three
 earlier escapes were all measuring something else.
 
+### Run ten: help-text review of `bounds`
+
+A review of all four command help texts against each other found that `bounds --help` was the only
+one that did not state its parse-failure contract. `outline` and `get` both say a file that does
+not parse causes exit 4; `check` documents the same via its exit-code table. `bounds` documented
+only the "miss" path (exit 2), so a caller reading its help had no way to learn that a file that
+does not parse exits 4 with the error on stderr.
+
+The fix is one line added to the `bounds` summary block, matching the existing label style:
+
+```
+  Parse   a file that does not parse exits 4 with the error on stderr
+```
+
+No behavioural change; the exit code was already 4. This is a documentation gap, not a bug —
+but help text is the contract an agent reads, so a missing line is a defect.
+
 ## Summary of nine runs
 
 | Trap | Where measured | Result |

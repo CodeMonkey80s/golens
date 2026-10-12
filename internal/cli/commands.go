@@ -116,6 +116,7 @@ func newBoundsCmd(env Env) *cobra.Command {
   Starts  at the declaration's NAME, not its keyword
   Edit    your replacement text must start at the name too
   Miss    symbol not found OR ambiguous -- both exit 2
+  Parse   a file that does not parse exits 4 with the error on stderr
 
   type User struct { ... }      bounds start at "User",  "type" is outside
   func NewUser() *User { ... }  bounds start at "func"
