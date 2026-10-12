@@ -11,7 +11,7 @@ golens check <file|dir>         fast syntax and namespace validation
 ```
 
 Pure Go, no cgo, no daemon, no index. One binary, 5.35 MiB stripped (`-ldflags="-s -w"`), parses a
-typical file in about 20 µs and the largest file in this repository in about 270 µs.
+typical file in about 11 µs and the largest file in this repository in about 263 µs.
 
 ---
 
@@ -435,7 +435,7 @@ will differ on yours.
 
 | Budget | Measured here |
 |---|---|
-| Read + parse, single file — 5 ms P95 | ~22 µs typical, ~273 µs on the largest file in this repo |
+| Read + parse, single file — 5 ms P95 | ~11 µs typical, ~263 µs on the largest file in this repo |
 | Binary — 15 MiB | 5.35 MiB stripped (`-ldflags="-s -w"`) |
 
 Reproduce with `go test -run XXX -bench Parse -benchtime 500x ./internal/engine/goast`. Expect

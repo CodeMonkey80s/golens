@@ -29,7 +29,7 @@ Feature-complete. There is no next session, and nothing is blocked.
 | Verify with | **`go test -count=1 ./...`** — see the caching trap below |
 | Toolchain | go1.27.2; no `golang.org/x` dependencies, only cobra and its two indirects |
 | Binary | 5.35 MiB stripped, budget 15 MiB |
-| Parse budget | ~22 µs typical, ~273 µs largest file here (budget 5 ms P95) |
+| Parse budget | ~11 µs typical, ~263 µs largest file here (budget 5 ms P95) |
 | Lint | `golangci-lint run ./...` — 0 issues, includes `revive` `var-naming` |
 | Self-check | `golens check ./internal` and `./cmd` both exit 0 |
 | Remote | `github.com/CodeMonkey80s/golens`, public; `go install ...@latest` verified working |

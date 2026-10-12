@@ -59,10 +59,26 @@ func (e *Engine) Parse(path string) (domain.Document, error) {
 // engine method.
 func (e *Engine) ParseSource(path string, src []byte) (domain.Document, error) {
 	// Comments are off by default: parsing them costs measurably more time and nothing in
-	// the v0.1 output surface needs them. Object resolution is deliberately left ON --
-	// it populates ast.File.Unresolved, which the unused-import check in check depends
-	// on. Correctness over a microsecond.
-	mode := parser.Mode(0)
+	// the v0.1 output surface needs them.
+	//
+	// Object resolution is skipped, and it used to be left ON for a stated reason that was
+	// false. The comment claimed it "populates ast.File.Unresolved, which the unused-import
+	// check in check depends on". Nothing reads Unresolved: the only reference to it in the
+	// repository was that comment. The unused-import check is collectUsedNames, a lexical
+	// scan over doc.Source that never touches the AST — see its comment for why it is
+	// lexical rather than AST-based.
+	//
+	// So the pass was being paid for and never used. The resolver's Visit is ~17% of parse
+	// time on a profile, and skipping it is measurably better than that on a real 20 KB file:
+	// 192 µs -> 136 µs and 4060 -> 3487 allocs per parse. It populates Ident.Obj,
+	// File.Scope and File.Unresolved; the builder reads Decls, Imports, Name, Recv, Params,
+	// Results, TypeParams, Specs, Fields, Assign and Type, none of which the resolver
+	// produces. TestSkipObjectResolutionProducesIdenticalDocuments pins that equivalence
+	// rather than trusting this comment, which is what the last version of it deserved.
+	//
+	// It is also strictly safer: the resolver is the stage that panics on some malformed
+	// input, and golens must never panic on a file an agent asked about.
+	mode := parser.SkipObjectResolution
 	if e.ParseComments {
 		mode |= parser.ParseComments
 	}
