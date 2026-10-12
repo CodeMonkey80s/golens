@@ -64,9 +64,12 @@ const maxListedFailures = 5
 // produced no output at all and said nothing about the other 8,087 files.
 //
 // So the outline is written first and the failure is reported afterwards. The exit code is still
-// 4, because the parse failure is real, but stdout now carries everything that could be read.
+// 4, because the failure is real, but stdout now carries everything that could be read.
 // Paths is in path order, which keeps the message stable across runs regardless of the order
 // concurrent parses completed in.
+//
+// Failures mixes two causes — a file that does not parse and a file that cannot be read — and
+// the summary is worded to fit both. See Error.
 type SkippedFilesError struct {
 	// Failures names the files that could not be parsed, in path order.
 	Failures []ParseError
@@ -87,11 +90,13 @@ type SkippedFilesError struct {
 // defect only appeared beyond five failures, so no test that named fewer files could see it.
 func (e SkippedFilesError) Error() string {
 	var b strings.Builder
-	// The wording is command-neutral on purpose. outline and get share this type, and an
-	// earlier version said "missing from the outline" here — which is accurate for outline
-	// and nonsense under get, where nothing is outlined at all and the caller has just been
-	// handed a symbol.
-	fmt.Fprintf(&b, "%d of %d files could not be parsed and were skipped",
+	// The summary names the outcome, not the cause. Two different failures land in this list
+	// — a syntax error and an unreadable file — and "could not be parsed" claimed the second
+	// had been parsed and rejected. An agent reading that would go and fix the syntax of a
+	// file it cannot open, and would have to hit the permission error a second time before
+	// revising. ParseError.Diagnostics already separates the two, reporting an I/O failure at
+	// 1:1 because it has no position; this summary was flattening that away.
+	fmt.Fprintf(&b, "%d of %d files could not be read and are missing from the output",
 		len(e.Failures), e.Total)
 
 	listed := e.Failures

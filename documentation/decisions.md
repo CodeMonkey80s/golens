@@ -553,6 +553,7 @@ able to open the paths it was shown from the tree it asked about.
 | A19 | An interface lists its method set, spelled as the source spells it and compilable when pasted back. An embedded interface is listed by name; a type union contributes nothing. |
 | A20 | A name declared in two packages of one directory is reported as cross-package, not as ambiguity; advice names a file and never a qualified name. A genuine duplicate in one package is still reported as ambiguity. |
 | A21 | The skipped-files message never emits a separator welded to a following entry, and its truncation marker is separated like every other entry, at one, three, exactly five and many failures. |
+| A22 | The skipped-files summary names the outcome rather than the cause, and never claims a parse failure for a file it could not open. Each entry still carries its own cause. |
 
 ---
 

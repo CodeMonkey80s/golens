@@ -24,8 +24,8 @@ Feature-complete. There is no next session, and nothing is blocked.
 
 | Field | Value |
 |---|---|
-| Tests | 359 (incl. subtests), 6 packages with tests, all passing |
-| Test count by package | arch 6 · cli 90 · domain 15 · goast 55 · format 23 · usecase 170 |
+| Tests | 362 (incl. subtests), 6 packages with tests, all passing |
+| Test count by package | arch 6 · cli 90 · domain 15 · goast 55 · format 23 · usecase 173 |
 | Verify with | **`go test -count=1 ./...`** — see the caching trap below |
 | Toolchain | go1.27.2; no `golang.org/x` dependencies, only cobra and its two indirects |
 | Binary | 5.35 MiB stripped, budget 15 MiB |
@@ -150,6 +150,14 @@ ever looked at the human path. When you add a field that a declaration head depe
 `format.OutlineNode` too; `TestRenderersAgreeOnTheWholeCorpus` in `internal/format` then checks
 every declaration in this repository rather than the constructs a test remembered to name.
 
+**A summary must not assert a cause it did not check.** The skipped-files line mixed two failures
+— a file that does not parse and a file that cannot be opened — and said *"could not be parsed"*
+for both. An agent reading that goes and repairs the syntax of a file it cannot open, and has to
+hit the permission error a second time before revising. `ParseError.Diagnostics` already told the
+two apart, reporting an I/O failure at `1:1` because it has no position; the summary flattened
+that distinction away. It now names the outcome — *"could not be read and are missing from the
+output"* — and each entry still carries its own cause, so nothing was lost.
+
 **A boundary nobody crosses is a boundary nobody checks.** `SkippedFilesError` wrote its entries
 one at a time, each carrying its own separator, and appended the truncation marker after the loop.
 Past five failures that produced `...found '{';: next` — a semicolon welded to a colon — and a
@@ -256,7 +264,7 @@ name. When adding a check, bias toward silence and say so in the comment.
 
 ## Acceptance criteria
 
-Twenty-one, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
+Twenty-two, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
 criteria; this is which test pins each.
 
 | # | Criterion | Evidence |
@@ -282,6 +290,7 @@ criteria; this is which test pins each.
 | A19 | An interface lists its method set, spelled as source spells it (`Close() error`, no `func`); an embedded interface is listed, a type union is not | `TestInterfaceMethodSetIsListed`, `TestEmbeddedInterfaceIsListedAndUnionsAreNot`, `TestInterfaceMethodsHaveTheirOwnBounds`, `TestNonStructTypeMembersStayEmpty` |
 | A20 | A name in two packages of one directory is cross-package, not ambiguity; advice names a file, never a qualified name. A real duplicate stays ambiguous | `TestCrossPackageNameIsNotReportedAsAmbiguous`, `TestCrossPackageAdviceDoesNotRecommendAQualifiedName`, `TestSamePackageAmbiguityIsUnchanged`, `TestCrossPackageNameIsReportedAsSuchAtTheCLI`, `TestAdviceIsPrintedWithoutACandidateList` |
 | A21 | The skipped-files message has no welded separator and truncates like every other entry, at 0/1/3/5/6/14 failures | `TestSkippedFilesMessageSeparators`, `TestSkippedFilesMessageKeepsTheExactCount`, `TestSkippedFilesMessageIsDeterministic` |
+| A22 | The skipped-files summary never claims a parse failure for an unreadable file; each entry still carries its own cause | `TestSkippedFilesSummaryDoesNotClaimAParseFailure` |
 
 A13's positive control is the part that matters: a rule that suppressed every duplicate would
 otherwise pass the five variant cases. `internal/cli/spec_test.go` adds 11 more, each citing the
@@ -373,7 +382,7 @@ any command's help should be followed by `documentation/COLDSTART.md`.
 | Document | Read it for |
 |---|---|
 | `documentation/specification.md` | **Normative.** Change this first, then the code |
-| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A21 stated |
+| `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A22 stated |
 | `documentation/AGENTS.template.md` | Copy into a target repo's root so its agents inherit the traps |
 | `TESTING.md` | The 18-case manual plan — run it after any engine, check or formatter change |
 | `documentation/COLDSTART.md` | Tests the instructions rather than the tool. Run after changing help text |

@@ -119,6 +119,13 @@ the rest of a tree — and because stdout is still a complete JSON payload when 
 machine consumer is never handed a truncated document. Pointed at a single broken file there is
 nothing partial to deliver, so the parse error is reported alone.
 
+The summary line states the outcome rather than the cause: **N of M files could not be read and
+are missing from the output**. The list holds both files that do not parse and files that cannot
+be opened, and an unreadable file is not a parse failure — reporting it as one sends a caller to
+repair the syntax of a file it has not been able to read. Each entry carries its own cause, so
+the two are distinguishable: a syntax error names line and column, an I/O failure names the
+underlying error.
+
 **Directory arguments follow symlinks.** A directory given on the command line is resolved before
 it is walked, so a symlinked source tree is outlined as the directory of files it is rather than
 reported as empty. Paths in the output start from the directory as named, not from its resolved

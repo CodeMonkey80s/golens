@@ -61,7 +61,7 @@ func TestSkippedFilesMessageSeparators(t *testing.T) {
 				}
 				return // zero failures legitimately has nothing to list.
 			}
-			if !strings.HasSuffix(summary, "were skipped") {
+			if !strings.HasSuffix(summary, "are missing from the output") {
 				t.Errorf("summary is not the expected lead-in: %s", msg)
 			}
 
@@ -103,7 +103,7 @@ func TestSkippedFilesMessageKeepsTheExactCount(t *testing.T) {
 
 	msg := SkippedFilesError{Failures: failures, Total: 40}.Error()
 
-	if !strings.HasPrefix(msg, "40 of 40 files could not be parsed and were skipped") {
+	if !strings.HasPrefix(msg, "40 of 40 files could not be read and are missing from the output") {
 		t.Errorf("summary lost the exact count: %s", msg)
 	}
 	if !strings.Contains(msg, "and 35 more") {
@@ -115,6 +115,53 @@ func TestSkippedFilesMessageKeepsTheExactCount(t *testing.T) {
 	}
 	if strings.Contains(msg, "brk6.go") {
 		t.Errorf("named a file past the limit: %s", msg)
+	}
+}
+
+// TestSkippedFilesSummaryDoesNotClaimAParseFailure pins the wording.
+//
+// The failures list mixes two causes: a file that does not parse and a file that cannot be
+// opened. The summary said "could not be parsed" for both, which told an agent to go and fix
+// the syntax of a file it cannot read — it would have to hit the permission error a second
+// time before revising. ParseError.Diagnostics already separates them, reporting an I/O
+// failure at 1:1 because it has no position; the summary flattened that away.
+func TestSkippedFilesSummaryDoesNotClaimAParseFailure(t *testing.T) {
+	syntax := SkippedFilesError{
+		Failures: []ParseError{{Path: "bad.go", Err: errors.New("3:9: expected ')', found '{'")}},
+		Total:    1,
+	}
+	unreadable := SkippedFilesError{
+		Failures: []ParseError{{Path: "secret.go", Err: errors.New("read secret.go: open secret.go: permission denied")}},
+		Total:    1,
+	}
+
+	for _, tc := range []struct {
+		name string
+		err  SkippedFilesError
+	}{
+		{"a syntax error", syntax},
+		{"an unreadable file", unreadable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := tc.err.Error()
+			if strings.Contains(msg, "could not be parsed") {
+				t.Errorf("summary claims the file was parsed and rejected:\n%s", msg)
+			}
+			// Whatever the cause, the summary must name the outcome: the file is absent
+			// from what was produced.
+			if !strings.Contains(msg, "missing from the output") {
+				t.Errorf("summary does not say what the consequence is:\n%s", msg)
+			}
+		})
+	}
+
+	// The two must still be distinguishable to the caller, which is what ParseError
+	// guarantees by carrying either a position or a bare I/O message.
+	if !strings.Contains(unreadable.Error(), "permission denied") {
+		t.Errorf("the I/O cause is no longer visible: %s", unreadable.Error())
+	}
+	if !strings.Contains(syntax.Error(), "3:9") {
+		t.Errorf("the parse position is no longer visible: %s", syntax.Error())
 	}
 }
 

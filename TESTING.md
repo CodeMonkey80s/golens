@@ -826,10 +826,15 @@ Look for: **`outline` exits 4 with a populated stdout**, and stderr naming the s
 how complete the answer is:
 
 ```text
-golens: 45 of 7134 files could not be parsed and were skipped: cmd/compile/...
+golens: 45 of 7134 files could not be read and are missing from the output: cmd/compile/...
 ```
 
 The count is exact; the enumeration is capped at five entries followed by "and N more".
+
+The summary names the outcome, not the cause. The list holds both files that do not parse and
+files that cannot be opened, and an unreadable file was once reported as a parse failure — which
+told an agent to fix the syntax of a file it had never read. Each entry still carries its own
+cause, so the two remain distinguishable.
 
 Then the machine-consumer case, which is where a truncated payload would actually bite:
 
