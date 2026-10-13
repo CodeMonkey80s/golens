@@ -106,6 +106,21 @@ func (s *Stack[T]) Len() int { return len(s.items) }
 // declaration.
 func Count(a *Alias) int { return a.Len() }
 
+// Unnamed takes parameters with no names, which is legal Go and ordinary in
+// interface-shaped signatures and test helpers. A member renderer that loops over
+// field.Names alone emits nothing for them, so this function used to outline with no
+// parameters at all -- the same omission class as the embedded mu above, and it survived
+// because structFields carried the fix while fieldNodes did not.
+func Unnamed(string, int) error { return nil }
+
+// Split names two parameters in one ast.Field, written across two lines so that a span
+// shared with its sibling is visible: each name is its own node, on its own line.
+func Split(a,
+	b int,
+) error {
+	return nil
+}
+
 // Grouped is a grouped declaration. Each name needs its own bounds, or editing one
 // member would overwrite the others, so the outline must render all three.
 const (

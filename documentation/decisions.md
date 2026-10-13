@@ -531,6 +531,42 @@ walk.
 **The rule: when the AST can hand you several declarations in one node, ask how many, and emit
 one of yours per declaration — with bounds that select it.**
 
+### D33 · One member renderer for struct fields and parameters
+
+D27 gave struct fields one node per name with name-scoped bounds, and left
+`fieldNodes` — which renders *function parameters* — alone. The reason it was left alone is
+written in the comment that survived two releases: `structFields` was "deliberately not
+fieldNodes" because "that one renders function parameters, where every entry has names".
+
+That claim is false in Go. `func F(context.Context, int) error` is legal and ordinary in
+interface-shaped signatures and test helpers, and for it `fieldNodes` emitted **nothing**:
+`for _, name := range field.Names` over a nameless field is an empty loop. So the outline
+rendered a function that takes no parameters at all, in the human, JSON and compact forms
+alike — the same defect class D27 documents, the fourth in the project to work by omission,
+and it survived because the fix for the *struct* half was written in a separate function.
+
+The second half of D27 did not transfer either: field bounds were `field.Pos()` to
+`field.End()`, so `func F(a,\n b int)` reported both parameters on lines 7–8 — one span for
+two names, the addressability problem a grouped `const` has, which D27 had just fixed for
+fields.
+
+The two functions now have identical preconditions — one node per member name, a nameless
+member rendered as its own type expression with no Detail, bounds per name — so they are one
+function again, and `structFields` is gone. Unifying is the fix, not a tidy-up: it was the
+separation that let one half be repaired while the other was forgotten, and a second member
+renderer is a second place to forget it in.
+
+`internal/constructs` grew `Unnamed` and `Split` so the corpus walk cannot go vacuous on these
+again, and `TestCorpusContainsTheConstructsThatBroke` counts `unnamed parameters` and
+`multi-name parameters` alongside the rest. The counts logged 2 and 15 — the multi-name case
+was already in the corpus 14 times over, all single-line, which is exactly why the shared
+span was invisible.
+
+**The rule: when two AST positions hand you the same construct, they are one construct — one
+renderer, one set of preconditions, one place to fix.**
+
+---
+
 ### D26 · A directory argument is resolved before it is walked
 
 `Files` asked `os.Stat` whether the target was a directory — which follows a symlink — and then

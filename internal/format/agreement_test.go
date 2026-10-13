@@ -282,6 +282,7 @@ func TestCorpusContainsTheConstructsThatBroke(t *testing.T) {
 	fset := token.NewFileSet()
 
 	var genericType, genericFunc, genericReceiver, alias, embedded, multiNameField, ifaceMethod, typeUnion, method int
+	var unnamedParam, multiNameParam int
 	for _, path := range goFilesUnder(t, root) {
 		f, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
@@ -295,6 +296,20 @@ func TestCorpusContainsTheConstructsThatBroke(t *testing.T) {
 				}
 				if node.Type != nil && node.Type.TypeParams != nil && len(node.Type.TypeParams.List) > 0 {
 					genericFunc++
+				}
+				// Parameters are members too, and the two shapes that broke there are
+				// counted separately: a parameter with no name is dropped entirely by a
+				// renderer that loops over field.Names, and a multi-name field gives two
+				// parameters one shared span unless each name carries its own.
+				if node.Type != nil && node.Type.Params != nil {
+					for _, p := range node.Type.Params.List {
+						switch {
+						case len(p.Names) == 0:
+							unnamedParam++
+						case len(p.Names) > 1:
+							multiNameParam++
+						}
+					}
 				}
 			case *ast.GenDecl:
 				for _, spec := range node.Specs {
@@ -360,6 +375,8 @@ func TestCorpusContainsTheConstructsThatBroke(t *testing.T) {
 		{"multi-name fields", multiNameField},
 		{"interface methods", ifaceMethod},
 		{"type unions", typeUnion},
+		{"unnamed parameters", unnamedParam},
+		{"multi-name parameters", multiNameParam},
 		{"methods", method},
 	} {
 		if c.got == 0 {

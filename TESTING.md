@@ -252,7 +252,10 @@ $ /tmp/golens outline <file.go> --depth 2
 
 Look for: depth 2 adds struct fields and function parameters; depth 1 does not. Check a struct
 with **embedded fields** (e.g. `sync.Mutex` inline) and **struct tags** (`json:"name"`) — the
-awkward cases.
+awkward cases. Check a function with an **unnamed parameter** (`func F(context.Context, int)`):
+it must still appear, listed by its type, because a member with no name is still a member.
+A function that outlines with no parameters when the source has two is the same omission
+class as a dropped embedded field.
 
 Failure: a field appearing at depth 1, or a field missing at depth 2.
 

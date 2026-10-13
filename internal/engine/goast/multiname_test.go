@@ -140,3 +140,103 @@ type S struct {
 		t.Errorf("embedded field Detail = %q, want empty", mu.Detail)
 	}
 }
+
+// TestUnnamedParametersAreListed covers a parameter list whose members have no names.
+//
+// "func F(context.Context, int) error" is legal Go and ordinary in interface-shaped
+// signatures and test helpers. fieldNodes looped over field.Names alone, so such a
+// parameter produced no node at all and the function outlined as taking nothing -- an
+// omission in the same class as the embedded struct field, which structFields had already
+// been taught to render. The two were separate functions for that reason, which is also why
+// one could be fixed while the other was forgotten.
+func TestUnnamedParametersAreListed(t *testing.T) {
+	src := `package p
+
+func F(context.Context, int) error { return nil }
+
+type ctx struct{}
+
+func G(ctx, string) {}
+`
+
+	doc, err := goast.New().ParseSource("unnamed.go", []byte(src))
+	if err != nil {
+		t.Fatalf("ParseSource: %v", err)
+	}
+
+	for _, tt := range []struct {
+		fn   string
+		want []string
+	}{
+		{"F", []string{"context.Context", "int"}},
+		{"G", []string{"ctx", "string"}},
+	} {
+		fn := findNode(doc.Nodes, tt.fn)
+		if fn == nil {
+			t.Fatalf("no node for %s", tt.fn)
+		}
+
+		var names []string
+		for _, child := range fn.Children {
+			names = append(names, child.Name)
+		}
+		if strings.Join(names, ",") != strings.Join(tt.want, ",") {
+			t.Errorf("%s parameters = %v, want %v -- a nameless parameter is missing from the outline",
+				tt.fn, names, tt.want)
+		}
+
+		// An unnamed parameter has no Detail: the type expression is the whole
+		// declaration, and repeating it would render "int int".
+		for _, child := range fn.Children {
+			if child.Detail != "" {
+				t.Errorf("%s parameter %s has Detail %q, want empty", tt.fn, child.Name, child.Detail)
+			}
+			if got := child.Bounds.Source(doc.Source); got != child.Name {
+				t.Errorf("%s parameter %s has bounds selecting %q", tt.fn, child.Name, got)
+			}
+		}
+	}
+}
+
+// TestMultiNameParametersGetTheirOwnBounds is the parameter half of D27.
+//
+// "a, b int" is one ast.Field holding two names, and bounding both nodes by the field gives
+// them identical spans -- the addressability problem a grouped const has. Each name carries
+// its own bounds, exactly as a struct field does.
+func TestMultiNameParametersGetTheirOwnBounds(t *testing.T) {
+	src := `package p
+
+func F(a,
+	b int) error {
+	return nil
+}
+`
+
+	doc, err := goast.New().ParseSource("split.go", []byte(src))
+	if err != nil {
+		t.Fatalf("ParseSource: %v", err)
+	}
+
+	fn := findNode(doc.Nodes, "F")
+	if fn == nil {
+		t.Fatal("no node for F")
+	}
+	if len(fn.Children) != 2 {
+		t.Fatalf("parameters = %d, want 2", len(fn.Children))
+	}
+
+	a, b := fn.Children[0], fn.Children[1]
+	if a.Bounds.StartByte == b.Bounds.StartByte {
+		t.Errorf("a and b share start_byte %d; one span for two names is not addressable",
+			a.Bounds.StartByte)
+	}
+	if a.Bounds.EndLine != 3 || b.Bounds.StartLine != 4 {
+		t.Errorf("a is on line %d, b on line %d, want 3 and 4 -- the bounds are the field's, not the name's",
+			a.Bounds.EndLine, b.Bounds.StartLine)
+	}
+	for _, c := range fn.Children {
+		if got := c.Bounds.Source(doc.Source); got != c.Name {
+			t.Errorf("parameter %s has bounds selecting %q, want %q", c.Name, got, c.Name)
+		}
+	}
+}

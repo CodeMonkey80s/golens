@@ -438,7 +438,7 @@ func (b *builder) nodes(file *ast.File) []domain.Node {
 func (b *builder) typeChildren(expr ast.Expr) []domain.Node {
 	switch t := expr.(type) {
 	case *ast.StructType:
-		return b.structFields(t.Fields)
+		return b.fieldNodes(t.Fields)
 	case *ast.InterfaceType:
 		return b.interfaceMethods(t.Methods)
 	default:
@@ -448,25 +448,41 @@ func (b *builder) typeChildren(expr ast.Expr) []domain.Node {
 	}
 }
 
-// structFields emits one node per field of a struct.
+// fieldNodes emits one node per member of an ast.FieldList: the fields of a struct, or the
+// parameters of a function. Both are *ast.FieldLists and both are members a caller edits, so
+// they render the same way.
 //
-// This is deliberately not fieldNodes. That one renders function parameters, where every
-// entry has names, and it drops a nameless entry -- which is exactly what an embedded struct
-// field is. Reusing it here made embedded fields disappear from the outline, so the two are
-// kept separate and this one handles the embedded case explicitly.
-func (b *builder) structFields(fields *ast.FieldList) []domain.Node {
-	if fields == nil || len(fields.List) == 0 {
+// One node per NAME, not per ast.Field, because "A, B int" is one field holding two names.
+// Each name carries its own span, so two members written on one line are independently
+// addressable rather than sharing the bounds of the whole field -- the addressability problem
+// a grouped const has, and the reason D27 gives each name its own position.
+//
+// A member with no name is rendered as its own type expression with no Detail: "mu" for an
+// embedded struct field, "context.Context" for an unnamed parameter. Repeating it as Detail
+// would render "sync.Mutex sync.Mutex", which is not valid Go.
+//
+// This is also why the function cannot loop over field.Names alone. Doing so drops every
+// nameless member, and that is a defect by omission twice over: struct fields were fixed here
+// (structFields handled the embedded case) while parameters were not, so
+// "func F(context.Context, int)" rendered a function with no parameters at all -- a legal and
+// common signature. The two cases were separate functions for that reason, and the separation
+// is what let one be fixed and the other forgotten. Their preconditions are now identical, so
+// they are one function again.
+func (b *builder) fieldNodes(list *ast.FieldList) []domain.Node {
+	if list == nil {
 		return nil
 	}
 
-	out := make([]domain.Node, 0, fields.NumFields())
-	for _, field := range fields.List {
+	out := make([]domain.Node, 0, len(list.List))
+	for _, field := range list.List {
 		detail := exprString(field.Type)
 
+		// An embedded struct field or an unnamed parameter: the type expression is the whole
+		// declaration, so it is the name and there is no separate type to show.
 		if len(field.Names) == 0 {
-			// Embedded field: the type expression is the whole declaration, so it is the
-			// name and there is no separate type to show. Repeating it as Detail would
-			// render "sync.Mutex sync.Mutex", which is not valid Go.
+			if detail == "" {
+				continue
+			}
 			out = append(out, domain.Node{
 				Name:   detail,
 				Kind:   domain.KindField,
@@ -475,8 +491,8 @@ func (b *builder) structFields(fields *ast.FieldList) []domain.Node {
 			continue
 		}
 
-		// Each name gets its own span, so the fields stay independently addressable and
-		// two fields written on one line are not reported with the same bounds.
+		// Each name gets its own span, so the members stay independently addressable and two
+		// members written on one line are not reported with the same bounds.
 		for _, name := range field.Names {
 			out = append(out, domain.Node{
 				Name:   name.Name,
@@ -558,24 +574,6 @@ func (b *builder) children(fn *ast.FuncDecl) []domain.Node {
 		return nil
 	}
 	return b.fieldNodes(fn.Type.Params)
-}
-
-func (b *builder) fieldNodes(list *ast.FieldList) []domain.Node {
-	if list == nil {
-		return nil
-	}
-	out := make([]domain.Node, 0, len(list.List))
-	for _, field := range list.List {
-		for _, name := range field.Names {
-			out = append(out, domain.Node{
-				Name:   name.Name,
-				Kind:   domain.KindField,
-				Detail: exprString(field.Type),
-				Bounds: nodeBounds(b.tf, field.Pos(), field.End()),
-			})
-		}
-	}
-	return out
 }
 
 // groupBounds spans the first to last member of a group, which is what the human outline
