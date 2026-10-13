@@ -706,6 +706,8 @@ toolchain never reads.**
 | A21 | The skipped-files message never emits a separator welded to a following entry, and its truncation marker is separated like every other entry, at one, three, exactly five and many failures. |
 | A22 | The skipped-files summary names the outcome rather than the cause, and never claims a parse failure for a file it could not open. Each entry still carries its own cause. |
 | A23 | `check` and `outline` return the same exit code for the same unreadable file; findings about code still exit 3; 4 wins when both kinds occur; `--json` keeps the file in the payload and stderr empty. |
+| A24 | Every function parameter appears in the outline at depth 2 — including one with no name — one node per name, each with bounds selecting exactly its own name. |
+| A25 | `check` reports nothing for a directory whose faults all live in `testdata`; a `testdata` file named explicitly is still checked; `outline`, `get` and `bounds` still traverse those directories. |
 
 ---
 

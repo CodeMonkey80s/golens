@@ -279,9 +279,22 @@ four headings and none of the declarations. When you change depth handling, comp
 an agent delete working code, so the check stays silent whenever it cannot determine the local
 name. When adding a check, bias toward silence and say so in the comment.
 
+**`check`'s scope is what a build would reject, and no build reaches `testdata`.** `outline`,
+`get` and `bounds` answer "what does this tree contain", so they walk those directories (D22).
+`check` answers "would a build reject this", so it does not — the go tool ignores `testdata`
+by documented rule, and on the standard library those directories held 1,212 diagnostics and
+exit 3 pointing an agent at compiler fixtures whose exact bytes are the test case. A file
+named explicitly is still checked, because that is a caller asking about that file rather than
+a traversal. See D32.
+
+**A nameless member is still a member.** `func F(context.Context, int)` and an embedded
+`mu` field are `ast.Field` entries with no names. `for _, name := range field.Names` silently
+drops them, which is how one renderer was fixed while the other rendered a function with no
+parameters at all. One renderer now serves both, per D33 — do not reintroduce a second one.
+
 ## Acceptance criteria
 
-Twenty-three, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
+Twenty-five, all green. Evidence is a test, not a claim. `documentation/decisions.md` §4 states the
 criteria; this is which test pins each.
 
 | # | Criterion | Evidence |
@@ -309,6 +322,8 @@ criteria; this is which test pins each.
 | A21 | The skipped-files message has no welded separator and truncates like every other entry, at 0/1/3/5/6/14 failures | `TestSkippedFilesMessageSeparators`, `TestSkippedFilesMessageKeepsTheExactCount`, `TestSkippedFilesMessageIsDeterministic` |
 | A22 | The skipped-files summary never claims a parse failure for an unreadable file; each entry still carries its own cause | `TestSkippedFilesSummaryDoesNotClaimAParseFailure` |
 | A23 | `check` and `outline` agree on the exit code for the same unreadable file; code findings still exit 3; 4 wins when both occur; `--json` keeps the file in the payload and stderr empty | `TestCheckAndOutlineAgreeOnAnIOFailure`, `TestCheckKeepsExitThreeForFindingsAboutCode`, `TestCheckExitsFourWhenBothKindsOccur`, `TestCheckJSONCarriesTheUnreadableFile`, `TestUnreadableFileIsNotReportedTwice` |
+| A24 | Every function parameter appears in the outline at depth 2, including one with no name, one node per name, each with bounds selecting its own name | `TestUnnamedParametersAreListed`, `TestMultiNameParametersGetTheirOwnBounds`, plus the corpus guards `TestCorpusContainsTheConstructsThatBroke` |
+| A25 | `check` reports nothing for a directory whose faults all live in `testdata`; a `testdata` file named explicitly is still checked; `outline`, `get` and `bounds` still traverse those directories | `TestCheckSkipsTestdataDirectories`, `TestCheckStillChecksATestdataFileNamedExplicitly`, `TestOutlineStillListsTestdataFiles`, `TestCheckNamesTheReasonWhenOnlyTestdataExists`, `TestCheckHelpStatesTheTestdataScope` |
 
 A13's positive control is the part that matters: a rule that suppressed every duplicate would
 otherwise pass the five variant cases. `internal/cli/spec_test.go` adds 11 more, each citing the
@@ -345,7 +360,6 @@ an agent following the documented format went to line 1 whatever the real positi
 | Item | Why not |
 |---|---|
 | **`var x = 5` shows no `= 5`** | Correct, not a gap. The outline head is *not* the byte span: the span is name-scoped, so pasting `var x = 5` into a span holding `x` writes `var x = 5 = 5`, which does not parse. `var counter int` pastes the same way. Adding `= 5` makes the head *more* divergent from the span while making nothing paste-safe |
-| **`check .` exits 3 on `testdata/store/store.go`** | Intentional — the unused import gives the outline golden a stable shape |
 | Unused-import false negatives | Accepted: comment-only references and shadowed locals. Never false positives, verified against three repositories. A miss is caught by `go build`; a false positive deletes working code |
 | Naming outside a module | `revive` cannot run without a `go.mod`. Filling that gap with golens would make a structural tool the one that grades code — `decisions.md` D9 |
 | `internal/naming`, `check --naming` | Removed. Three attempts, then deletion: `camelCaseId` produced 4,119 false positives on the standard library; the correct in-tree rule was indistinguishable from `revive`; so it was removed rather than kept as a second implementation. Two tests pin the boundary so it cannot return through a new flag |
