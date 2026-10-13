@@ -148,9 +148,17 @@ func analyse(doc domain.Document, pkg *packageSymbols) []Diagnostic {
 }
 
 // emit writes diagnostics in the requested form and reports whether any were found.
+//
+// The JSON payload always carries an array, empty rather than null when nothing was found:
+// a consumer that iterates payload["diagnostics"] or takes its length breaks on null, and
+// the shape of a payload must not depend on whether the run had anything to say. An empty
+// slice is what makes "[]" the wire form for a clean tree.
 func emit(diags []Diagnostic, stdout, stderr io.Writer, opts format.Options) error {
 	if opts.JSON {
-		payload := checkPayload{SchemaVersion: format.SchemaVersion}
+		payload := checkPayload{
+			SchemaVersion: format.SchemaVersion,
+			Diagnostics:   make([]jsonDiagnostic, 0, len(diags)),
+		}
 		for _, d := range diags {
 			payload.Diagnostics = append(payload.Diagnostics, jsonDiagnostic{
 				Severity: d.Severity,

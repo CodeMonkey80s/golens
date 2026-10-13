@@ -357,6 +357,40 @@ func TestCheckJSONPayload(t *testing.T) {
 	}
 }
 
+// TestCheckEmptyArrayNotNull pins the wire form of a clean run.
+//
+// The diagnostics field is nil when there is nothing to report, and encoding it produced
+// "diagnostics": null. A consumer that iterates the field or takes its length breaks on
+// null -- and it breaks on exactly the runs that are supposed to be the easy ones, a clean
+// tree under --json. The payload's shape must not depend on whether the run had anything to
+// say, so a clean tree emits [].
+func TestCheckEmptyArrayNotNull(t *testing.T) {
+	dir := t.TempDir()
+	testfixture.Write(t, dir, "clean.go", "package p\n\nimport \"fmt\"\n\nfunc F() { fmt.Println() }\n")
+
+	var stdout, stderr bytes.Buffer
+	if err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{JSON: true}); err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+
+	if stderr.Len() != 0 {
+		t.Errorf("stderr must stay clean in JSON mode:\n%s", stderr.String())
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\n%s", err, stdout.String())
+	}
+
+	field, ok := raw["diagnostics"]
+	if !ok {
+		t.Fatalf("payload has no diagnostics field:\n%s", stdout.String())
+	}
+	if string(field) != "[]" {
+		t.Errorf("diagnostics = %s, want [] -- null is not an array a consumer can iterate", field)
+	}
+}
+
 // TestCheckDeterminism confirms repeated runs produce identical diagnostics, since an agent may
 // diff or cache them.
 func TestCheckDeterministicOutput(t *testing.T) {
