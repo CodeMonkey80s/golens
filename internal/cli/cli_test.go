@@ -249,6 +249,45 @@ func TestCheckHelpStatesTheStreamContract(t *testing.T) {
 	}
 }
 
+// TestCheckHelpStatesTheTestdataScope pins the help text to the behaviour, the same way
+// TestCheckHelpStatesTheStreamContract does.
+//
+// The help now says a testdata directory is not walked and that naming a file directly still
+// checks it. Both halves are load-bearing and each is verified here, because help that
+// states a scope no test checks is how the stream contract drifted once already.
+func TestCheckHelpStatesTheTestdataScope(t *testing.T) {
+	root := New(DefaultEnv(goast.New()))
+	checkCmd, _, err := root.Find([]string{"check"})
+	if err != nil {
+		t.Fatalf("Find check: %v", err)
+	}
+	if !strings.Contains(checkCmd.Long, "testdata") {
+		t.Errorf("check help never mentions testdata, so a caller cannot know the scope:\n%s", checkCmd.Long)
+	}
+
+	dir := t.TempDir()
+	writeFile(t, dir, "p.go", "package p\n\nfunc A() {}\n")
+	if err := os.MkdirAll(filepath.Join(dir, "testdata"), 0o755); err != nil {
+		t.Fatalf("mkdir testdata: %v", err)
+	}
+	writeFile(t, dir, "testdata/fixture.go", "package p\n\nfunc B( {\n")
+
+	// A broken fixture in testdata is not a finding, and the tree is clean.
+	_, stderr, code := run(t, "check", dir)
+	if code != 0 {
+		t.Errorf("check exited %d on a tree whose only fault is in testdata:\n%s", code, stderr)
+	}
+
+	// Naming the file directly checks it, which is the exception the help states.
+	_, stderr, code = run(t, "check", filepath.Join(dir, "testdata", "fixture.go"))
+	if code != 3 {
+		t.Errorf("an explicitly named testdata file exited %d, want 3:\n%s", code, stderr)
+	}
+	if !strings.Contains(stderr, "expected ')'") {
+		t.Errorf("the named file was not checked:\n%s", stderr)
+	}
+}
+
 // TestCheckStreamContractHolds confirms the help describes what the code does, in both modes.
 // The assertions mirror TestCheckHelpStatesTheStreamContract: if this fails, the help is right
 // and the code is wrong.

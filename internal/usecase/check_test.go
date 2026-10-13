@@ -56,6 +56,92 @@ func (r checkResult) contains(sub string) bool {
 	return false
 }
 
+// TestCheckSkipsTestdataDirectories pins which files a check invocation reads.
+//
+// A testdata directory holds compiler fixtures: written to be broken, and ignored by the go
+// tool, so no build ever reaches them. check's contract is what a build would reject, and on
+// $GOROOT/src reporting them was 1,212 diagnostics -- every one in a testdata directory --
+// with exit 3 pointing an agent at source whose exact bytes are the test case.
+func TestCheckSkipsTestdataDirectories(t *testing.T) {
+	dir := t.TempDir()
+	testfixture.Write(t, dir, "p.go", "package p\n\nfunc F() {}\n")
+	testfixture.Write(t, dir, "testdata/broken.go", "package p\n\nfunc F(\n")
+	testfixture.Write(t, dir, "testdata/sub/dup.go", "package p\n\nfunc F() {}\n")
+
+	var stdout, stderr bytes.Buffer
+	err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{})
+	if err != nil {
+		t.Errorf("a tree whose only faults live in testdata must check clean, got:\n%s", stderr.String())
+	}
+	for _, unwanted := range []string{"broken.go", "dup.go"} {
+		if strings.Contains(stderr.String(), unwanted) {
+			t.Errorf("%s was checked, but the go tool never builds anything under testdata", unwanted)
+		}
+	}
+}
+
+// TestCheckStillChecksATestdataFileNamedExplicitly is the boundary the pruning must not
+// cross. An agent that names a file has asked about that file; the traversal rule is about
+// what a directory walk collects, not about what a caller may inspect.
+func TestCheckStillChecksATestdataFileNamedExplicitly(t *testing.T) {
+	dir := t.TempDir()
+	path := testfixture.Write(t, dir, "testdata/broken.go", "package p\n\nimport \"fmt\"\n\nfunc F() {}\n")
+
+	var stdout, stderr bytes.Buffer
+	err := usecase.Check(goast.New(), path, &stdout, &stderr, format.Options{})
+
+	if err == nil {
+		t.Error("an explicitly named testdata file is still checked; its unused import is a finding")
+	}
+	if !strings.Contains(stderr.String(), "imported and not used") {
+		t.Errorf("diagnostics = %q, want the unused import", stderr.String())
+	}
+}
+
+// TestOutlineStillListsTestdataFiles is the other half of the same boundary, and the reason
+// the prune lives in check's walk alone. D22: an agent asking what a directory contains
+// wants all of it, including files no build reaches.
+func TestOutlineStillListsTestdataFiles(t *testing.T) {
+	dir := t.TempDir()
+	testfixture.Write(t, dir, "p.go", "package p\n\nfunc F() {}\n")
+	testfixture.Write(t, dir, "testdata/fixture.go", "package p\n\nfunc G() {}\n")
+
+	var stdout, discards bytes.Buffer
+	if err := usecase.Outline(goast.New(), dir, usecase.DepthUnlimited, &stdout, format.Options{JSON: true}); err != nil {
+		t.Fatalf("Outline: %v", err)
+	}
+	_ = discards
+
+	if !strings.Contains(stdout.String(), "fixture.go") {
+		t.Errorf("outline must still list a testdata file:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "p.go") {
+		t.Errorf("outline must list the ordinary file too:\n%s", stdout.String())
+	}
+}
+
+// TestCheckNamesTheReasonWhenOnlyTestdataExists covers a directory whose .go files all sit
+// under testdata. "no .go files found" would assert the directory holds no Go source, and it
+// holds plenty; exit 2 stays, because the caller still named a path with nothing checkable
+// under it, but the message has to be true.
+func TestCheckNamesTheReasonWhenOnlyTestdataExists(t *testing.T) {
+	dir := t.TempDir()
+	testfixture.Write(t, dir, "testdata/fixture.go", "package p\n\nfunc F(\n")
+
+	var stdout, stderr bytes.Buffer
+	err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{})
+	if err == nil {
+		t.Fatal("expected a not-found error for a directory with nothing checkable")
+	}
+	if strings.Contains(stderr.String(), "no .go files found") {
+		t.Errorf("message = %q, want one that names testdata rather than claiming there is no Go source",
+			stderr.String())
+	}
+	if !strings.Contains(err.Error(), "testdata") {
+		t.Errorf("error = %q, want the reason: testdata directories are not checked", err)
+	}
+}
+
 // TestCheckOutputMatchesSpecificationFormat pins the diagnostic shape from specification 2.4:
 // file:line:col: message.
 func TestCheckOutputMatchesSpecificationFormat(t *testing.T) {

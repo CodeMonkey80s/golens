@@ -168,12 +168,21 @@ func newCheckCmd(env Env) *cobra.Command {
   Exit     3 = ran and found a problem in the code
            4 = a file could not be read, so the run is incomplete
   Limits   build constraints ignored; unused-import check is best-effort
+  Scope    testdata directories are not walked; name a file to check it
 
 Exit 3 and exit 4 are different questions. 3 is about the source: fix the
 syntax, the import or the redeclaration. 4 is about the machine: a dangling
 symlink or a permission bit, not a defect to edit. When both occur, both
 are reported and the run exits 4 -- told 3, a caller would believe every
 file was readable.
+
+A testdata directory is not checked. The go tool ignores those directories,
+so no build compiles anything in one, and a finding about a file no build
+reaches is not a finding about the source: they hold compiler fixtures
+written to be broken, and "fixing" one means editing the bytes that are the
+test. The rule is about the walk, not about you -- name a testdata file
+directly and it is checked. outline, get and bounds still traverse them,
+because they answer what the tree contains, not what a build would reject.
 
 This is NOT a type checker. It validates syntax, import usage and duplicate
 declarations, and nothing else. Exit 0 does not mean the file compiles: an

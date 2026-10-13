@@ -66,24 +66,25 @@ func TestSameNamespaceInSameDirectoryConflicts(t *testing.T) {
 // A checker that cannot be run on its own project is a checker nobody will trust. This also
 // covers the awkward real-world case: a directory holding package foo, package foo_test, and
 // several test files with helpers spread between them.
+//
+// testdata/ is out of scope for check itself -- the go tool ignores those directories, so no
+// build reaches them and check reports what a build would reject. Its fixtures are
+// deliberately invalid, so they are not needed here either.
 func TestRepositoryPassesItsOwnCheck(t *testing.T) {
 	root, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
 	}
-	// The test runs in internal/usecase; the module root is two levels up. testdata/ is
-	// excluded because its fixtures are deliberately invalid: store.go has an unused import so
-	// that the outline golden output has a specific shape.
+	// The test runs in internal/usecase; the module root is two levels up.
 	root = root + "/../.."
 
 	var stdout, stderr bytes.Buffer
 	err = usecase.Check(goast.New(), root, &stdout, &stderr, format.Options{})
 	if err != nil {
-		for line := range strings.SplitSeq(strings.TrimRight(stderr.String(), "\n"), "\n") {
-			if strings.Contains(line, "/testdata/") {
-				continue // fixtures are intentionally imperfect
+		for _, line := range strings.Split(strings.TrimRight(stderr.String(), "\n"), "\n") {
+			if line != "" {
+				t.Errorf("golens reports on its own source: %s", line)
 			}
-			t.Errorf("golens reports on its own source: %s", line)
 		}
 	}
 }

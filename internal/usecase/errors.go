@@ -35,6 +35,21 @@ func (e errNoGoFiles) Error() string {
 // IsNotFound marks the error as a not-found condition, so the CLI exits 2.
 func (e errNoGoFiles) IsNotFound() bool { return true }
 
+// errNoCheckableFiles reports a directory whose Go sources all sit in testdata directories,
+// which check does not read.
+//
+// It exists so the message names the actual reason. errNoGoFiles's "no .go files found"
+// asserts the directory holds no Go source, and here it holds plenty -- none of it is
+// compiled by any build, which is why check skips it. Same exit code, true statement.
+type errNoCheckableFiles string
+
+func (e errNoCheckableFiles) Error() string {
+	return fmt.Sprintf("no checkable .go files in %s; testdata directories are not checked", string(e))
+}
+
+// IsNotFound keeps exit 2: the caller named a path with nothing checkable under it.
+func (e errNoCheckableFiles) IsNotFound() bool { return true }
+
 // AmbiguousSymbol reports a name that resolved to more than one declaration.
 //
 // Carrying the candidates in the error keeps the exit-2 path honest: the CLI prints them

@@ -511,6 +511,21 @@ The fix is one line added to the `bounds` summary block, matching the existing l
 No behavioural change; the exit code was already 4. This is a documentation gap, not a bug —
 but help text is the contract an agent reads, so a missing line is a defect.
 
+### Run eleven: help-text review of `check`
+
+`check` no longer walks `testdata` directories, and its help gained a `Scope` line plus a
+paragraph to say so. Verified against the binary rather than the diff:
+
+- `golens check --help` renders the scope line and the exception (a named file is still
+  checked), alongside the existing stream contract.
+- The reference result still holds: `golens check .` on duf exits 0, so trap 3's subject is
+  unaffected — duf carries no `testdata` directory.
+- `AGENTS.template.md` does not restate the walk scope, so there is nothing to contradict the
+  new help; it points at `--help` for exactly this.
+
+No trap changes. The property this protects is the one run ten states: help text is the
+contract, and a scope no help line mentions is a scope an agent cannot know.
+
 ## Summary of nine runs
 
 | Trap | Where measured | Result |

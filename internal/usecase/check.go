@@ -65,7 +65,7 @@ func (HasDiagnostics) IsDiagnostics() bool { return true }
 // or any other convention enforced runs a linter, which is the tool for a judgement the
 // caller must opt into rather than one they inherit by asking a structural question.
 func Check(engine domain.Engine, target string, stdout, stderr io.Writer, opts format.Options) error {
-	paths, err := Files(target)
+	paths, err := checkFiles(target)
 	if err != nil {
 		return err
 	}

@@ -532,6 +532,11 @@ A false accusation is not: it would have an agent delete working code.
 Failure: any diagnostic that no platform's compiler would report, or a false positive on a used
 import.
 
+**`testdata` is not an omission.** `check` does not walk `testdata` directories — the go tool
+ignores them, so no build reaches them, and a finding about a file no build compiles is not a
+finding about the source. If the target holds fixtures there, they are skipped by scope, not
+missed by analysis; confirm with `outline`, which still lists them.
+
 ☐
 
 ## 14. `check` stays out of style
@@ -779,8 +784,11 @@ The fix has three parts, and each is separately load-bearing. Probe them separat
 pass here can be vacuous:
 
 ```console
-$ /tmp/golens check $GOROOT/src 2>&1 | grep -v '/testdata/' | wc -l   # 0
+$ /tmp/golens check $GOROOT/src 2>&1 | wc -l   # 0
 ```
+
+No `grep -v` needed: `testdata` directories are out of check's scope (see case 18), so the
+fixtures that used to force one are no longer read at all.
 
 - **Filename suffixes.** `_windows`, `_amd64`, `_linux_amd64`. The name is read from the first
   underscore onward: `os/zero_copy_linux.go` is linux-only and `runtime/os_only_solaris.go` is
@@ -822,8 +830,14 @@ $ GOROOT=$(go env GOROOT)
 $ find $GOROOT/src -name '*.go' | wc -l                          # 8088
 $ /tmp/golens outline $GOROOT/src | grep -c '^file:'             # thousands, not zero
 $ /tmp/golens outline $GOROOT/src > /dev/null; echo "exit=$?"    # 4
-$ /tmp/golens check    $GOROOT/src > /dev/null; echo "exit=$?"    # 3
+$ /tmp/golens check    $GOROOT/src > /dev/null; echo "exit=$?"    # 0
 ```
+
+Note the asymmetry, which is deliberate rather than a disagreement: `outline` walks
+`testdata` and exits 4 naming what it could not read, while `check` does not walk it at
+all — those directories hold compiler fixtures written to be broken, and no build reaches
+them, so there is nothing a build would reject. A `check` exit of 3 here would mean a real
+finding in real source.
 
 Look for: **`outline` exits 4 with a populated stdout**, and stderr naming the skipped files and
 how complete the answer is:
@@ -859,9 +873,12 @@ $ /tmp/golens outline /tmp/one_broken.go; echo "exit=$?"
 
 Look for: `exit=4` and a message that is the parse error itself.
 
-Note that `golens` does **not** skip `testdata` directories, which is what puts the broken fixtures
-in scope. That is deliberate — an agent asking what a directory contains wants all of it — but it
-means the skipped-file count on a repository like the standard library will never be zero.
+Note that `outline`, `get` and `bounds` do **not** skip `testdata` directories, which is
+what puts the broken fixtures in scope for them. That is deliberate — an agent asking what a
+directory contains wants all of it — but it means the skipped-file count on a repository like
+the standard library will never be zero. `check` is the exception: it answers what a build
+would reject, and no build reaches those directories, so its walk prunes them. Name a
+`testdata` file directly and it is still checked.
 
 ☐
 

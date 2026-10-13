@@ -613,6 +613,48 @@ parse, exactly as for any other miss.
 
 ---
 
+### D32 · `check` reports what a build would reject, and no build reaches `testdata`
+
+`check`'s contract, specification 2.4, is *"reports what `go build` would reject, without
+building"*. Its walk was the outline walk, and that walk traverses `testdata` directories —
+deliberately, under D22, because an agent asking what a directory contains wants all of it.
+
+Both halves of that sentence are about `outline`. The standard library made the consequence
+visible: `golens check $GOROOT/src` reported **1,212 diagnostics and exit 3**, every one of
+them inside a `testdata` directory, and **zero** on any source a build actually compiles. Those
+directories hold compiler fixtures, written to be broken, and exit 3 is what an agent reads as
+"the code has problems, go and fix them". Following it means editing source whose exact bytes
+are the test case — `internal/types/testdata/fixedbugs` alone held 560 of them.
+
+So the go tool's own ignore rule is now check's: `testdata` is pruned from the walk, as
+`.git`, `vendor`, `node_modules` and hidden directories already were. This is the same bias as
+the build-constraint matrix in D21 — **suppress rather than accuse** — applied one level up:
+a file no configuration compiles cannot conflict with anything, and its syntax is not a
+compile error anywhere.
+
+Three boundaries, because "skip testdata" read as "narrow the tool" at first:
+
+- **A file named explicitly is still checked.** `files()` returns a file target without
+  walking, so `golens check testdata/store.go` reports its unused import exactly as before.
+  The exclusion is about what a *traversal* collects, never about what a caller may inspect.
+- **`outline`, `get` and `bounds` still traverse them.** They answer what the tree contains,
+  which is D22's question and still the right one for them.
+- **A directory holding nothing but `testdata` says so.** "no .go files found" asserts the
+  directory has no Go source, and it has plenty; `errNoCheckableFiles` names the reason and
+  keeps exit 2.
+
+The two tests that had been working around this now assert the thing itself.
+`TestRepositoryPassesItsOwnCheck` filtered `/testdata/` out of its own output with a comment
+saying the fixtures were "intentionally imperfect" — a test that excused its subject instead
+of checking it. `TestCheckSkipsTestdataDirectories`, `TestCheckStillChecksATestdataFileNamedExplicitly`,
+`TestOutlineStillListsTestdataFiles` and `TestCheckHelpStatesTheTestdataScope` pin the three
+boundaries and the help statement.
+
+**The rule: a checker's scope is what a build would reject, and a build rejects nothing the
+toolchain never reads.**
+
+---
+
 ## 3. Resolved ambiguities at a glance
 
 | Was ambiguous | Now |

@@ -270,6 +270,16 @@ syntax error. That is the whole scope, and it is why the tool needs neither `go/
 graph. Anything `go build` accepts is out of scope, which is why naming, formatting and idiom are
 not checked here — see §3.1.
 
+**A `testdata` directory is not checked.** The go tool ignores it by documented rule — *"Directory
+and file names that begin with `.` or `_` are ignored by the go tool, as are directories named
+`testdata`"* — so no build ever compiles anything in one, and a diagnostic about a file no build
+reaches is not a claim about the source. On the standard library those directories held 1,212
+diagnostics, every one of them a compiler fixture written to be broken, and exit `3` pointed a caller
+at editing source whose exact bytes are the test case. The exclusion applies to the walk, not to the
+caller: a `testdata` file named explicitly is still checked, and `outline`, `get` and `bounds` still
+traverse those directories, because they are asked what the tree contains rather than what a build
+would reject. A directory holding nothing but `testdata` says it has no checkable files and exits `2`.
+
 **Out of scope.** Module-level import resolution and type-level conflict detection both require `go/types` and a module graph, which conflict with the stateless < 5ms design.
 
 **Output**

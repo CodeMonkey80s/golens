@@ -31,7 +31,67 @@ var skippedDirs = []string{".git", "vendor", "node_modules"}
 // lexical order, with skipped and hidden directories pruned. Sorting is explicit rather
 // than relying on ReadDir alone so the ordering guarantee is visible at the call site:
 // determinism is what lets a consumer diff or cache the output.
+//
+// This walk is shared by outline, get and check; checkFiles is the one exception, and its
+// comment says why pruning testdata there is not a scope decision made invisibly.
 func Files(target string) ([]string, error) {
+	return files(target, false)
+}
+
+// checkFiles collects the files a check invocation analyses.
+//
+// The walk is Files' walk minus one directory name: testdata. The go tool ignores it by
+// documented rule -- "Directory and file names that begin with '.' or '_' are ignored by the
+// go tool, as are directories named 'testdata'" -- so no build ever compiles anything in
+// one. check's contract, specification 2.4, is *"reports what go build would reject, without
+// building"*, and reporting a fixture no build reaches is a claim about code that is never
+// compiled.
+//
+// The cost of getting this wrong is not cosmetic. On $GOROOT/src it was 1,212 diagnostics,
+// every one of them inside a testdata directory, and exit 3 -- which an agent reads as "the
+// code has problems, go and fix them". Compiler fixtures are written to be broken, so the
+// remedy it points at is to edit source whose exact bytes are the test case.
+//
+// D22 declined to prune testdata for outline, on the grounds that an agent asking what a
+// directory contains wants all of it. That reasoning holds there and does not transfer:
+// outline is asked what the tree holds, check is asked what a build would reject, and a
+// directory the toolchain skips is inside the first question and outside the second.
+//
+// A testdata file named explicitly is still checked -- files() returns a file target
+// without walking, so "golens check testdata/store.go" keeps working exactly as before.
+func checkFiles(target string) ([]string, error) {
+	paths, err := files(target, true)
+	if err != nil {
+		return nil, err
+	}
+	// A directory holding nothing but testdata is not "a directory with no Go sources":
+	// there are .go files in it, and they are all in a directory the go tool skips. Saying
+	// "no .go files found" tells a caller it named something that is not there, which is
+	// what exit 2 means, when the directory is right there. Name the reason instead.
+	if len(paths) == 0 && onlyPrunedFiles(target) {
+		return nil, errNoCheckableFiles(target)
+	}
+	return paths, nil
+}
+
+// onlyPrunedFiles reports whether the unpruned walk would have found .go files where the
+// pruned one found none.
+//
+// It runs a second walk, which is only reached when the first collected nothing -- the
+// directory is empty, or every file in it sits under testdata.
+func onlyPrunedFiles(target string) bool {
+	info, err := os.Stat(target)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	found, err := files(target, false)
+	return err == nil && len(found) > 0
+}
+
+// files is the shared walk. pruneTestdata adds testdata to the pruned names, which is what
+// separates check's file set from outline's; the flag exists so the two walks cannot drift
+// apart in any other respect.
+func files(target string, pruneTestdata bool) ([]string, error) {
 	info, err := os.Stat(target)
 	if err != nil {
 		// A missing or unreadable path is "not found" under the documented contract, not
@@ -75,7 +135,7 @@ func Files(target string) ([]string, error) {
 		}
 
 		if d.IsDir() {
-			if path != root && skipDir(d.Name()) {
+			if path != root && skipDir(d.Name(), pruneTestdata) {
 				return fs.SkipDir
 			}
 			return nil
@@ -102,8 +162,13 @@ func Files(target string) ([]string, error) {
 	return found, nil
 }
 
-func skipDir(name string) bool {
+// skipDir reports whether a directory is pruned from a walk. pruneTestdata adds the one
+// name the go tool ignores that is not already pruned here.
+func skipDir(name string, pruneTestdata bool) bool {
 	if strings.HasPrefix(name, ".") {
+		return true
+	}
+	if pruneTestdata && name == "testdata" {
 		return true
 	}
 	return slices.Contains(skippedDirs, name)
