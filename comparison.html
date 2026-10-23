@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>golens vs gopls — Domain Comparison</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.6;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+    color: #1a1a2e;
+    background: #fafafa;
+  }
+  h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 0.5rem; color: #0d1b2a; }
+  h2 { font-size: 1.3rem; font-weight: 600; margin-top: 2.5rem; margin-bottom: 1rem; color: #1b2a4a; border-bottom: 1px solid #e0e4eb; padding-bottom: 0.4rem; }
+  h3 { font-size: 1.05rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.5rem; color: #2a3a5a; }
+  p { margin: 0.7rem 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 0.85rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid #eef0f4;
+  }
+  th { background: #f5f7fa; font-weight: 600; color: #2a3a5a; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafbfc; }
+  .check { color: #1a7f37; font-weight: 600; }
+  .cross { color: #c0392b; font-weight: 600; }
+  .warn { color: #b8860b; font-weight: 600; }
+  .domain { font-weight: 600; color: #1b2a4a; }
+  .note { font-size: 0.85rem; color: #5a6a8a; font-style: italic; }
+  .tag { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 3px; font-size: 0.75rem; font-weight: 600; }
+  .tag-go { background: #e8f4fd; color: #1a5fb4; }
+  .tag-lsp { background: #f0e8fd; color: #6a1ab4; }
+  .tag-both { background: #e8fde8; color: #1a7f37; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+  .card {
+    background: #fff;
+    border: 1px solid #e0e4eb;
+    border-radius: 8px;
+    padding: 1.25rem;
+  }
+  .card h3 { margin-top: 0; font-size: 1rem; }
+  .verdict { padding: 1rem; background: #f0f7f0; border-left: 4px solid #1a7f37; border-radius: 0 6px 6px 0; margin: 1.5rem 0; }
+  .verdict.warn { background: #fff8e8; border-left-color: #b8860b; }
+  .verdict.false { background: #fdeaea; border-left-color: #c0392b; }
+  code { background: #f0f2f5; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.9em; font-family: "SF Mono", "Fira Code", monospace; }
+  pre { background: #1a1a2e; color: #d4d4d4; padding: 1rem; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; line-height: 1.5; }
+  pre code { background: none; padding: 0; }
+  .capability { width: 35%; }
+  .golens-col { width: 30%; }
+  .gopls-col { width: 30%; }
+  .notes-col { width: 5%; }
+  ul { margin: 0.5rem 0 0.5rem 1.5rem; }
+  li { margin: 0.3rem 0; }
+  .footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid #e0e4eb; color: #6a7a9a; font-size: 0.85rem; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>golens vs gopls — Domain Comparison</h1>
+
+<div class="summary-grid">
+  <div class="card">
+    <h3><span class="tag tag-go">golens</span> Goal</h3>
+    <p>Stateless, byte-exact structural query tool for AI coding agents. Answers: <em>"What are the exact bytes I can overwrite?"</em></p>
+    <ul>
+      <li>No daemon, no module required</li>
+      <li>Sub-5ms parse, 5.35 MiB binary</li>
+      <li>AST-only, no type checking</li>
+      <li>Deterministic JSON, half-open byte offsets</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3><span class="tag tag-lsp">gopls</span> Goal</h3>
+    <p>IDE-quality Go language server. Answers: <em>"What does this symbol mean?"</em></p>
+    <ul>
+      <li>Full type checking via <code>go/types</code></li>
+      <li>Module graph, build tags, cgo</li>
+      <li>Refactoring, completions, diagnostics</li>
+      <li>LSP protocol (line/col, UTF-16)</li>
+    </ul>
+  </div>
+</div>
+
+<h2>Capability Comparison</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th class="capability">Capability</th>
+      <th class="golens-col"><span class="tag tag-go">golens</span></th>
+      <th class="gopls-col"><span class="tag tag-lsp">gopls</span></th>
+      <th class="notes-col">Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Exact byte offsets for programmatic edits</td>
+      <td><span class="check">✓</span> Half-open <code>[start,end)</code></td>
+      <td><span class="cross">✗</span> LSP positions (line/col, UTF-16)</td>
+      <td>golens offsets are directly sliceable</td>
+    </tr>
+    <tr>
+      <td>Works on a single broken <code>.go</code> file</td>
+      <td><span class="check">✓</span> Parse error is the answer</td>
+      <td><span class="cross">✗</span> Needs module, struggles with broken code</td>
+      <td>golens is stateless; gopls needs context</td>
+    </tr>
+    <tr>
+      <td>Works outside a Go module</td>
+      <td><span class="check">✓</span> No <code>go.mod</code> needed</td>
+      <td><span class="cross">✗</span> Requires module + type checking</td>
+      <td>Agent can query any file anywhere</td>
+    </tr>
+    <tr>
+      <td>Sub-5ms parse, no daemon</td>
+      <td><span class="check">✓</span> On-demand, in-memory</td>
+      <td><span class="cross">✗</span> Heavy analysis, persistent server</td>
+      <td>golens budget: 5ms P95 per file</td>
+    </tr>
+    <tr>
+      <td>Deterministic, machine-readable JSON</td>
+      <td><span class="check">✓</span> <code>schema_version: 1</code> first field</td>
+      <td><span class="warn">⚠</span> LSP protocol, not for agent scripting</td>
+      <td>golens JSON is stable, pipeable</td>
+    </tr>
+    <tr>
+      <td>Syntax + import + duplicate validation</td>
+      <td><span class="check">✓</span> <code>check</code> command, AST-only</td>
+      <td><span class="check">✓</span> Full compile-time diagnostics</td>
+      <td>gopls is more thorough; golens is faster</td>
+    </tr>
+    <tr>
+      <td>Type-level diagnostics (unused var, wrong args)</td>
+      <td><span class="cross">✗</span> Out of scope (spec §2.4)</td>
+      <td><span class="check">✓</span> Full <code>go/types</code> analysis</td>
+      <td>Different abstraction levels</td>
+    </tr>
+    <tr>
+      <td>Refactoring (rename, extract, etc.)</td>
+      <td><span class="cross">✗</span> Not a mutation tool</td>
+      <td><span class="check">✓</span> LSP code actions</td>
+      <td>golens = query only</td>
+    </tr>
+    <tr>
+      <td>Symbol documentation / hover</td>
+      <td><span class="cross">✗</span> No doc comments (v0.1)</td>
+      <td><span class="check">✓</span> Full godoc integration</td>
+      <td>golens defers to v0.2</td>
+    </tr>
+    <tr>
+      <td>Cross-references (callers, implementations)</td>
+      <td><span class="cross">✗</span> No type graph</td>
+      <td><span class="check">✓</span> Type-aware navigation</td>
+      <td>gopls strength</td>
+    </tr>
+    <tr>
+      <td>No style enforcement</td>
+      <td><span class="check">✓</span> Deliberate (D9)</td>
+      <td><span class="warn">⚠</span> Configurable linters</td>
+      <td>golens never judges style</td>
+    </tr>
+    <tr>
+      <td>Binary size</td>
+      <td><span class="check">5.35 MiB</span> (budget 15 MiB)</td>
+      <td>~50–80 MiB</td>
+      <td>golens: no cgo, minimal deps</td>
+    </tr>
+    <tr>
+      <td>CGI/Embed/CGO files parse cleanly</td>
+      <td><span class="check">✓</span> Ignores build constraints</td>
+      <td><span class="check">✓</span> Full build awareness</td>
+      <td>Different approaches, both work</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Core Distinction</h2>
+
+<div class="verdict">
+  <strong>golens ≠ "gopls lite".</strong> gopls answers <em>"what does this mean?"</em> (types, refs, docs). golens answers <em>"what are the exact bytes?"</em> (offsets, source extraction). Different questions, different consumers (IDE vs AI agent), different trade-offs.
+</div>
+
+<h2>When to Use Which</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Scenario</th>
+      <th>Use</th>
+      <th>Why</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Agent needs to edit one declaration in a large file</td>
+      <td><span class="tag tag-go">golens</span></td>
+      <td>Byte offsets + <code>get</code> = safe splice</td>
+    </tr>
+    <tr>
+      <td>Human in IDE wants go-to-definition, rename, completions</td>
+      <td><span class="tag tag-lsp">gopls</span></td>
+      <td>Type-aware, fast UX, rich UI</td>
+    </tr>
+    <tr>
+      <td>CI script validating imports/duplicates without building</td>
+      <td><span class="tag tag-go">golens</span></td>
+      <td>Sub-second, no module graph, exit codes</td>
+    </tr>
+    <tr>
+      <td>Repository with broken files, partial checkouts</td>
+      <td><span class="tag tag-go">golens</span></td>
+      <td>Stateless, parses what it can</td>
+    </tr>
+    <tr>
+      <td>Understanding call graphs, interface implementations</td>
+      <td><span class="tag tag-lsp">gopls</span></td>
+      <td>Requires type information</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Architecture Notes</h2>
+
+<h3>golens — Engine Interface (from D10)</h3>
+<pre><code>type Bounds struct{ StartLine, EndLine, StartByte, EndByte int }
+type Node struct{ Name, Kind, Detail, Receiver, TypeParams string; IsAlias bool; Bounds Bounds; Children []Node; IsGroup bool }
+type Document struct{ Path, Package string; Bounds Bounds; Nodes []Node; Symbols []Symbol; Imports []string; Source []byte; Comments bool }
+type Engine interface{ Parse(path string) (Document, error) }
+</code></pre>
+<p>Narrow, tree-shaped, no <code>go/ast</code> leakage — designed so a Tree-sitter backend <em>could</em> swap in, but the contract commits only to Go.</p>
+
+<h3>gopls — LSP + Type Graph</h3>
+<p>Built on <code>golang.org/x/tools</code>, uses <code>go/types</code>, module graph, build system integration. Stateful server with incremental analysis.</p>
+
+<div class="footer">
+  Generated from golens project analysis. golens v0.2+ · gopls (golang.org/x/tools/gopls)
+</div>
+
+</body>
+</html>

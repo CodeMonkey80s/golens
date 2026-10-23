@@ -1,12 +1,14 @@
 # golens — Engineering Decision Log (v0.1 MVP)
 
 Status: **Decided.** This document resolves every ambiguity found in `specification.md`.
-No normative content was removed; §5 below contains the exact patch text to merge into the spec.
+No normative content was removed; §5 below contains the historical record of the spec patch.
 
 Principle applied to every decision: **best fit for an agent consumer.** A coding agent
 parses this output programmatically, so determinism, schema stability and
 unambiguous machine conventions outrank human prettiness. Where the spec was silent,
 the choice is the one that cannot be misread and cannot silently corrupt a file.
+
+**For the narrative — the bugs that shipped, the green tests that missed them, the lessons per session — see `history.md`.**
 
 ---
 
@@ -711,20 +713,18 @@ toolchain never reads.**
 
 ---
 
-## 5. Spec patch — applied
+## 5. Spec patch — Historical Record (Applied in S5)
 
-**This section is a record, not a to-do list.** Every clause below was merged into
-`specification.md` during S5, and the spec is normative. Nothing here needs applying.
+**This section is a historical record, not a to-do list.** Every clause below was merged into
+`specification.md` during S5. The spec (`specification.md`) is the normative source; this section
+shows what the decisions changed about the original spec draft. Where the two differ,
+`specification.md` wins.
 
-It is kept because it shows what the decisions changed about the spec, and because a diff against
-the spec is otherwise invisible. Two cautions when reading it:
+**Note:** The Package Layout clause below names a `naming` package that was deleted under D9;
+the spec's §3.1 does not include it.
 
-- **The quoted text is the patch as proposed, not the spec as it stands.** Later work reworded and
-  extended several of these clauses — the build-constraint matrix, the alias and type-parameter
-  rules, and the JSON node fields are all longer in the spec than here. Where the two differ,
-  `specification.md` wins.
-- **One clause is obsolete.** The Package Layout line below names a `naming` package that was
-  deleted under D9; the spec's version of that clause does not.
+For the narrative of *why* these changes were made — the bugs that shipped, the green tests that
+didn't catch them, and the lessons per session — see `history.md`.
 
 ### 5.1 §2, after the global-flags list
 

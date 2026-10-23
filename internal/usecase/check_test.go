@@ -176,6 +176,11 @@ func TestCheckExitCodes(t *testing.T) {
 		{"syntax error", "package p\n\nfunc f( {\n", 3},
 		{"no imports, no declarations", "package p\n", 0},
 		{"comments only", "// nothing\npackage p\n", 0},
+		// init() is repeatable per Go spec — multiple in one package are legal
+		{"multiple init in one file", "package p\n\nfunc init() {}\nfunc init() {}\n", 0},
+		// Blank identifier is a deliberate discard — never a conflict
+		{"blank identifier var", "package p\n\nvar _ = 42\n", 0},
+		{"blank identifier func", "package p\n\nfunc _() {}\n", 0},
 	}
 
 	for _, tt := range tests {
@@ -185,6 +190,22 @@ func TestCheckExitCodes(t *testing.T) {
 				t.Errorf("exit = %d, want %d (diagnostics: %v)", res.code, tt.want, res.diags)
 			}
 		})
+	}
+}
+
+// TestCheckInitRepeatableAcrossFiles verifies that init() in multiple files of the same
+// package does not produce a redeclaration diagnostic. This is the cross-file companion
+// to the "multiple init in one file" case above.
+func TestCheckInitRepeatableAcrossFiles(t *testing.T) {
+	dir := t.TempDir()
+	// Two files in the same package, each with its own init
+	testfixture.Write(t, dir, "a.go", "package p\n\nfunc init() { println(\"a\") }\n")
+	testfixture.Write(t, dir, "b.go", "package p\n\nfunc init() { println(\"b\") }\n")
+
+	var stdout, stderr bytes.Buffer
+	err := usecase.Check(goast.New(), dir, &stdout, &stderr, format.Options{})
+	if err != nil {
+		t.Errorf("multiple init across files must not be a conflict:\n%s", stderr.String())
 	}
 }
 

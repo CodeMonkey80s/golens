@@ -12,8 +12,7 @@ golens is a high-performance, stateless CLI tool written in Go that provides AI 
 
 ### 1.2 Target Engine Scope
 
-- **Language Support (v0.1 MVP)**: Go source code (.go).
-- **Parser Architecture**: Modular Engine interface to allow seamless addition of Tree-Sitter grammars for non-Go languages in future releases (v0.2+).
+- **Language Support**: Go source code (.go).
 
 ## 2. CLI Command Specifications
 

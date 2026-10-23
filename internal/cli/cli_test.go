@@ -734,3 +734,131 @@ func TestVersionFlag(t *testing.T) {
 		t.Errorf("--version printed %q, want it to contain %q", out.String(), Version)
 	}
 }
+
+// TestGetInitAmbiguous verifies that 'get init' on a file with multiple init functions
+// reports them as ambiguous (exit 2 with candidates). Each init is a distinct declaration
+// at the package level, and Go permits multiple init functions per package.
+func TestGetInitAmbiguous(t *testing.T) {
+	path := fixture(t, "init.go", "package p\n\nfunc init() {}\nfunc init() {}\nfunc Regular() {}\n")
+
+	stdout, stderr, code := run(t, "get", "init", path)
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2 for ambiguous init", code)
+	}
+	if stdout != "" {
+		t.Errorf("stdout should be empty on error, got:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "ambiguous") {
+		t.Errorf("stderr should report ambiguity:\n%s", stderr)
+	}
+	// Should list two init candidates (both from the same file at different lines)
+	if !strings.Contains(stderr, "init") || strings.Count(stderr, "init") < 2 {
+		t.Errorf("stderr should list both init candidates:\n%s", stderr)
+	}
+}
+
+// TestGetInitSingleFile verifies that 'get init' on a file with a single init succeeds.
+func TestGetInitSingleFile(t *testing.T) {
+	path := fixture(t, "init.go", "package p\n\nfunc init() { println(\"hello\") }\nfunc Regular() {}\n")
+
+	stdout, stderr, code := run(t, "get", "init", path)
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 for single init (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stdout, "func init()") {
+		t.Errorf("stdout should contain the init function:\n%s", stdout)
+	}
+}
+
+// TestGetBlankIdentifier verifies that 'get _' on a file with blank identifier declarations
+// reports them as ambiguous (exit 2 with candidates). The blank identifier is a distinct
+// declaration at the package level, and multiple can exist (var, func, import).
+func TestGetBlankIdentifier(t *testing.T) {
+	path := fixture(t, "blank.go", "package p\n\nimport _ \"fmt\"\n\nvar _ = 42\n\nfunc _() {}\n")
+
+	stdout, stderr, code := run(t, "get", "_", path)
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2 for ambiguous blank identifier", code)
+	}
+	if stdout != "" {
+		t.Errorf("stdout should be empty on error, got:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "_") {
+		t.Errorf("stderr should list blank identifier candidates:\n%s", stderr)
+	}
+}
+
+// TestOutlineInitAndBlank verifies that outline lists init and blank identifier
+// declarations as separate nodes, each with their own line range.
+func TestOutlineInitAndBlank(t *testing.T) {
+	path := fixture(t, "mixed.go", "package p\n\nfunc init() {}\nfunc init() {}\n\nvar _ = 42\n\nfunc _() {}\n")
+
+	stdout, _, code := run(t, "outline", path, "--depth", "1")
+	if code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	// Both init functions should appear
+	if strings.Count(stdout, "func init()") < 2 {
+		t.Errorf("outline should list both init functions:\n%s", stdout)
+	}
+	// Blank identifier var and func should appear
+	if !strings.Contains(stdout, "var _") {
+		t.Errorf("outline should list blank identifier var:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "func _()") {
+		t.Errorf("outline should list blank identifier func:\n%s", stdout)
+	}
+}
+
+// TestOutlineInitAndBlankJSON verifies that JSON outline includes init and blank
+// identifier as separate nodes with distinct bounds.
+func TestOutlineInitAndBlankJSON(t *testing.T) {
+	path := fixture(t, "mixed.go", "package p\n\nfunc init() {}\nfunc init() {}\n\nvar _ = 42\n\nfunc _() {}\n")
+
+	stdout, _, code := run(t, "outline", path, "--depth", "1", "--json", "--compact")
+	if code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+
+	var payload []map[string]any
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\n%s", err, stdout)
+	}
+	if len(payload) != 1 {
+		t.Fatalf("expected 1 file in payload, got %d", len(payload))
+	}
+
+	nodes := payload[0]["nodes"].([]any)
+	if len(nodes) != 4 {
+		t.Fatalf("expected 4 nodes (2 init, var _, func _), got %d: %v", len(nodes), nodes)
+	}
+
+	// Verify all four nodes exist with correct kinds and names
+	initCount := 0
+	blankVarCount := 0
+	blankFuncCount := 0
+	for _, n := range nodes {
+		node := n.(map[string]any)
+		name := node["name"].(string)
+		kind := node["kind"].(string)
+		if name == "init" && kind == "func" {
+			initCount++
+		}
+		if name == "_" && kind == "var" {
+			blankVarCount++
+		}
+		if name == "_" && kind == "func" {
+			blankFuncCount++
+		}
+	}
+
+	if initCount != 2 {
+		t.Errorf("expected 2 init nodes, got %d", initCount)
+	}
+	if blankVarCount != 1 {
+		t.Errorf("expected 1 blank var node, got %d", blankVarCount)
+	}
+	if blankFuncCount != 1 {
+		t.Errorf("expected 1 blank func node, got %d", blankFuncCount)
+	}
+}
