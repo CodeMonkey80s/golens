@@ -56,6 +56,9 @@ func TestCrossPackageNameIsNotReportedAsAmbiguous(t *testing.T) {
 // TestCrossPackageAdviceDoesNotRecommendAQualifiedName guards the half of the bug that was
 // worse than the wording: the old advice recommended a qualified name, and `get p.A` does not
 // resolve because a qualified name addresses a method within a type.
+//
+// With package-qualified lookup, `p.A` and `p_test.A` NOW resolve. The advice for cross-package
+// names still recommends a file (since that's unambiguous), but the qualified form now works.
 func TestCrossPackageAdviceDoesNotRecommendAQualifiedName(t *testing.T) {
 	dir := t.TempDir()
 	testfixture.Write(t, dir, "a.go", "package p\n\nfunc A() {}\n")
@@ -76,11 +79,16 @@ func TestCrossPackageAdviceDoesNotRecommendAQualifiedName(t *testing.T) {
 		t.Error("Advice() is empty; the caller has no remedy")
 	}
 
-	// The advice must not send the caller to something that does not work.
+	// Now that package-qualified lookup works, p.A and p_test.A DO resolve.
+	// The advice for cross-package still recommends a file (unambiguous), but
+	// the qualified form is now valid.
 	for _, name := range []string{"p.A", "p_test.A"} {
 		var probe bytes.Buffer
-		if perr := usecase.Get(goast.New(), name, dir, true, &probe, format.Options{}); perr == nil {
-			t.Errorf("%q unexpectedly resolved, so the advice could legitimately recommend it", name)
+		if perr := usecase.Get(goast.New(), name, dir, true, &probe, format.Options{}); perr != nil {
+			t.Errorf("%q should now resolve with package-qualified lookup: %v", name, perr)
+		}
+		if !strings.Contains(probe.String(), "func A()") {
+			t.Errorf("%q resolved but output unexpected:\n%s", name, probe.String())
 		}
 	}
 }

@@ -398,13 +398,30 @@ func unusedImports(doc domain.Document) []Diagnostic {
 		// so the derived name is "go-runewidth" -- not a Go identifier, and therefore never
 		// present in the source no matter how the import is used.
 		//
+		// A major-version suffix is the other exception. "github.com/containerd/containerd/
+		// api/services/tasks/v1" declares "package tasks", so the local name is "tasks",
+		// not the path's last element "v1". When the derived name doesn't appear in source,
+		// try the element before a version-like suffix before accusing the import.
+		//
 		// Resolving the real name needs module resolution, which is out of scope, so the
-		// check cannot decide. Silence is the only safe answer: accusing an import that is in
-		// use would have an agent delete working code.
+		// check cannot always decide. Silence is the only safe answer: accusing an import
+		// that is in use would have an agent delete working code.
 		if !isIdentifier(decl.name) {
 			continue
 		}
-		if !used[decl.name] {
+		if used[decl.name] {
+			continue
+		}
+		// Try alternative names for versioned import paths: if "v1" doesn't appear but
+		// "tasks" (the element before "/v1") does, the import is in use under its real name.
+		accuse := true
+		for _, alt := range alternativeImportNames(decl.detail) {
+			if used[alt] {
+				accuse = false
+				break
+			}
+		}
+		if accuse {
 			diags = append(diags, Diagnostic{
 				Severity: "warning",
 				Path:     doc.Path,
@@ -415,6 +432,41 @@ func unusedImports(doc domain.Document) []Diagnostic {
 		}
 	}
 	return diags
+}
+
+// alternativeImportNames returns possible local names for an import path when the
+// primary derived name doesn't appear in source. For a path ending in "/vN" (N >= 1),
+// it also returns the element before the suffix, since Go modules often declare a
+// package named after that element rather than the version suffix.
+//
+// For example, "github.com/containerd/containerd/api/services/tasks/v1" declares
+// "package tasks", so both "v1" (derived) and "tasks" (real) are candidates.
+func alternativeImportNames(path string) []string {
+	path = strings.Trim(path, "\"")
+	elements := strings.Split(path, "/")
+	if len(elements) < 2 {
+		return nil
+	}
+	last := elements[len(elements)-1]
+	if !isVersionElement(last) {
+		return nil
+	}
+	return []string{elements[len(elements)-2]}
+}
+
+// isVersionElement reports whether s looks like a Go module version suffix "vN"
+// (N >= 1). v1 is treated as a version element here because module paths commonly
+// end in /v1 even though the package declares a different name.
+func isVersionElement(s string) bool {
+	if len(s) < 2 || s[0] != 'v' {
+		return false
+	}
+	for _, c := range s[1:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // importDecl is one import spec: the local name it binds plus where it was written.

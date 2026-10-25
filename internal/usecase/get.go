@@ -89,6 +89,12 @@ func Resolve(engine domain.Engine, name, target string) (domain.Symbol, domain.D
 			// would be a confident wrong answer; the parse failure is the real one.
 			return domain.Symbol{}, domain.Document{}, skipped, skipped.Files[0]
 		}
+		// If the query looks like p.Func and p is a package we parsed, try package-qualified lookup.
+		if sym, doc, pkgSkipped, err := tryPackageQualified(engine, name, pkgNames, paths, skipped); err == nil && sym.Name != "" {
+			return sym, doc, pkgSkipped, nil
+		} else if err != nil {
+			return domain.Symbol{}, domain.Document{}, pkgSkipped, err
+		}
 		if pq, ok := packageQualified(name, pkgNames, skipped); ok {
 			return domain.Symbol{}, domain.Document{}, skipped, pq
 		}
@@ -108,6 +114,60 @@ func Resolve(engine domain.Engine, name, target string) (domain.Symbol, domain.D
 			Matches: names,
 			Skipped: len(skipped.Files),
 			Total:   len(paths),
+		}
+	}
+}
+
+// tryPackageQualified attempts package-qualified lookup when the normal resolution finds nothing.
+// It is called only in the zero-match branch, so it never overrides a successful Type.Method resolution.
+// Returns (symbol, document, skipped, nil) when found; (zero, zero, skipped, NotFound) when not found;
+// (zero, zero, skipped, AmbiguousSymbol) when ambiguous in the named package.
+func tryPackageQualified(engine domain.Engine, name string, pkgNames map[string]bool, paths []string, skipped Skipped) (domain.Symbol, domain.Document, Skipped, error) {
+	pkg, rest, found := strings.Cut(name, ".")
+	if !found || rest == "" || !pkgNames[pkg] {
+		return domain.Symbol{}, domain.Document{}, skipped, nil
+	}
+
+	// The first segment is a known package name. Try to resolve the rest as a symbol in that package.
+	var matches []domain.Symbol
+	var matchDoc domain.Document
+	var pkgSkipped Skipped
+	pkgSkipped.Total = len(paths)
+
+	for _, path := range paths {
+		doc, parseErr := engine.Parse(path)
+		if parseErr != nil {
+			pkgSkipped.Files = append(pkgSkipped.Files, ParseError{Path: path, Err: parseErr})
+			continue
+		}
+		if doc.Package != pkg {
+			continue
+		}
+		for _, sym := range doc.Lookup(rest) {
+			sym.File = path
+			matches = append(matches, sym)
+			if len(matches) == 1 {
+				matchDoc = doc
+			}
+		}
+	}
+
+	switch len(matches) {
+	case 0:
+		return domain.Symbol{}, domain.Document{}, skipped, nil
+	case 1:
+		return matches[0], matchDoc, pkgSkipped, nil
+	default:
+		// Multiple matches in the same package — genuine ambiguity.
+		names := make([]string, 0, len(matches))
+		for _, m := range matches {
+			names = append(names, filepath.ToSlash(m.File)+": "+m.QualifiedName)
+		}
+		return domain.Symbol{}, domain.Document{}, pkgSkipped, AmbiguousSymbol{
+			Name:    rest,
+			Matches: names,
+			Skipped: len(skipped.Files),
+			Total:   skipped.Total,
 		}
 	}
 }

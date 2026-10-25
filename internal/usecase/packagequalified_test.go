@@ -12,53 +12,36 @@ import (
 	"github.com/CodeMonkey80s/golens/internal/usecase"
 )
 
-// TestPackageQualifiedQueryIsToldWhatFormResolves covers `golens get domain.Node .`.
+// TestPackageQualifiedQueryResolves covers `golens get domain.Node .`.
 //
-// Go namespaces by package and the path argument already selects one, so prefixing the
-// package name is the reasonable guess — but Lookup matches a bare name or a qualified
-// method name and nothing else, so the query came back as "symbol not found": the same
-// message a genuinely absent symbol gets. A caller cannot tell "you used a form this tool
-// does not accept" from "there is no such declaration", and it acts on the second by
-// renaming or deleting code.
-//
-// The fix is the message, not the lookup: package-qualified resolution is a separate
-// specification change, and the honest answer today is to name the form that resolves.
-func TestPackageQualifiedQueryIsToldWhatFormResolves(t *testing.T) {
+// Package-qualified lookup now resolves: `p.Func` finds `Func` in package `p`.
+// This is the v0.3 feature that replaces the old PackageQualifiedSymbol error.
+func TestPackageQualifiedQueryResolves(t *testing.T) {
 	dir := t.TempDir()
 	testfixture.Write(t, dir, "ok.go", "package domain\n\ntype Node struct{}\n\nfunc (n Node) Head() string { return \"\" }\n")
 
 	var out bytes.Buffer
 	err := usecase.Get(goast.New(), "domain.Node", dir, true, &out, format.Options{})
-
-	var pq usecase.PackageQualifiedSymbol
-	if !errors.As(err, &pq) {
-		t.Fatalf("err = %v (%T), want PackageQualifiedSymbol", err, err)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
 	}
-	if !strings.Contains(err.Error(), `symbol "domain.Node" not found`) {
-		t.Errorf("the miss no longer says what was asked for: %v", err)
-	}
-	if !strings.Contains(pq.Advice(), `pass "Node"`) {
-		t.Errorf("advice does not name the form that resolves: %q", pq.Advice())
-	}
-	if !strings.Contains(pq.Advice(), "Type.Method") {
-		t.Errorf("advice does not name the dotted form that does resolve: %q", pq.Advice())
-	}
-	if out.Len() != 0 {
-		t.Errorf("a miss wrote to stdout:\n%s", out.String())
+	if !strings.Contains(out.String(), "Node struct") {
+		t.Errorf("expected to resolve Node in package domain:\n%s", out.String())
 	}
 
-	// The advice must be reachable through the interface the cli layer uses, or it prints
-	// nothing and the fix appears not to have worked — the nesting defect recorded in
-	// TestAdviceIsPrintedWithoutACandidateList.
-	var advised interface{ Advice() string } = pq
-	if advised.Advice() == "" {
-		t.Error("PackageQualifiedSymbol exposes no advice through the cli's interface")
+	// The form that resolves for a method within a type is still Type.Method
+	// and should still work.
+	var out2 bytes.Buffer
+	if err := usecase.Get(goast.New(), "Node.Head", dir, true, &out2, format.Options{}); err != nil {
+		t.Fatalf("Get Node.Head: %v", err)
 	}
 }
 
-// TestPackageQualifiedQueryStillReportsAnIncompleteSearch: the query named a package, so
-// the message must not read as though every file were parsed.
-func TestPackageQualifiedQueryStillReportsAnIncompleteSearch(t *testing.T) {
+// TestPackageQualifiedQueryReportsIncompleteSearch covers the case where the package-qualified
+// lookup succeeds but some files in the search could not be parsed. The skipped count is
+// reported in the error (exit 4), while the symbol is still returned (exit 0 would be wrong
+// because the search was incomplete).
+func TestPackageQualifiedQueryReportsIncompleteSearch(t *testing.T) {
 	dir := t.TempDir()
 	testfixture.Write(t, dir, "ok.go", "package domain\n\ntype Node struct{}\n")
 	testfixture.Write(t, dir, "broken.go", "package domain\n\nfunc B( {\n")
@@ -66,12 +49,17 @@ func TestPackageQualifiedQueryStillReportsAnIncompleteSearch(t *testing.T) {
 	var out bytes.Buffer
 	err := usecase.Get(goast.New(), "domain.Node", dir, true, &out, format.Options{})
 
-	var pq usecase.PackageQualifiedSymbol
-	if !errors.As(err, &pq) {
-		t.Fatalf("err = %v (%T), want PackageQualifiedSymbol", err, err)
+	// The symbol resolves, but the run still exits 4 due to skipped files.
+	var skipped usecase.SkippedFilesError
+	if errors.As(err, &skipped) {
+		if len(skipped.Failures) != 1 {
+			t.Errorf("expected 1 skipped file, got %d", len(skipped.Failures))
+		}
+	} else {
+		t.Errorf("expected SkippedFilesError, got %T: %v", err, err)
 	}
-	if !strings.Contains(err.Error(), "1 of 2 files could not be parsed") {
-		t.Errorf("a partial search answered like a complete one: %v", err)
+	if !strings.Contains(out.String(), "Node struct") {
+		t.Errorf("expected to resolve Node in package domain:\n%s", out.String())
 	}
 }
 

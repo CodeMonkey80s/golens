@@ -278,6 +278,29 @@ func TestUnusedImportDetection(t *testing.T) {
 			name: "two imports sharing a prefix",
 			src:  "package p\n\nimport (\n\t\"net/http\"\n\t\"net/http/httptest\"\n)\n\nfunc F() { _ = http.MethodGet; _ = httptest.NewServer }\n",
 		},
+		{
+			// Versioned import path: last path element is "v1" but the package
+			// declares "package tasks". Deriving "v1" as the local name would
+			// falsely accuse the import as unused.
+			name: "versioned import path /v1",
+			src: `package p
+
+import "github.com/containerd/containerd/api/services/tasks/v1"
+
+func F() { _ = tasks.NewTasksClient(nil) }
+`,
+		},
+		{
+			// Versioned import path /v2: last element is a major-version suffix.
+			// Deriving "v2" as the local name would falsely accuse the import.
+			name: "versioned import path /v2",
+			src: `package p
+
+import "example.com/math/rand/v2"
+
+func F() { _ = rand.Intn(10) }
+`,
+		},
 	}
 
 	for _, tt := range tests {

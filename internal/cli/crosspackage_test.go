@@ -42,32 +42,34 @@ func TestCrossPackageNameIsReportedAsSuchAtTheCLI(t *testing.T) {
 	}
 }
 
-// TestPackageQualifiedQueryAdviceReachesStderr is the user-visible half of the
-// package-qualified miss: `golens get p.Node .` answered "symbol not found", the same message
-// an absent symbol gets, so a caller had no way to learn that the dotted form is not a lookup
-// here. It is still exit 2 — the query must be corrected — but it now says which form resolves,
-// and that line has to reach stderr to be of any use.
-func TestPackageQualifiedQueryAdviceReachesStderr(t *testing.T) {
+// TestPackageQualifiedQueryResolvesAtCLI is the user-visible half of the package-qualified
+// lookup feature: `golens get p.Func` now resolves Func in package p.
+func TestPackageQualifiedQueryResolvesAtCLI(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "a.go", "package domain\n\ntype Node struct{}\n")
 
+	// Package-qualified lookup now resolves.
 	stdout, stderr, code := run(t, "get", "domain.Node", dir)
-	if code != 2 {
-		t.Errorf("exit = %d, want 2: the caller must correct the query", code)
+	if code != 0 {
+		t.Errorf("exit = %d, want 0: package-qualified lookup should resolve", code)
 	}
-	if stdout != "" {
-		t.Errorf("stdout should stay empty:\n%s", stdout)
+	if stderr != "" {
+		t.Errorf("stderr should be empty on success:\n%s", stderr)
 	}
-	if !strings.Contains(stderr, `symbol "domain.Node" not found`) {
-		t.Errorf("stderr does not report the query:\n%s", stderr)
-	}
-	if !strings.Contains(stderr, `pass "Node"`) {
-		t.Errorf("stderr carries no advice naming the form that resolves:\n%s", stderr)
+	if !strings.Contains(stdout, "Node struct") {
+		t.Errorf("stdout should contain the resolved symbol:\n%s", stdout)
 	}
 
-	// bounds shares the resolver, so it must not disagree about the same query.
-	if _, bstderr, bcode := run(t, "bounds", "domain.Node", filepath.Join(dir, "a.go")); bcode != 2 || !strings.Contains(bstderr, `pass "Node"`) {
-		t.Errorf("bounds disagrees with get: exit %d\n%s", bcode, bstderr)
+	// bounds shares the resolver, so it must agree.
+	stdout2, stderr2, code2 := run(t, "bounds", "domain.Node", filepath.Join(dir, "a.go"))
+	if code2 != 0 {
+		t.Errorf("bounds exit = %d, want 0", code2)
+	}
+	if stderr2 != "" {
+		t.Errorf("bounds stderr should be empty:\n%s", stderr2)
+	}
+	if !strings.Contains(stdout2, "Node") {
+		t.Errorf("bounds stdout should contain the symbol:\n%s", stdout2)
 	}
 }
 
