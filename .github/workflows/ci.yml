@@ -127,6 +127,16 @@ jobs:
             exit 1
           fi
 
+      # golens against a real third-party module (containerd). This catches
+      # regressions that unit tests cannot: platform filename constraints,
+      # cross-package resolution, unused-import heuristics on real import graphs,
+      # and build-tag interactions. A clean exit here means golens agrees with
+      # go build on a real cross-platform codebase.
+      - name: golens on containerd
+        run: |
+          git clone --depth 1 https://github.com/containerd/containerd.git /tmp/containerd
+          ./golens check /tmp/containerd
+
       - name: Upload the binary
         uses: actions/upload-artifact@v4
         with:

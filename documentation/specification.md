@@ -13,6 +13,7 @@ golens is a high-performance, stateless CLI tool written in Go that provides AI 
 ### 1.2 Target Engine Scope
 
 - **Language Support**: Go source code (.go).
+- **Version injection**: The release number is stamped at link time with `-ldflags "-X …/internal/cli.Version=<v>"`. The variable must stay initialised to a constant string expression; the linker silently ignores a variable whose initialiser is a call. The source must stay free of release numbers — the tag is the single source of truth.
 
 ## 2. CLI Command Specifications
 
@@ -150,6 +151,9 @@ golens get <symbol> <file|dir> [flags]
 - `<symbol>` matches any exported or unexported package-level identifier (func, type, method receiver, var, const).
 - Format for methods: `Type.Method` (e.g., `UserStore.GetUser`).
 - If `<dir>` is provided, golens resolves the symbol across the package namespace.
+- Anonymous functions and closures are excluded: they are not package-level declarations and
+  are not addressable by name. Only package-level declarations appear in outline output and
+  are resolvable by `get` or `bounds`.
 
 **Flags**
 
@@ -262,6 +266,12 @@ golens check <file|dir> [flags]
   any repository that targets more than one OS; a build tag the tool cannot recognise evaluates
   false, so it assumes the narrowest reading rather than claiming a conflict it cannot demonstrate.
   `init` and `_` are exempt: Go permits a package to declare either any number of times.
+- Dot imports (`import . "pkg"`): bring all exported names directly into scope. Without type
+  resolution (out of scope), golens cannot know which names they bind. To avoid false negatives,
+  a dot import is reported as unused only when the source contains no identifiers that are not
+  declared locally or bound by named imports — i.e., there is no evidence any dot-imported name
+  is in use. This is a heuristic: if a file uses only locally-declared names, an unused dot import
+  will be reported; if any identifier could plausibly come from a dot import, it is silently kept.
 - Import path syntax errors (empty, whitespace, or invalid characters), reported at the line the
   import is written on.
 

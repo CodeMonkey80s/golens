@@ -301,6 +301,39 @@ import "example.com/math/rand/v2"
 func F() { _ = rand.Intn(10) }
 `,
 		},
+		{
+			// Dot import used: Println comes from the dot-imported fmt package.
+			name: "dot import used",
+			src: `package p
+
+import . "fmt"
+
+func F() { Println("x") }
+`,
+		},
+		{
+			// Dot import unused: nothing from fmt is referenced.
+			name: "dot import unused",
+			src: `package p
+
+import . "fmt"
+
+func F() {}
+`,
+			wantUnused: []string{`"fmt"`},
+		},
+		{
+			// Dot import with only local declarations: no orphan identifiers.
+			name: "dot import only local declarations",
+			src: `package p
+
+import . "fmt"
+
+var x = 1
+func F() {}
+`,
+			wantUnused: []string{`"fmt"`},
+		},
 	}
 
 	for _, tt := range tests {
