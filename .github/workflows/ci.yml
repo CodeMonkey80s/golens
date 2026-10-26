@@ -66,6 +66,8 @@ jobs:
           go test -run '^$' -fuzz FuzzOutline -fuzztime 10s ./internal/usecase
           go test -run '^$' -fuzz FuzzGet -fuzztime 10s ./internal/usecase
           go test -run '^$' -fuzz FuzzBounds -fuzztime 10s ./internal/usecase
+          go test -run '^$' -fuzz FuzzCheck -fuzztime 10s ./internal/usecase
+          go test -run '^$' -fuzz FuzzResolve -fuzztime 10s ./internal/usecase
 
       - name: Check formatting
         run: |

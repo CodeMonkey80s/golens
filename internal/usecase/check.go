@@ -56,15 +56,30 @@ func (HasDiagnostics) IsDiagnostics() bool { return true }
 // Check validates the target and writes diagnostics to stderr, or the JSON payload to
 // stdout when --json is set.
 //
-// Diagnostics always go to stderr in the human form so that a --json consumer reading
-// stdout receives only the payload. Findings are ordered by path then line so repeated
-// runs produce identical output.
+// It is CheckWithOptions without custom build tags. Callers that model a tagged build (for
+// example `go build -tags integration`) use CheckWithOptions.
 //
-// Check reports structural faults only: parse failures, malformed import paths, unused
-// imports and duplicate declarations. It does not judge style. A caller who wants naming
-// or any other convention enforced runs a linter, which is the tool for a judgement the
-// caller must opt into rather than one they inherit by asking a structural question.
+// Diagnostics always go to stderr in the human form so that a --json consumer reading stdout
+// receives only the payload. Findings are ordered by path then line so repeated runs produce
+// identical output.
+//
+// Check reports structural faults only: parse failures, malformed import paths, unused imports
+// and duplicate declarations. It does not judge style, and it is not a type checker. A caller
+// who wants naming or another convention enforced runs a linter.
 func Check(engine domain.Engine, target string, stdout, stderr io.Writer, opts format.Options) error {
+	return CheckWithOptions(engine, target, CheckOptions{}, stdout, stderr, opts)
+}
+
+// CheckOptions carries the build context a check runs under.
+type CheckOptions struct {
+	// Tags are custom build tags, matching `go build -tags`. A file guarded by one of these
+	// tags participates in the build; a tag not listed does not. This is what lets check
+	// agree with a tagged build instead of treating every custom tag as permanently false.
+	Tags []string
+}
+
+// CheckWithOptions is Check with an explicit build context.
+func CheckWithOptions(engine domain.Engine, target string, checkOpts CheckOptions, stdout, stderr io.Writer, opts format.Options) error {
 	paths, err := checkFiles(target)
 	if err != nil {
 		return err
@@ -73,7 +88,7 @@ func Check(engine domain.Engine, target string, stdout, stderr io.Writer, opts f
 		return errNoGoFiles(target)
 	}
 
-	var pkg packageSymbols
+	pkg := packageSymbols{tags: tagSet(checkOpts.Tags)}
 
 	// A parse failure is a finding, not an abort: check reports diagnostics and keeps going, so
 	// one unparseable file must not stop the others from being checked. parseAll therefore
@@ -198,6 +213,8 @@ type packageSymbols struct {
 	// builtIn caches, per namespace and file path, the build configurations that include
 	// the file. Two declarations only conflict if their files can be compiled together.
 	builtIn map[string]map[string][]bool
+	// tags are the custom build tags this check runs under, if any.
+	tags map[string]bool
 }
 
 // symbolSite records one declaration of a name.
@@ -219,7 +236,7 @@ func (p *packageSymbols) add(dir string, doc domain.Document) {
 		p.builtIn[ns] = make(map[string][]bool)
 	}
 	if _, seen := p.builtIn[ns][doc.Path]; !seen {
-		p.builtIn[ns][doc.Path] = constraintVector(fileConstraint(doc.Path, doc.BuildConstraint, requiresCgo(doc)))
+		p.builtIn[ns][doc.Path] = constraintVector(fileConstraint(doc.Path, doc.BuildConstraint, requiresCgo(doc)), p.tags)
 	}
 
 	for _, sym := range doc.Symbols {

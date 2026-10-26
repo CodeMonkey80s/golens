@@ -32,7 +32,8 @@ func TestCrossPackageNameIsNotReportedAsAmbiguous(t *testing.T) {
 		t.Fatalf("err = %v (%T), want CrossPackageSymbol, not AmbiguousSymbol", err, err)
 	}
 
-	if _, ok := errors.AsType[usecase.AmbiguousSymbol](err); ok {
+	var ambiguous usecase.AmbiguousSymbol
+	if errors.As(err, &ambiguous) {
 		t.Error("the error also satisfies AmbiguousSymbol; that type claims a conflict that does not exist")
 	}
 
@@ -53,13 +54,11 @@ func TestCrossPackageNameIsNotReportedAsAmbiguous(t *testing.T) {
 	}
 }
 
-// TestCrossPackageAdviceDoesNotRecommendAQualifiedName guards the half of the bug that was
-// worse than the wording: the old advice recommended a qualified name, and `get p.A` does not
-// resolve because a qualified name addresses a method within a type.
-//
-// With package-qualified lookup, `p.A` and `p_test.A` NOW resolve. The advice for cross-package
-// names still recommends a file (since that's unambiguous), but the qualified form now works.
-func TestCrossPackageAdviceDoesNotRecommendAQualifiedName(t *testing.T) {
+// TestCrossPackageAdviceRecommendsPackageQualifiedLookup guards the remedy. The old advice
+// named a file only, and the older one recommended a qualified name before package-qualified
+// lookup existed. Since v0.3, `p.A` and `p_test.A` resolve, so the advice names that form and
+// keeps a file as the unambiguous fallback.
+func TestCrossPackageAdviceRecommendsPackageQualifiedLookup(t *testing.T) {
 	dir := t.TempDir()
 	testfixture.Write(t, dir, "a.go", "package p\n\nfunc A() {}\n")
 	testfixture.Write(t, dir, "b_test.go", "package p_test\n\nfunc A() {}\n")
@@ -67,7 +66,8 @@ func TestCrossPackageAdviceDoesNotRecommendAQualifiedName(t *testing.T) {
 	var out bytes.Buffer
 	err := usecase.Get(goast.New(), "A", dir, true, &out, format.Options{})
 
-	if _, ok := errors.AsType[usecase.CrossPackageSymbol](err); !ok {
+	var cross usecase.CrossPackageSymbol
+	if !errors.As(err, &cross) {
 		t.Fatalf("err = %v (%T), want CrossPackageSymbol", err, err)
 	}
 
@@ -75,13 +75,11 @@ func TestCrossPackageAdviceDoesNotRecommendAQualifiedName(t *testing.T) {
 	if !ok {
 		t.Fatal("CrossPackageSymbol offers no Advice()")
 	}
-	if got := advice.Advice(); got == "" {
-		t.Error("Advice() is empty; the caller has no remedy")
+	if got := advice.Advice(); !strings.Contains(got, "p.A") {
+		t.Errorf("Advice() = %q, want the package-qualified form p.A", got)
 	}
 
-	// Now that package-qualified lookup works, p.A and p_test.A DO resolve.
-	// The advice for cross-package still recommends a file (unambiguous), but
-	// the qualified form is now valid.
+	// The form the advice names must actually work, which is the property that failed before.
 	for _, name := range []string{"p.A", "p_test.A"} {
 		var probe bytes.Buffer
 		if perr := usecase.Get(goast.New(), name, dir, true, &probe, format.Options{}); perr != nil {

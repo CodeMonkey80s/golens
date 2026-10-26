@@ -10,8 +10,8 @@ golens bounds <symbol> <file>   byte and line offsets for an edit
 golens check <file|dir>         fast syntax and namespace validation
 ```
 
-Pure Go, no cgo, no daemon, no index. One binary, 5.35 MiB stripped (`-ldflags="-s -w"`), parses a
-typical file in about 11 µs and the largest file in this repository in about 263 µs.
+Pure Go, no cgo, no daemon, no index. One binary, 5.36 MiB stripped (`-ldflags="-s -w"`), parses a
+typical file in about 15 µs and the largest file in this repository in about 263 µs.
 
 ---
 
@@ -30,17 +30,17 @@ IMPORTS
   • fmt
   • strconv
 
-TYPES & STRUCTS (lines 18-304)
+TYPES & STRUCTS (lines 18-317)
   • type Kind string (line 18)
   • type Bounds struct (lines 42-47)
   • type Node struct (lines 103-130)
-  • type Symbol struct (lines 189-200)
-  • type Document struct (lines 209-225)
-  • type Engine interface (lines 272-274)
-  • type ErrorExit int (line 280)
-  • type LocatedError struct (lines 299-304)
+  • type Symbol struct (lines 189-205)
+  • type Document struct (lines 214-238)
+  • type Engine interface (lines 285-287)
+  • type ErrorExit int (line 293)
+  • type LocatedError struct (lines 312-317)
 
-FUNCTIONS & METHODS (lines 51-310)
+FUNCTIONS & METHODS (lines 51-323)
   • func (b Bounds) Valid() bool (lines 51-53)
   • func (b Bounds) LineCount() int (lines 57-62)
   • func (b Bounds) ByteLen() int (lines 65-70)
@@ -49,14 +49,14 @@ FUNCTIONS & METHODS (lines 51-310)
   • func (b Bounds) Source(src []byte) string (lines 92-97)
   • func (n Node) Declaration() string (lines 139-171)
   • func (n Node) Keyword() string (lines 178-183)
-  • func (s Symbol) Declaration() string (lines 204-206)
-  • func (d *Document) Symbol(name string) (Symbol, bool) (lines 232-239)
-  • func (d *Document) Lookup(name string) []Symbol (lines 247-255)
-  • func (d *Document) RootNode() Node (lines 258-264)
-  • func (e ErrorExit) Code() int (line 290)
-  • func (e LocatedError) String() string (lines 308-310)
+  • func (s Symbol) Declaration() string (lines 209-211)
+  • func (d *Document) Symbol(name string) (Symbol, bool) (lines 245-252)
+  • func (d *Document) Lookup(name string) []Symbol (lines 260-268)
+  • func (d *Document) RootNode() Node (lines 271-277)
+  • func (e ErrorExit) Code() int (line 303)
+  • func (e LocatedError) String() string (lines 321-323)
 
-VARS & CONSTS (lines 21-287)
+VARS & CONSTS (lines 21-300)
   • const KindPackage Kind (line 21)
   • const KindImport Kind (line 22)
   • const KindType Kind (line 23)
@@ -65,11 +65,11 @@ VARS & CONSTS (lines 21-287)
   • const KindVar Kind (line 26)
   • const KindConst Kind (line 27)
   • const KindField Kind (line 28)
-  • const ExitOk ErrorExit (line 283)
-  • const ExitUsage (line 284)
-  • const ExitNotFound (line 285)
-  • const ExitDiagnostics (line 286)
-  • const ExitParse (line 287)
+  • const ExitOk ErrorExit (line 296)
+  • const ExitUsage (line 297)
+  • const ExitNotFound (line 298)
+  • const ExitDiagnostics (line 299)
+  • const ExitParse (line 300)
 ```
 
 Note `type ErrorExit int` and `const ExitOk ErrorExit` — the type and its typed constant, which is
@@ -115,9 +115,12 @@ Or install it directly:
 $ go install github.com/CodeMonkey80s/golens/cmd/golens@latest
 ```
 
-Requires the Go version in `go.mod` (currently 1.27.2). Builds with `CGO_ENABLED=0`.
+Tagged releases also attach `linux`, `darwin` and `windows` archives for `amd64`/`arm64`, with a
+`checksums.txt`, for machines that do not have a Go toolchain.
 
-The `go install` binary is 8.07 MiB because it is not stripped; the 5.35 MiB figure quoted
+Requires the Go version in `go.mod` (currently 1.24). Builds with `CGO_ENABLED=0`.
+
+The `go install` binary is 8.12 MiB because it is not stripped; the 5.36 MiB figure quoted
 elsewhere is the `-ldflags="-s -w"` build above. Both are inside the 15 MiB budget.
 
 ### Version
@@ -187,6 +190,19 @@ A directory is walked recursively. `.git`, `vendor`, `node_modules` and hidden d
 skipped, and only `.go` files are read. Files are emitted in lexical order, so output is
 deterministic.
 
+Every file is listed whatever its constraints. When a file is not built everywhere, the header
+reports its **effective constraint** — the conjunction of the `//go:build` expression, the
+filename suffix (`_windows`, `_amd64`, `_linux_amd64`) and `cgo`:
+
+```text
+file: filesystems_windows.go
+package: main
+build: windows
+```
+
+A file with no constraint has no `build:` line. The line is a warning, not a filter: the file is
+still in the outline because the question is what the tree contains.
+
 A directory argument is resolved before it is walked, so a symlinked source tree is listed as the
 directory of files it is rather than reported as empty. Paths in the output start from the
 directory as you named it. Symlinks *inside* a tree are not followed.
@@ -216,8 +232,17 @@ package parsed in the search. If the first segment matches both a package and a 
 
 A directory may hold `package p` beside an external test `package p_test`, and both may declare
 the same name without either redeclaring anything. That is reported separately — as a name found
-in two packages, not as an ambiguity — and the remedy is a file, because a qualified name selects
-a method within a type and cannot select a package.
+in two packages, not as an ambiguity — and the remedy is `p.Name` or a specific file.
+
+The output reports the declaration's **effective build constraint** when it has one, from the
+filename, the `//go:build` line, or cgo. A symbol in a Windows-only file therefore says
+`Build: windows` even when you are on Linux, and an ambiguous candidate list marks each file with
+its constraint: `/src/a_linux.go: F  [build: linux]` beside `/src/a_windows.go: F  [build: windows]`.
+These paths are illustrative, not a file in this repository.
+
+`get` resolves every file in the tree whatever its constraints — the question is what the tree
+contains, not what this machine compiles. The build line is the warning that the edit will not be
+compiled here.
 
 A file that will not parse is skipped rather than fatal, as with `outline`. The symbol is resolved
 from the files that did parse, the skipped ones are named on stderr, and the run **still exits
@@ -236,6 +261,7 @@ Fast validation — no type checker, no module resolution.
 | Flag | Effect |
 |---|---|
 | `--json`, `--compact` | As above |
+| `--tags` | Custom build tags, as in `go build -tags`; a file guarded by one participates in duplicate detection |
 
 `check` reports structural faults only. It does not judge style: no naming convention, no
 formatting, no idiom. Those belong to a linter, which is something a caller opts into rather
@@ -353,6 +379,26 @@ $ golens bounds GetUser user.go --json | jq -r .start_byte
 `--compact` wins over pretty-printing and emits non-indented JSON. It removes decoration, never
 information.
 
+### Machine-readable errors
+
+`--json-errors` writes failures to **stderr** as a JSON object instead of prose:
+
+```console
+$ golens get Nope . --json-errors   # ILLUSTRATIVE
+{
+  "schema_version": 1,
+  "error": {
+    "kind": "not_found",
+    "message": "symbol \"Nope\" not found",
+    "exit_code": 2
+  }
+}
+```
+
+`kind` is `not_found`, `ambiguous`, `usage` or `parse_or_io`; ambiguous failures also carry
+`candidates`, and partial searches carry `skipped`/`total`. The error stays on stderr because a
+partial `outline` may already have written a valid array to stdout.
+
 ---
 
 ## Agent workflow
@@ -440,8 +486,8 @@ will differ on yours.
 
 | Budget | Measured here |
 |---|---|
-| Read + parse, single file — 5 ms P95 | ~11 µs typical, ~263 µs on the largest file in this repo |
-| Binary — 15 MiB | 5.35 MiB stripped (`-ldflags="-s -w"`) |
+| Read + parse, single file — 5 ms P95 | ~15 µs typical, ~263 µs on the largest file in this repo |
+| Binary — 15 MiB | 5.36 MiB stripped (`-ldflags="-s -w"`) |
 
 Reproduce with `go test -run XXX -bench Parse -benchtime 500x ./internal/engine/goast`. Expect
 run-to-run variation of roughly ±20%, so treat a single figure as indicative and the budget as the

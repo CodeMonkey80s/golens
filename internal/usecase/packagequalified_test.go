@@ -15,7 +15,7 @@ import (
 // TestPackageQualifiedQueryResolves covers `golens get domain.Node .`.
 //
 // Package-qualified lookup now resolves: `p.Func` finds `Func` in package `p`.
-// This is the v0.3 feature that replaces the old PackageQualifiedSymbol error.
+// This is the v0.3 feature that replaced the old "package prefix is unsupported" error.
 func TestPackageQualifiedQueryResolves(t *testing.T) {
 	dir := t.TempDir()
 	testfixture.Write(t, dir, "ok.go", "package domain\n\ntype Node struct{}\n\nfunc (n Node) Head() string { return \"\" }\n")
@@ -90,9 +90,25 @@ func TestBareAndMethodQueriesAreUnaffected(t *testing.T) {
 	t.Run("a dotted miss on an absent method is not advice-worthy", func(t *testing.T) {
 		var out bytes.Buffer
 		err := usecase.Get(goast.New(), "Node.Frob", dir, true, &out, format.Options{})
-		var pq usecase.PackageQualifiedSymbol
+		var pq usecase.NotFoundInPackage
 		if errors.As(err, &pq) {
 			t.Errorf("Node.Frob was read as a package qualifier: %v", err)
+		}
+	})
+
+	t.Run("a miss in a real package names the package", func(t *testing.T) {
+		var out bytes.Buffer
+		err := usecase.Get(goast.New(), "domain.Nope", dir, true, &out, format.Options{})
+
+		var pq usecase.NotFoundInPackage
+		if !errors.As(err, &pq) {
+			t.Fatalf("err = %T (%v), want NotFoundInPackage", err, err)
+		}
+		if pq.Package != "domain" || pq.Name != "Nope" {
+			t.Errorf("package = %q, name = %q; want domain, Nope", pq.Package, pq.Name)
+		}
+		if _, ok := err.(interface{ Advice() string }); ok {
+			t.Error("NotFoundInPackage offers advice; a missing symbol has no form that resolves")
 		}
 	})
 }

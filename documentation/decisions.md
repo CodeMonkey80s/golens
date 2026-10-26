@@ -613,6 +613,12 @@ all. And it carries the skipped-file count, because a package-prefixed query ove
 search must not read like a complete one: the declaration may sit in a file that would not
 parse, exactly as for any other miss.
 
+**Superseded by v0.3.0.** Package-qualified lookup now resolves, so the "pass the bare name"
+advice became wrong: it sent the caller back to a name already known to be missing.
+`PackageQualifiedSymbol` and its `packageQualified` branch were deleted; a missing symbol in a
+known package returns `NotFoundInPackage` with no advice, and `CrossPackageSymbol.Advice()`
+now names `p.A` as a working remedy.
+
 ---
 
 ### D32 · `check` reports what a build would reject, and no build reaches `testdata`
@@ -830,6 +836,28 @@ didn't catch them, and the lessons per session — see `history.md`.
 >
 > *(Superseded: the `naming` package was deleted under D9 and is not in the layout. The spec's
 > §3.1 states this clause without it.)*
+
+---
+
+### D34 · Build constraints are reported everywhere, and check accepts the build's tags
+
+`check` evaluated build constraints for duplicate detection, but `outline` and `get` reported
+only the `//go:build` line, and resolution ignored constraints entirely. Three consequences:
+`get F .` on `a_linux.go` and `a_windows.go` returned an ambiguity while `check` said the tree
+was clean; a symbol declared only in `a_windows.go` resolved on Linux with no warning; and a
+repository using `//go:build integration` passed `check` while `go build -tags integration`
+failed with a redeclaration.
+
+The fix has two halves. `decorateDocument` computes the effective constraint once — filename,
+`//go:build`, cgo — and attaches it to the document and its symbols, so `outline`, `get`,
+`bounds` and ambiguity candidates all report the same fact. `CheckWithOptions` takes the tags
+that `go build -tags` takes, and the constraint cache is keyed on them; a tag that was not
+supplied still evaluates false, preserving the "suppress rather than invent" bias.
+
+The resolution policy is annotation, not filtering. A symbol in a platform-excluded file is
+still a fact about the tree, so `get` returns it and says `build: windows`; ambiguity candidates
+carry `[build: ...]` markers. Silently preferring the current platform would hide a declaration
+the caller may have asked for.
 
 ---
 

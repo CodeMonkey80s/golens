@@ -1,7 +1,7 @@
 // Package cli wires cobra commands to the usecase layer.
 //
-// This package owns flag parsing, stdout/stderr routing and exit codes, and nothing else.
-// It contains no AST logic and no formatting logic.
+// This package owns flag parsing, stdout/stderr routing and exit codes, and the error envelope
+// written by --json-errors. It contains no AST logic.
 package cli
 
 import (
@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/CodeMonkey80s/golens/internal/domain"
+	"github.com/CodeMonkey80s/golens/internal/format"
 )
 
 // Env carries the process streams and engine, so the command tree is testable without
@@ -66,6 +67,10 @@ you can tell whether the current GOOS compiles an edit before making it.`,
 	// Global flags are persistent so they may appear before or after the subcommand.
 	root.PersistentFlags().Bool("json", false, "output a machine-readable JSON payload")
 	root.PersistentFlags().Bool("compact", false, "minify output to reduce token usage")
+	// Errors stay on stderr because stdout may already hold a partial payload (outline with
+	// one unparseable file). The flag makes that channel machine-readable without changing
+	// the success payloads or the stream contract.
+	root.PersistentFlags().Bool("json-errors", false, "write command failures as a JSON object to stderr")
 
 	// Cobra renders --version as "golens version <v>" using the command's Name, which is
 	// bare, so the template is set to include the binary name.
@@ -104,20 +109,26 @@ func Execute(root *cobra.Command) int {
 	// anyway breaks the documented contract exactly when the caller is most likely to be
 	// parsing. The exit code still carries the news, and every silent error has already
 	// put its detail where the output format puts it.
-	if code != int(domain.ExitDiagnostics) && !isSilent(classified) {
-		fmt.Fprintln(root.ErrOrStderr(), "golens: "+classified.Error()) //nolint:errcheck // diagnostic write; a failure here is not actionable
-	}
-	if amb, ok := classified.(AmbiguousError); ok {
-		for _, candidate := range amb.Candidates() {
-			fmt.Fprintln(root.ErrOrStderr(), "  "+candidate) //nolint:errcheck // diagnostic write
+	if code != int(domain.ExitDiagnostics) {
+		if jsonErrors, _ := root.PersistentFlags().GetBool("json-errors"); jsonErrors {
+			writeJSONError(root, classified, code)
+			return code
 		}
-	}
-	// Advice is printed on its own, not inside the candidate loop above. An error can offer a
-	// remedy without carrying a candidate list — a name found in two packages of one directory
-	// has no duplicate declaration to choose between, so it has candidates to print and
-	// advice to give, and nesting one inside the other silently dropped the advice.
-	if advised, ok := classified.(interface{ Advice() string }); ok {
-		fmt.Fprintln(root.ErrOrStderr(), advised.Advice()) //nolint:errcheck // diagnostic write
+		if !isSilent(classified) {
+			fmt.Fprintln(root.ErrOrStderr(), "golens: "+classified.Error()) //nolint:errcheck // diagnostic write; a failure here is not actionable
+		}
+		if amb, ok := classified.(AmbiguousError); ok {
+			for _, candidate := range amb.Candidates() {
+				fmt.Fprintln(root.ErrOrStderr(), "  "+candidate) //nolint:errcheck // diagnostic write
+			}
+		}
+		// Advice is printed on its own, not inside the candidate loop above. An error can offer a
+		// remedy without carrying a candidate list — a name found in two packages of one directory
+		// has no duplicate declaration to choose between, so it has candidates to print and
+		// advice to give, and nesting one inside the other silently dropped the advice.
+		if advised, ok := classified.(interface{ Advice() string }); ok {
+			fmt.Fprintln(root.ErrOrStderr(), advised.Advice()) //nolint:errcheck // diagnostic write
+		}
 	}
 
 	return code
@@ -131,6 +142,55 @@ func Execute(root *cobra.Command) int {
 func isSilent(err error) bool {
 	s, ok := err.(interface{ Silent() bool })
 	return ok && s.Silent()
+}
+
+// writeJSONError emits the documented error envelope to stderr.
+//
+// It deliberately does not touch stdout: outline may already have written the files that did
+// parse, and appending an error object there would turn a valid array plus an object into a
+// stream no JSON decoder accepts. The exit code remains the primary signal; this is the
+// machine-readable detail beside it.
+func writeJSONError(root *cobra.Command, err error, code int) {
+	detail := format.ErrorDetail{
+		Kind:     errorKind(err),
+		Message:  err.Error(),
+		ExitCode: code,
+	}
+	if amb, ok := err.(AmbiguousError); ok {
+		detail.Candidates = amb.Candidates()
+	}
+	if skips, ok := err.(interface{ Skips() (int, int) }); ok {
+		if skipped, total := skips.Skips(); skipped > 0 {
+			detail.Skipped, detail.Total = skipped, total
+		}
+	}
+
+	compact, _ := root.PersistentFlags().GetBool("compact")
+	payload := format.ErrorPayload{
+		SchemaVersion: format.SchemaVersion,
+		Error:         detail,
+	}
+	if writeErr := format.WriteJSON(root.ErrOrStderr(), payload, compact); writeErr != nil {
+		// The JSON write failed; the human message is better than silence.
+		fmt.Fprintln(root.ErrOrStderr(), "golens: "+err.Error()) //nolint:errcheck // diagnostic write
+	}
+}
+
+// errorKind classifies a failure for a consumer that wants to branch without parsing prose.
+func errorKind(err error) string {
+	var ambiguous AmbiguousError
+	if errors.As(err, &ambiguous) {
+		return "ambiguous"
+	}
+	var usage interface{ IsUsage() bool }
+	if errors.As(err, &usage) && usage.IsUsage() {
+		return "usage"
+	}
+	var notFound interface{ IsNotFound() bool }
+	if errors.As(err, &notFound) && notFound.IsNotFound() {
+		return "not_found"
+	}
+	return "parse_or_io"
 }
 
 // AmbiguousError exposes the candidate list of an ambiguous-symbol error without the cli

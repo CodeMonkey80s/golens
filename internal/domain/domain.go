@@ -195,6 +195,11 @@ type Symbol struct {
 	Detail        string
 	Receiver      string
 	TypeParams    string
+	// Build is the effective build constraint of the file that declares this symbol, as
+	// normalised for display ("windows && amd64", "linux && cgo"), or empty when the file
+	// is always built. It travels with the symbol so get and bounds can warn about a
+	// declaration the current platform does not compile.
+	Build string
 	// IsAlias marks a type alias rather than a defined type. See Node.IsAlias.
 	IsAlias bool
 }
@@ -221,7 +226,15 @@ type Document struct {
 	// which is right for a structural query and misleading for an edit. A caller changing a
 	// file needs to know whether the current platform compiles it.
 	BuildConstraint string
-	Comments        bool
+	// ImplicitConstraint is the constraint Go infers from the file name alone
+	// ("windows", "linux && amd64"), or empty when the name implies none. It is separate
+	// from BuildConstraint because a file may have either, both, or neither.
+	ImplicitConstraint string
+	// EffectiveConstraint combines ImplicitConstraint, BuildConstraint and cgo into the
+	// expression a caller needs to read before editing, or is empty when the file is built
+	// everywhere. This is what outline, get and bounds report.
+	EffectiveConstraint string
+	Comments            bool
 }
 
 // Symbol looks up a package-level declaration by bare or qualified name.

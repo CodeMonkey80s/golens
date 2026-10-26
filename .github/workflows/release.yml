@@ -1,0 +1,67 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+# A tag is the release trigger: the version is stamped from the tag, and the same string
+# names the GitHub release the archives are attached to.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Six targets cover the platforms an agent or CI runner is likely to use. Each build is
+      # CGO_ENABLED=0, stripped, and stamped with the tag through the same -X variable the
+      # release tests pin. No archive is uploaded if any build fails.
+      - name: Build archives
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -eu
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            goos=${target%/*}
+            goarch=${target#*/}
+            out="dist/golens_${goos}_${goarch}"
+            if [ "$goos" = windows ]; then
+              out="${out}.exe"
+            fi
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath \
+              -ldflags="-s -w -X github.com/CodeMonkey80s/golens/internal/cli.Version=${VERSION}" \
+              -o "$out" ./cmd/golens
+            if [ "$goos" = windows ]; then
+              (cd dist && zip -q "golens_${goos}_${goarch}.zip" "golens_${goos}_${goarch}.exe")
+              rm "$out"
+            else
+              tar -C dist -czf "dist/golens_${goos}_${goarch}.tar.gz" "golens_${goos}_${goarch}"
+              rm "$out"
+            fi
+          done
+          (cd dist && sha256sum golens_* > checksums.txt)
+          ls -l dist
+
+      # Create the release if it does not exist, then attach (or replace) the assets. A release
+      # created by hand keeps its notes; only the files are refreshed.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release create "$VERSION" --verify-tag --title "$VERSION" --generate-notes
+          fi
+          gh release upload "$VERSION" dist/* --clobber

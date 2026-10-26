@@ -4,7 +4,7 @@ Instructions for agents working in this repository.
 
 ## What this is
 
-golens is a Go library and CLI that answers structural questions about Go source: what is in
+golens is a Go CLI that answers structural questions about Go source: what is in
 this file, where is this symbol, what are its exact byte offsets, is this package valid. It
 exists so an agent can read a targeted slice of a file instead of the whole thing.
 
@@ -24,23 +24,24 @@ Feature-complete. There is no next session, and nothing is blocked.
 
 | Field | Value |
 |---|---|
-| Tests | 435 (incl. subtests), 6 packages with tests, all passing |
-| Test count by package | arch 6 · cli 105 · domain 15 · goast 59 · format 23 · usecase 227 |
+| Tests | 458 (incl. subtests), 6 packages with tests, all passing |
+| Test count by package | arch 6 · cli 111 · domain 15 · goast 59 · format 23 · usecase 244 |
 | Verify with | **`go test -count=1 ./...`** — see the caching trap below |
-| Toolchain | go1.27.3; no `golang.org/x` dependencies, only cobra and its two indirects |
+| Toolchain | go1.24 floor (tested in CI); no `golang.org/x` dependencies, only cobra and its two indirects |
 | Binary | 5.36 MiB stripped, budget 15 MiB |
 | Parse budget | ~15 µs typical, ~263 µs largest file here (budget 5 ms P95) |
 | Lint | `golangci-lint run ./...` — 0 issues, includes `revive` `var-naming` |
 | Self-check | `golens check ./internal` and `./cmd` both exit 0 |
-| Fuzz | `FuzzOutline`, `FuzzGet`, `FuzzBounds` in `internal/usecase`; 10 s each in CI |
-| Latest tag | `v0.3.2` — package-qualified lookup, dot-import detection, fuzzing |
+| Fuzz | `FuzzOutline`, `FuzzGet`, `FuzzBounds`, `FuzzCheck`, `FuzzResolve`; 10 s each in CI |
+| Latest tag | `v0.4.0` — build-aware output, `check --tags`, JSON errors, release archives |
 | Remote | `github.com/CodeMonkey80s/golens`, public; `go install ...@latest` verified working |
 
 v0.3.0 added package-qualified lookup (`get Package.Symbol`), dot-import detection, and the
 versioned-import fix that stopped `/v1` paths being reported unused. v0.3.1 added the docs set
 (CI, JSON schema, migration), the fuzz targets and dot-import test cases. v0.3.2 restored this
 file, corrected `documentation/CI.md`, pinned the containerd target and strengthened the fuzz
-seeds.
+seeds. v0.4.0 made build constraints visible everywhere, added `check --tags` and
+`--json-errors`, and added `FuzzCheck`/`FuzzResolve` plus the release workflow.
 
 Parse dominates three of the four commands, and `check` is about ten times a parse because it runs
 several analyses. Reproduce with
@@ -48,7 +49,7 @@ several analyses. Reproduce with
 run-to-run, so hold to the budget rather than to a single figure.
 
 The binary size is quoted stripped, in MiB, which is the unit CI prints and budgets in.
-`go install` produces 8.07 MiB — the same code without `-ldflags="-s -w"` — so do not read the
+`go install` produces 8.12 MiB — the same code without `-ldflags="-s -w"` — so do not read the
 two figures as a contradiction. Both clear the budget.
 
 **Tags from `v0.2.7` onward carry the injection fix.** `v0.1.0` predates it and is the one
@@ -89,7 +90,8 @@ history is in "Not doing, and why" below.
 
 ### Fuzzing
 
-`internal/usecase/fuzz_test.go` holds three targets: `FuzzOutline`, `FuzzGet`, `FuzzBounds`.
+`internal/usecase/fuzz_test.go` holds five targets: `FuzzOutline`, `FuzzGet`, `FuzzBounds`,
+`FuzzCheck` and `FuzzResolve`.
 Their seed corpus runs on every `go test ./...`; the fuzzers only run when asked:
 
 ```console
@@ -104,7 +106,9 @@ assertions honest: a panic or an out-of-range byte offset is a bug, an ordinary 
 not.
 
 CI runs 10 seconds per target. That is a smoke test for crashes, not a coverage goal; run longer
-locally after touching the engine, the checks or the formatters.
+locally after touching the engine, the checks or the formatters. `FuzzCheck` and `FuzzResolve`
+write two-file directories, so they exercise custom build tags, duplicate detection and the
+multi-file JSON paths that the single-file targets do not.
 
 ## Layout
 
@@ -175,6 +179,14 @@ as two byte-identical nodes. `TestDeclarationHeadsMatchSource` passed throughout
 ever looked at the human path. When you add a field that a declaration head depends on, add it to
 `format.OutlineNode` too; `TestRenderersAgreeOnTheWholeCorpus` in `internal/format` then checks
 every declaration in this repository rather than the constructs a test remembered to name.
+
+**Build constraints are computed once, in `decorateDocument`, and reported everywhere.** A file's
+effective constraint is the conjunction of its filename suffix, its `//go:build` line and `cgo`.
+The engine records only the comment; the usecase layer owns the rest. If you parse a document
+without going through `parseOne` (or forget to decorate it), `outline` loses the `build:` header,
+`get` loses `Build:`, and ambiguity candidates lose their `[build: ...]` markers — the exact
+asymmetry that let a Windows-only symbol look live on Linux. `CheckWithOptions` takes the tags
+`go build -tags` would take and the cache is keyed on them; do not reintroduce a global tag set.
 
 **Two commands must not disagree about the same input, and an exit code is a claim.** `check`
 reported an unreadable file as a diagnostic and exited `3`; `outline` exited `4` for the identical
@@ -305,7 +317,9 @@ four headings and none of the declarations. When you change depth handling, comp
 an agent delete working code, so the check stays silent whenever it cannot determine the local
 name. When adding a check, bias toward silence and say so in the comment.
 
-**`check`'s scope is what a build would reject, and no build reaches `testdata`.** `outline`,
+**`check` models a build, and no build reaches `testdata`.** It uses GOOS/GOARCH, cgo and the
+`--tags` values; a tag not supplied is treated as absent. It is not a type checker — undefined
+types and duplicate struct fields still pass. `outline`,
 `get` and `bounds` answer "what does this tree contain", so they walk those directories (D22).
 `check` answers "would a build reject this", so it does not — the go tool ignores `testdata`
 by documented rule, and on the standard library those directories held 1,212 diagnostics and
@@ -333,7 +347,7 @@ criteria; this is which test pins each.
 | A6 | `get --bounds-only` ≡ `bounds` | `TestSpecBoundsOnlyMatchesBounds`, plus format and usecase level |
 | A7 | golens never reports style | `TestCheckDoesNotJudgeStyle`, `TestCheckAcrossFilesReportsNothingStructural` |
 | A8 | Parse < 5 ms P95 | `TestParseP95UnderBudget` |
-| A9 | Binary < 15 MiB | 5.35 MiB, gated in CI |
+| A9 | Binary < 15 MiB | 5.36 MiB, gated in CI |
 | A10 | No cgo | `TestNoCgoDependency` |
 | A11 | `domain`/`usecase` import nothing external | `internal/arch` |
 | A12 | 12 fixture classes | `TestFixtureClasses` |
@@ -370,8 +384,8 @@ type Node struct {
     Children []Node
     IsGroup  bool
 }
-type Symbol struct{ Name, QualifiedName string; Kind Kind; Bounds Bounds; File, Detail, Receiver, TypeParams string; IsAlias bool }
-type Document struct{ Path, Package string; Bounds Bounds; Nodes []Node; Symbols []Symbol; Imports []string; Source []byte; Comments bool }
+type Symbol struct{ Name, QualifiedName string; Kind Kind; Bounds Bounds; File, Detail, Receiver, TypeParams, Build string; IsAlias bool }
+type Document struct{ Path, Package string; Bounds Bounds; Nodes []Node; Symbols []Symbol; Imports []string; Source []byte; BuildConstraint, ImplicitConstraint, EffectiveConstraint string; Comments bool }
 type Engine interface{ Parse(path string) (Document, error) }
 ```
 

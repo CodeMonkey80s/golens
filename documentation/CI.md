@@ -3,6 +3,9 @@
 golens runs CI on every push and pull request to `main`. This document describes the jobs,
 the gates that matter, and how to reproduce a run locally.
 
+CI installs the Go version in `go.mod` (currently the 1.24 floor), so the floor is tested rather
+than assumed. Release archives are built by the separate tag-triggered workflow described below.
+
 ---
 
 ## Jobs
@@ -16,7 +19,7 @@ Runs on `ubuntu-latest`. Steps, in order:
 | **Test** | `go test -count=1 ./...` — full suite, including the fuzz seed corpus |
 | **Test under the race detector** | `go test -race -count=1 ./...` |
 | **Vet** | `go vet ./...` |
-| **Fuzz smoke** | 10 seconds each on `FuzzOutline`, `FuzzGet`, `FuzzBounds` |
+| **Fuzz smoke** | 10 seconds each on `FuzzOutline`, `FuzzGet`, `FuzzBounds`, `FuzzCheck`, `FuzzResolve` |
 | **Check formatting** | `gofmt -l .` must print nothing |
 | **Lint** | `golangci-lint` with bug-detection and formatter rules |
 | **Build and check the size budget** | Build with `CGO_ENABLED=0`, verify binary &lt; 15 MiB and no cgo dependency |
@@ -71,8 +74,17 @@ commit in a dedicated change when you want newer coverage, and run the check loc
 ### Fuzz smoke
 
 The targets live in `internal/usecase/fuzz_test.go`. `go test` runs their seed corpus; CI adds a
-10-second campaign per target to catch panics and broken byte invariants. This is a smoke test,
-not a coverage goal — run longer locally after touching the engine, the checks or the formatters.
+10-second campaign per target to catch panics and broken byte invariants. `FuzzCheck` and
+`FuzzResolve` exercise two-file directories, custom build tags and the JSON paths, which the
+single-file outline/get/bounds targets do not. This is a smoke test, not a coverage goal — run
+longer locally after touching the engine, the checks or the formatters.
+
+### Release
+
+`.github/workflows/release.yml` runs on a `v*` tag. It builds linux, darwin and windows archives
+for amd64 and arm64 with `CGO_ENABLED=0`, stamps the version with `-X`, writes `checksums.txt`, and
+attaches the assets to the GitHub release (creating it with generated notes if absent). The job
+uses the workflow token, so no personal credentials are needed.
 
 ---
 
@@ -101,6 +113,8 @@ go vet ./...
 go test -run '^$' -fuzz FuzzOutline -fuzztime 10s ./internal/usecase
 go test -run '^$' -fuzz FuzzGet     -fuzztime 10s ./internal/usecase
 go test -run '^$' -fuzz FuzzBounds  -fuzztime 10s ./internal/usecase
+go test -run '^$' -fuzz FuzzCheck   -fuzztime 10s ./internal/usecase
+go test -run '^$' -fuzz FuzzResolve -fuzztime 10s ./internal/usecase
 
 # Formatting
 gofmt -l .

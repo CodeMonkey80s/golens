@@ -166,8 +166,9 @@ func newCheckCmd(env Env) *cobra.Command {
           --json:    payload to stdout, stderr empty -- do not add 2>&1
   Capture  golens check . 2>&1    -- stdout alone looks like a clean result
   Exit     3 = ran and found a problem in the code
-           4 = a file could not be read, so the run is incomplete
-  Limits   build constraints ignored; unused-import check is best-effort
+           4 = a file could not be read, or the run is incomplete
+  Tags     --tags integration matches "go build -tags integration"
+  Limits   unused-import check is best-effort
   Scope    testdata directories are not walked; name a file to check it
 
 Exit 3 and exit 4 are different questions. 3 is about the source: fix the
@@ -202,9 +203,11 @@ something a caller chooses to run rather than something they inherit by asking
 a structural question.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return usecase.Check(env.Engine, args[0], env.Stdout, env.Stderr, flagOptions(cmd))
+			tags, _ := cmd.Flags().GetStringSlice("tags")
+			return usecase.CheckWithOptions(env.Engine, args[0], usecase.CheckOptions{Tags: tags}, env.Stdout, env.Stderr, flagOptions(cmd))
 		},
 	}
 
+	cmd.Flags().StringSlice("tags", nil, "comma-separated build tags, as in `go build -tags`")
 	return cmd
 }

@@ -4,6 +4,7 @@ import (
 	"go/build/constraint"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -210,11 +211,10 @@ func leadingDigits(s string) int {
 	return n
 }
 
-// customTags holds the -tags values this process was built with. golens does not accept a
-// -tags flag, so this is empty and any custom tag evaluates false. A file guarded by a custom
-// tag is therefore treated as never built, which is the safe direction: it suppresses a
+// customTags are supplied per check invocation rather than stored globally, so two checks
+// with different tags cannot contaminate each other. A file guarded by a custom tag is treated
+// as never built unless that tag was supplied, which is the safe direction: it suppresses a
 // diagnostic rather than inventing one.
-var customTags = map[string]bool{}
 
 // compiler is the toolchain tag. golens is built with gc; a constraint naming gccgo is not
 // satisfied.
@@ -225,7 +225,7 @@ const compiler = "gc"
 // An unrecognised tag is false. That is the deliberate bias throughout: golens cannot know
 // every tag a downstream user might pass, so it assumes the narrowest reading and stays quiet
 // rather than claiming a conflict it cannot demonstrate.
-func (c buildConfig) satisfied(tag string) bool {
+func (c buildConfig) satisfied(tag string, custom map[string]bool) bool {
 	switch tag {
 	case c.goos, c.goarch:
 		return true
@@ -236,7 +236,7 @@ func (c buildConfig) satisfied(tag string) bool {
 	case compiler:
 		return true
 	}
-	if releaseTags[tag] || customTags[tag] {
+	if releaseTags[tag] || custom[tag] {
 		return true
 	}
 	return false
@@ -261,12 +261,20 @@ var (
 )
 
 // constraintVector returns the configurations in which a file with this constraint is built.
-func constraintVector(expr constraint.Expr) []bool {
+//
+// custom is part of the cache key: the same expression means different things under different
+// -tags values, and a cache keyed only on the expression would answer a later check with the
+// earlier check's tags.
+func constraintVector(expr constraint.Expr, custom ...map[string]bool) []bool {
 	if expr == nil {
 		return alwaysBuilt
 	}
 
-	key := expr.String()
+	var tags map[string]bool
+	if len(custom) > 0 {
+		tags = custom[0]
+	}
+	key := expr.String() + "\x00" + tagsKey(tags)
 
 	constraintVectorMu.Lock()
 	defer constraintVectorMu.Unlock()
@@ -277,10 +285,41 @@ func constraintVector(expr constraint.Expr) []bool {
 
 	v := make([]bool, len(buildConfigs))
 	for i, cfg := range buildConfigs {
-		v[i] = expr.Eval(cfg.satisfied)
+		v[i] = expr.Eval(func(tag string) bool { return cfg.satisfied(tag, tags) })
 	}
 	constraintVectorCache[key] = v
 	return v
+}
+
+// tagsKey returns a stable cache key for a set of custom tags.
+func tagsKey(custom map[string]bool) string {
+	if len(custom) == 0 {
+		return ""
+	}
+	tags := make([]string, 0, len(custom))
+	for tag := range custom {
+		tags = append(tags, tag)
+	}
+	sort.Strings(tags)
+	return strings.Join(tags, ",")
+}
+
+// tagSet normalises the values of a -tags flag. Cobra's StringSlice already splits on commas;
+// splitting again here keeps direct usecase callers and repeated flags alike consistent.
+func tagSet(values []string) map[string]bool {
+	if len(values) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(values))
+	for _, value := range values {
+		for _, tag := range strings.Split(value, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag != "" {
+				set[tag] = true
+			}
+		}
+	}
+	return set
 }
 
 // couldCoBuild reports whether two files' build constraints can be satisfied at the same time,
@@ -405,4 +444,40 @@ func fileConstraint(path, buildConstraint string, requiresCgo bool) constraint.E
 		return nil
 	}
 	return parseBuildConstraint(strings.Join(terms, " && "))
+}
+
+// effectiveConstraintText renders the same three terms for a human or JSON consumer.
+//
+// It is the display counterpart of fileConstraint: fileConstraint is built for the evaluator,
+// where explicit parentheses are harmless, while this form drops redundant parentheses and
+// duplicate terms so "a_windows.go" carrying "//go:build windows" reads "windows", not
+// "(windows) && (windows)". A term containing "||" keeps its parentheses, because joining it
+// with "&&" without them would change its meaning.
+func effectiveConstraintText(path, buildConstraint string, requiresCgo bool) string {
+	terms := make([]string, 0, 3)
+	add := func(term string) {
+		term = strings.TrimSpace(term)
+		if term == "" {
+			return
+		}
+		for _, existing := range terms {
+			if existing == term {
+				return
+			}
+		}
+		terms = append(terms, term)
+	}
+
+	add(implicitConstraint(path))
+	if buildConstraint != "" {
+		if strings.Contains(buildConstraint, "||") {
+			add("(" + buildConstraint + ")")
+		} else {
+			add(buildConstraint)
+		}
+	}
+	if requiresCgo {
+		add("cgo")
+	}
+	return strings.Join(terms, " && ")
 }

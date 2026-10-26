@@ -20,3 +20,6 @@ coverage.*
 # NOTE: testdata/ is deliberately NOT ignored. Golden fixtures are the evidence for
 # acceptance criterion A12 and must be versioned so a formatting change shows up as a
 # reviewable diff rather than as a silent test rewrite.
+
+# Release archives.
+/dist/

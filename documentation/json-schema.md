@@ -36,7 +36,7 @@ Always an array of per-file objects, even for a single file.
 | `schema_version` | integer | yes | Always `1` |
 | `file` | string | yes | File path, as named by the caller |
 | `package` | string | yes | Package name |
-| `build` | string | no | `//go:build` expression, present only when the file has one |
+| `build` | string | no | Effective build constraint (filename + `//go:build` + cgo), present only when the file is not always built |
 | `nodes` | array[Node] | yes | Declaration nodes (may be empty) |
 | `imports` | array[string] | no | Import paths, present only when the file has imports |
 
@@ -93,13 +93,14 @@ A single JSON object:
 | `schema_version` | integer | yes | Always `1` |
 | `symbol` | string | yes | Symbol name (e.g., `UserStore.GetUser`, `MyFunc`) |
 | `file` | string | yes | File path |
+| `build` | string | no | Effective build constraint; omitted when the file is always built |
 | `start_line` | integer | yes | Inclusive line number |
 | `end_line` | integer | yes | Inclusive line number |
 | `start_byte` | integer | yes | Half-open start byte offset |
 | `end_byte` | integer | yes | Half-open end byte offset |
 | `source` | string | yes | Exact source bytes of the symbol |
 
-Omit `source` when `--bounds-only` is used (then identical to `bounds`).
+Omit `source` when `--bounds-only` is used (then identical to `bounds`, including `build`).
 
 ---
 
@@ -126,6 +127,7 @@ Identical to `get --bounds-only --json` without the `source` field.
 | `schema_version` | integer | yes | Always `1` |
 | `symbol` | string | yes | Symbol name |
 | `file` | string | yes | File path |
+| `build` | string | no | Effective build constraint; omitted when the file is always built |
 | `start_line` | integer | yes | Inclusive line number |
 | `end_line` | integer | yes | Inclusive line number |
 | `start_byte` | integer | yes | Half-open start byte offset |
@@ -159,6 +161,39 @@ A single JSON object:
 | `column` | integer | yes | Column number (1-based) |
 | `message` | string | yes | Diagnostic message |
 
+`check` accepts `--tags` (custom build tags) but this does not change the JSON shape.
+
+---
+
+## 5. `--json-errors`
+
+Written to **stderr** when a command fails and `--json-errors` is set. stdout is untouched, so a
+partial payload already written by `outline` or `get` stays valid.
+
+```json
+{
+  "schema_version": 1,
+  "error": {
+    "kind": "ambiguous",
+    "message": "F is ambiguous, matches: [...]",
+    "exit_code": 2,
+    "candidates": ["/src/a_linux.go: F  [build: linux]"],
+    "skipped": 1,
+    "total": 2
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `schema_version` | integer | yes | Always `1` |
+| `error.kind` | string | yes | `not_found`, `ambiguous`, `usage`, or `parse_or_io` |
+| `error.message` | string | yes | Human-readable detail |
+| `error.exit_code` | integer | yes | The process exit code |
+| `error.candidates` | array[string] | no | Present for `ambiguous` |
+| `error.skipped` | integer | no | Files that could not be read, when non-zero |
+| `error.total` | integer | no | Files searched, when `skipped` is present |
+
 ---
 
 ## Exit Codes
@@ -167,9 +202,9 @@ A single JSON object:
 |------|---------|--------|--------|
 | `0` | Success | payload | empty |
 | `1` | Usage error | empty | error message |
-| `2` | Not found or ambiguous | empty | error message + candidates |
+| `2` | Not found or ambiguous | empty | error message + candidates, or the JSON error envelope with `--json-errors` |
 | `3` | `check` found diagnostics | payload (JSON only) | diagnostics |
-| `4` | Parse or I/O failure | payload (JSON, partial) | error message |
+| `4` | Parse or I/O failure | payload (JSON, partial) | error message, or the JSON error envelope with `--json-errors` |
 
 ---
 

@@ -131,6 +131,9 @@ func (e SkippedFilesError) Unwrap() error {
 	return e.Failures[0]
 }
 
+// Skips reports how many files are missing from the run.
+func (e SkippedFilesError) Skips() (int, int) { return len(e.Failures), e.Total }
+
 // Located reports whether the failure carries a source position, which is what distinguishes a
 // file that does not parse from a file that could not be opened.
 //
@@ -201,7 +204,23 @@ func parseOne(engine domain.Engine, path string) (domain.Document, ParseError) {
 	if err != nil {
 		return domain.Document{}, ParseError{Path: path, Err: err}
 	}
+	decorateDocument(&doc)
 	return doc, ParseError{}
+}
+
+// decorateDocument attaches the effective build constraint to a parsed document and to every
+// symbol in it.
+//
+// The engine records the //go:build expression but knows nothing about the filename
+// constraint; the usecase layer owns both. Doing it once, here, means every command that
+// parses through parseOne reports the same constraint: outline's header, get's header and
+// JSON payload, and the candidate annotation on an ambiguous lookup.
+func decorateDocument(doc *domain.Document) {
+	doc.ImplicitConstraint = implicitConstraint(doc.Path)
+	doc.EffectiveConstraint = effectiveConstraintText(doc.Path, doc.BuildConstraint, requiresCgo(*doc))
+	for i := range doc.Symbols {
+		doc.Symbols[i].Build = doc.EffectiveConstraint
+	}
 }
 
 // parseConcurrent fans out one goroutine per file, bounded by GOMAXPROCS.

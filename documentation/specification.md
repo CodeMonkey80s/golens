@@ -17,10 +17,15 @@ golens is a high-performance, stateless CLI tool written in Go that provides AI 
 
 ## 2. CLI Command Specifications
 
-All commands accept two global flags:
+All commands accept three global flags:
 
 - `--json`: Outputs machine-readable JSON payload.
 - `--compact`: Minifies output formatting to minimize context token usage.
+- `--json-errors`: Writes failures as a JSON object to stderr. The payload has
+  `"schema_version": 1`, an `error` object with `kind`, `message`, `exit_code`, optional
+  `candidates`, and optional `skipped`/`total`. `kind` is `not_found`, `ambiguous`, `usage` or
+  `parse_or_io`. Errors stay on stderr because `outline` may already have written a partial array to
+  stdout; appending an error object there would make the stream invalid.
 
 **Exit codes.** `0` success · `1` usage error · `2` symbol or file not found or ambiguous · `3` `check` found diagnostics · `4` parse or I/O failure. Payloads are written to stdout, diagnostics to stderr. When `--json` and `--compact` are combined, `--compact` takes precedence and emits non-indented JSON.
 
@@ -77,10 +82,11 @@ always yields byte-identical output.
 **Line ranges.** A declaration spanning several lines renders as `(lines 5-8)`; a single-line declaration renders as `(line 10)`.
 
 **Build constraints.** Every `.go` file is parsed whatever its constraints, because the question is
-what the tree contains rather than what one machine compiles. A file carrying a `//go:build`
-expression therefore reports it on a third header line, and an untagged file has no such line. A
-consumer editing a platform-specific file should check that line before assuming the current
-`GOOS` will compile the change.
+what the tree contains rather than what one machine compiles. When a file is not built everywhere,
+the header reports its **effective constraint**: the conjunction of the `//go:build` expression,
+the constraint inferred from the file name, and `cgo` when the file imports `"C"`. A file with no
+such constraint has no third line. A consumer editing a platform-specific file should check that
+line before assuming the current `GOOS` will compile the change.
 
 **Human Output Format (`golens outline user.go`)**
 
@@ -100,7 +106,7 @@ FUNCTIONS & METHODS (lines 12-25)
   • func (s *UserStore) GetUser(ctx context.Context, id int) (*User, error) (lines 17-25)
 ```
 
-For a file with a build constraint:
+For a file that is not built everywhere:
 
 ```text
 file: filesystems_windows.go
@@ -164,7 +170,9 @@ golens get <symbol> <file|dir> [flags]
 
 **The span starts at the name, not the keyword.** For a func the span starts at `func`; for a type, var or const it starts at the declared name, leaving the `type` / `var` / `const` keyword outside the range. Grouped declarations make this unavoidable — `const ( A = 1; B = 2 )` is one clause, so a clause-wide span would give `A` and `B` identical offsets and an edit to one would overwrite the other. A consumer writing replacement text must therefore begin at the name; writing back the text `golens get` returned for the same symbol always satisfies this.
 
-**Symbol ambiguity.** A bare method name is accepted when it is unique in the package. Any ambiguity exits `2` and lists the candidates on stderr rather than guessing.
+**Symbol ambiguity.** A bare method name is accepted when it is unique in the package. Any ambiguity exits `2` and lists the candidates on stderr rather than guessing. When a candidate's file has an effective build constraint, the candidate carries a `[build: ...]` marker so the platform variants are distinguishable without opening each file.
+
+**Build constraint of the result.** When the declaring file is not built everywhere, `get` prints a `Build:` line after `File:` and the JSON payload carries `build`. The value is the effective constraint from §2.1. This is a warning, not a filter: the symbol is resolved whatever the current platform compiles.
 
 **Packages are distinct namespaces.** A directory may hold `package p` beside an external test `package p_test`, and both may declare the same name without either redeclaring anything. When a bare name resolves in more than one package, the run exits `2` and reports the packages and their files — **it does not call this ambiguous**, because there is no duplicate declaration to fix.
 
@@ -225,6 +233,9 @@ golens bounds <symbol> <file> [flags]
 }
 ```
 
+`build` is added when the declaring file is not always built, and omitted otherwise. The same field
+appears in `get`'s payload, so `get --bounds-only --json` remains identical to `bounds --json`.
+
 ### 2.4 `golens check`
 
 Validates source file syntax and detects unused imports and duplicate declarations. Executes significantly faster than golangci-lint by acting solely as a lightweight AST validator. Unreachable-code detection is out of scope for v0.1.
@@ -234,6 +245,13 @@ Validates source file syntax and detects unused imports and duplicate declaratio
 ```bash
 golens check <file|dir> [flags]
 ```
+
+**Flags**
+
+- `--json`, `--compact`: as above.
+- `--tags <list>`: custom build tags, matching `go build -tags`. A file guarded by a supplied tag
+  participates in duplicate detection; without the flag the tag evaluates false, which suppresses a
+  diagnostic rather than inventing one.
 
 **Checks Performed**
 
@@ -263,8 +281,9 @@ golens check <file|dir> [flags]
   suppressed rather than accused.
 
   Platform variants of one function are therefore silent, which is what keeps the check usable on
-  any repository that targets more than one OS; a build tag the tool cannot recognise evaluates
-  false, so it assumes the narrowest reading rather than claiming a conflict it cannot demonstrate.
+  any repository that targets more than one OS. A build tag not supplied through `--tags` evaluates
+  false, so the check assumes the narrowest reading rather than claiming a conflict it cannot
+  demonstrate. Pass the project's real tags to make the check agree with its build.
   `init` and `_` are exempt: Go permits a package to declare either any number of times.
 - Dot imports (`import . "pkg"`): bring all exported names directly into scope. Without type
   resolution (out of scope), golens cannot know which names they bind. To avoid false negatives,
@@ -275,11 +294,13 @@ golens check <file|dir> [flags]
 - Import path syntax errors (empty, whitespace, or invalid characters), reported at the line the
   import is written on.
 
-**`check` reports what `go build` would reject, without building.** Every diagnostic above
-corresponds to a compiler error: an unused import, a redeclaration, a malformed import path, a
-syntax error. That is the whole scope, and it is why the tool needs neither `go/types` nor a module
-graph. Anything `go build` accepts is out of scope, which is why naming, formatting and idiom are
-not checked here — see §3.1.
+**`check` reports what `go build` would reject, without building, for the modelled build.** Every
+diagnostic above corresponds to a compiler error: an unused import, a redeclaration, a malformed
+import path, a syntax error. The build is modelled from GOOS/GOARCH, cgo and the tags supplied with
+`--tags`; a tag not supplied is treated as absent. That is the whole scope, and it is why the tool
+needs neither `go/types` nor a module graph. Anything `go build` accepts is out of scope, which is
+why naming, formatting and idiom are not checked here — see §3.1. It is not a type checker:
+undefined types and duplicate struct fields still pass.
 
 **A `testdata` directory is not checked.** The go tool ignores it by documented rule — *"Directory
 and file names that begin with `.` or `_` are ignored by the go tool, as are directories named

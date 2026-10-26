@@ -4,11 +4,28 @@ All notable changes to golens are documented in this file.
 
 ---
 
-## v0.3.3 (2026-10-27)
+## v0.4.0 (2026-10-27)
+
+### Added
+
+- **Build constraints are reported everywhere.** `outline` and `get` report the effective constraint (filename + `//go:build` + cgo), not just the comment; `get` and `bounds` JSON carry `build`; ambiguity candidates carry `[build: ...]` markers.
+- **`check --tags`** models a tagged build, matching `go build -tags integration`.
+- **`--json-errors`** writes a machine-readable error envelope to stderr (`kind`, `message`, `exit_code`, `candidates`, `skipped`/`total`) without disturbing a partial stdout payload.
+- **`FuzzCheck` and `FuzzResolve`** exercise two-file directories, custom tags, duplicate detection and the multi-file JSON paths.
+- **Tag-triggered release workflow** builds linux/darwin/windows amd64/arm64 archives and `checksums.txt`.
+
+### Fixed
+
+- `get` and `check` disagreed about platform variants: `check` called the tree clean while `get` reported an ambiguity across mutually exclusive files.
+- A symbol declared only in a platform-excluded file resolved with no indication that the current platform does not compile it.
+- `get domain.Nope` advised the caller to pass `Nope`, which is also missing. Missing symbols now return `NotFoundInPackage` with no advice, and cross-package advice names the working `p.A` form.
+- Unused test-only API `errors.AsType` kept the Go floor at 1.26; the floor is now 1.24.
 
 ### Changed
 
-- Bumped `github.com/spf13/pflag` from v1.0.9 to v1.0.10. Patch release with no CLI behavior change; the flag-parsing suite and CLI examples are unchanged.
+- Minimum Go version is 1.24 (tested in CI), down from 1.27.2.
+- Bumped `github.com/spf13/pflag` from v1.0.9 to v1.0.10.
+- README examples, specification, JSON schema, CI docs and `AGENTS.md` updated for the new fields and flags.
 
 ---
 

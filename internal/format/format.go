@@ -29,10 +29,14 @@ type BoundsPayload struct {
 	SchemaVersion int    `json:"schema_version"`
 	Symbol        string `json:"symbol"`
 	File          string `json:"file"`
-	StartLine     int    `json:"start_line"`
-	EndLine       int    `json:"end_line"`
-	StartByte     int    `json:"start_byte"`
-	EndByte       int    `json:"end_byte"`
+	// Build is the effective build constraint of the declaring file, or empty when the file
+	// is always built. It is carried on bounds as well as get so the A6 payloads stay
+	// identical.
+	Build     string `json:"build,omitempty"`
+	StartLine int    `json:"start_line"`
+	EndLine   int    `json:"end_line"`
+	StartByte int    `json:"start_byte"`
+	EndByte   int    `json:"end_byte"`
 }
 
 // GetPayload extends BoundsPayload with the extracted source.
@@ -45,6 +49,7 @@ type GetPayload struct {
 	SchemaVersion int    `json:"schema_version"`
 	Symbol        string `json:"symbol"`
 	File          string `json:"file"`
+	Build         string `json:"build,omitempty"`
 	StartLine     int    `json:"start_line"`
 	EndLine       int    `json:"end_line"`
 	StartByte     int    `json:"start_byte"`
@@ -88,6 +93,27 @@ type OutlineFile struct {
 	Nodes         []OutlineNode `json:"nodes,omitempty"`
 }
 
+// ErrorDetail is the machine-readable form of a failed command.
+//
+// It is written to stderr, not stdout: some commands have already written a partial payload
+// to stdout (outline with an unparseable file), and appending a second JSON object there would
+// make the stream unparseable. stdout stays the command's payload; stderr becomes the error
+// channel in the same schema language.
+type ErrorDetail struct {
+	Kind       string   `json:"kind"`
+	Message    string   `json:"message"`
+	ExitCode   int      `json:"exit_code"`
+	Candidates []string `json:"candidates,omitempty"`
+	Skipped    int      `json:"skipped,omitempty"`
+	Total      int      `json:"total,omitempty"`
+}
+
+// ErrorPayload is the envelope written when --json-errors is set.
+type ErrorPayload struct {
+	SchemaVersion int         `json:"schema_version"`
+	Error         ErrorDetail `json:"error"`
+}
+
 // WriteJSON encodes v to w, indented unless compact is set.
 func WriteJSON(w io.Writer, v any, compact bool) error {
 	enc := json.NewEncoder(w)
@@ -103,6 +129,7 @@ func Bounds(sym domain.Symbol, file string) BoundsPayload {
 		SchemaVersion: SchemaVersion,
 		Symbol:        sym.QualifiedName,
 		File:          file,
+		Build:         sym.Build,
 		StartLine:     sym.Bounds.StartLine,
 		EndLine:       sym.Bounds.EndLine,
 		StartByte:     sym.Bounds.StartByte,
@@ -118,6 +145,7 @@ func Get(sym domain.Symbol, file, source string, includeSource bool) GetPayload 
 		SchemaVersion: b.SchemaVersion,
 		Symbol:        b.Symbol,
 		File:          b.File,
+		Build:         b.Build,
 		StartLine:     b.StartLine,
 		EndLine:       b.EndLine,
 		StartByte:     b.StartByte,
@@ -152,6 +180,12 @@ func WriteGetHuman(w io.Writer, sym domain.Symbol, file, source string, compact 
 
 	var sb strings.Builder
 	sb.WriteString("File: " + file + "\n")
+	// The constraint is what tells an agent whether the platform compiles this declaration.
+	// outline has always reported it; get did not, so a symbol in a _windows.go file looked
+	// exactly like a live one.
+	if sym.Build != "" {
+		sb.WriteString("Build: " + sym.Build + "\n")
+	}
 	sb.WriteString("Symbol: " + sym.QualifiedName + "\n")
 	// The specification's sample reads "Lines: 17-25 (9 lines)" -- a bare range, since the
 	// label already says "Lines". lineCountPhrase also handles the singular, so a one-line
@@ -274,10 +308,22 @@ func Outline(doc domain.Document, depth int) OutlineFile {
 		SchemaVersion: SchemaVersion,
 		File:          doc.Path,
 		Package:       doc.Package,
-		Build:         doc.BuildConstraint,
+		Build:         displayBuild(doc),
 		Imports:       doc.Imports,
 		Nodes:         convertNodes(doc.Nodes, 0, depth),
 	}
+}
+
+// displayBuild reports the constraint that governs whether a file is compiled.
+//
+// EffectiveConstraint is set by the usecase layer from the filename, the //go:build line and
+// cgo. BuildConstraint remains the fallback for a Document constructed directly in a test or
+// by a caller that did not decorate it.
+func displayBuild(doc domain.Document) string {
+	if doc.EffectiveConstraint != "" {
+		return doc.EffectiveConstraint
+	}
+	return doc.BuildConstraint
 }
 
 // bullet is the marker used by the human outline. It matches the specification's examples.
@@ -329,8 +375,8 @@ func WriteOutlineHuman(w io.Writer, doc domain.Document, depth int, compact bool
 	// unchanged. It matters because golens lists every file in a directory whatever its
 	// constraints: without this line, an agent editing a variant the current platform
 	// excludes gets no signal from the outline that the change will not be compiled.
-	if doc.BuildConstraint != "" {
-		sb.WriteString("build: " + doc.BuildConstraint + "\n")
+	if build := displayBuild(doc); build != "" {
+		sb.WriteString("build: " + build + "\n")
 	}
 
 	if err := writeSection(&sb, doc.Nodes, depth); err != nil {
@@ -349,8 +395,8 @@ func WriteOutlineHuman(w io.Writer, doc domain.Document, depth int, compact bool
 func writeOutlineCompact(w io.Writer, doc domain.Document, depth int) error {
 	var sb strings.Builder
 
-	if doc.BuildConstraint != "" {
-		sb.WriteString(doc.Path + "\t" + doc.Package + "\t" + doc.BuildConstraint + "\n")
+	if build := displayBuild(doc); build != "" {
+		sb.WriteString(doc.Path + "\t" + doc.Package + "\t" + build + "\n")
 	} else {
 		sb.WriteString(doc.Path + "\t" + doc.Package + "\n")
 	}

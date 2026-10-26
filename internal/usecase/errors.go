@@ -81,13 +81,20 @@ func (e AmbiguousSymbol) Error() string {
 // itself rather than the help text. Without the remedy the likely response is to retry the same
 // command, or to conclude the tool is broken. Duf declares Mount.Stat in four platform files,
 // so this is the common case rather than an edge one.
+//
+// Candidates carrying "[build: ...]" are files the named constraint excludes; the marker is
+// what turns a bare list of paths into a decision about which one the current platform builds.
 func (e AmbiguousSymbol) Advice() string {
-	return "  pass a specific file instead of a directory, or the qualified name, to disambiguate"
+	return "  pass a specific file instead of a directory, or the qualified name, to disambiguate; [build: ...] marks a file's build constraint"
 }
 
 // IsNotFound marks ambiguity under exit 2, the same code as a missing symbol, since both
 // mean "the caller must disambiguate or correct the name".
 func (e AmbiguousSymbol) IsNotFound() bool { return true }
+
+// Skips reports how much of the search could not be parsed, so a machine consumer can tell a
+// complete answer from a partial one.
+func (e AmbiguousSymbol) Skips() (int, int) { return e.Skipped, e.Total }
 
 // Candidates returns the qualified names that matched. The cli layer prints these beneath
 // the error so the caller can correct the symbol instead of guessing.
@@ -122,6 +129,9 @@ func (e NotFoundSymbolWithSkips) Error() string {
 // the name or disambiguate either way.
 func (e NotFoundSymbolWithSkips) IsNotFound() bool { return true }
 
+// Skips reports how much of the search could not be parsed.
+func (e NotFoundSymbolWithSkips) Skips() (int, int) { return len(e.Files), e.Total }
+
 // Unwrap reaches the first parse failure, so a caller wanting the position rather than the
 // summary still finds it.
 func (e NotFoundSymbolWithSkips) Unwrap() error {
@@ -150,9 +160,8 @@ type CrossPackageGroup struct {
 // namespace on directory *and* package name, so the two commands disagreed about whether a
 // conflict existed.
 //
-// The advice names a file rather than a qualified name. A qualified name addresses a method
-// within a type ("UserStore.GetUser"); it cannot express a package, and the previous advice
-// recommended one that `get p.A` does not resolve.
+// The advice names the package-qualified form now that it resolves. It also still offers a
+// file, because a file is unambiguous even when the bare name is not.
 type CrossPackageSymbol struct {
 	Name   string
 	Groups []CrossPackageGroup
@@ -167,59 +176,55 @@ func (e CrossPackageSymbol) Error() string {
 	return b.String()
 }
 
-// Advice states the remedy that works. The previous message suggested a qualified name, which
-// addresses a method within a type and cannot select a package — a caller who followed it hit
-// "symbol not found" and had no reason to connect the two.
+// Advice states the remedy that works. Since package-qualified lookup landed, a query of the
+// form Package.Symbol selects one of the packages directly; passing a file remains valid too.
 func (e CrossPackageSymbol) Advice() string {
-	return "  pass the specific file; a qualified name selects a method within a type, not a package"
+	example := e.Name
+	if len(e.Groups) > 0 {
+		example = e.Groups[0].Package + "." + e.Name
+	}
+	return fmt.Sprintf("  use %s to select one package, or pass the specific file", example)
 }
 
 // IsNotFound keeps the exit code at 2. The caller must still choose, and an agent reacting to 2
 // corrects its input rather than retrying the same command.
 func (e CrossPackageSymbol) IsNotFound() bool { return true }
 
-// PackageQualifiedSymbol reports a query whose first dotted segment named a package the
-// search covered — `domain.Node` when the target holds `package domain`.
+// NotFoundInPackage reports a package-qualified query whose package was searched but whose
+// symbol is absent. Package-qualified lookup is real since v0.3, so a miss in a known package
+// is an ordinary miss with a narrower answer: the package exists, the declaration does not.
 //
-// It exists because plain NotFoundSymbol answers "no such symbol" to a query that names a
-// perfectly real symbol in a form the tool does not accept, and the caller cannot tell the
-// two apart. Go namespaces by package and the path argument already selects one, so writing
-// the package first is the reasonable guess; `Type.Method` is the only dotted form Lookup
-// resolves, and it addresses a method within a type. Package-qualified lookup is v0.3 work
-// with its own specification change, so the narrow fix is to name the form that resolves
-// rather than to resolve this one.
+// It replaces PackageQualifiedSymbol, whose advice ("pass the bare name") was written before
+// package-qualified lookup worked and became actively wrong: following it retried a name that
+// was already known to be missing.
 //
-// Skipped and Total travel with it because the answer is partial whenever files could not
-// be parsed, and a partial search must not read like a complete one.
-type PackageQualifiedSymbol struct {
+// Skipped and Total travel with it because the answer is partial whenever files could not be
+// parsed, and a partial search must not read like a complete one.
+type NotFoundInPackage struct {
+	// Name is the part after the package qualifier, as written.
 	Name string
 	// Package is the package the query's first segment named.
 	Package string
-	// Symbol is the remainder — the bare name that does resolve.
-	Symbol string
 	// Skipped counts files in the search that could not be parsed, and Total how many were
 	// searched.
 	Skipped int
 	Total   int
 }
 
-func (e PackageQualifiedSymbol) Error() string {
-	msg := fmt.Sprintf("symbol %q not found", e.Name)
+func (e NotFoundInPackage) Error() string {
+	msg := fmt.Sprintf("symbol %q not found in package %q", e.Name, e.Package)
 	if e.Skipped > 0 {
 		msg += fmt.Sprintf("; %d of %d files could not be parsed and may declare it", e.Skipped, e.Total)
 	}
 	return msg
 }
 
-// Advice names the form that resolves. Without it the caller retries the same dotted name,
-// gets the same answer, and has to read the source to work out why.
-func (e PackageQualifiedSymbol) Advice() string {
-	return fmt.Sprintf("  %q is the package, and the target already selects it: pass %q, or Type.Method for a method within a type", e.Package, e.Symbol)
-}
-
 // IsNotFound keeps the exit code at 2, the same as any other miss: the caller has to correct
-// the query, which is what 2 means, and nothing is being claimed about the source.
-func (e PackageQualifiedSymbol) IsNotFound() bool { return true }
+// the query, which is what 2 means.
+func (e NotFoundInPackage) IsNotFound() bool { return true }
+
+// Skips reports how much of the search could not be parsed.
+func (e NotFoundInPackage) Skips() (int, int) { return e.Skipped, e.Total }
 
 // UnreadableFilesError reports files that could not be opened at all, as distinct from files
 // that were opened and did not parse.
@@ -254,6 +259,10 @@ func (e UnreadableFilesError) Error() string {
 
 // Silent reports whether the CLI should keep this off stderr. See Quiet.
 func (e UnreadableFilesError) Silent() bool { return e.Quiet }
+
+// Skips reports how many files could not be read, so a JSON error consumer sees the same
+// completeness information as the human summary.
+func (e UnreadableFilesError) Skips() (int, int) { return e.Count, e.Total }
 
 // NotFoundSymbol reports a name that matched nothing.
 type NotFoundSymbol string

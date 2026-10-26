@@ -142,7 +142,8 @@ func TestGetSkipsUnparseableFilesRatherThanAborting(t *testing.T) {
 		var out bytes.Buffer
 		err := usecase.Get(goast.New(), "Nope", dir, true, &out, format.Options{})
 
-		if _, ok := errors.AsType[usecase.NotFoundSymbolWithSkips](err); !ok {
+		var notFound usecase.NotFoundSymbolWithSkips
+		if !errors.As(err, &notFound) {
 			t.Fatalf("err = %v (%T), want NotFoundSymbolWithSkips", err, err)
 		}
 		if !strings.Contains(err.Error(), "could not be parsed") {
@@ -178,7 +179,8 @@ func TestGetSkipsUnparseableFilesRatherThanAborting(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected the parse error")
 		}
-		if _, ok := errors.AsType[usecase.SkippedFilesError](err); ok {
+		var skipped usecase.SkippedFilesError
+		if errors.As(err, &skipped) {
 			t.Errorf("a single file produced a summary instead of the diagnostic: %v", err)
 		}
 		if !strings.Contains(err.Error(), "broken.go") {
@@ -204,7 +206,8 @@ func TestNotFoundNamesSkipsOnlyWhenItMust(t *testing.T) {
 	var out bytes.Buffer
 	err := usecase.Get(goast.New(), "Nope", dir, true, &out, format.Options{})
 
-	if _, ok := errors.AsType[usecase.NotFoundSymbolWithSkips](err); ok {
+	var notFound usecase.NotFoundSymbolWithSkips
+	if errors.As(err, &notFound) {
 		t.Errorf("a clean search reported skipped files: %v", err)
 	}
 	if err.Error() != `symbol "Nope" not found` {

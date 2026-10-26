@@ -63,9 +63,9 @@ func Resolve(engine domain.Engine, name, target string) (domain.Symbol, domain.D
 	packages := make(map[string][]int)
 
 	for _, path := range paths {
-		doc, parseErr := engine.Parse(path)
-		if parseErr != nil {
-			skipped.Files = append(skipped.Files, ParseError{Path: path, Err: parseErr})
+		doc, parseErr := parseOne(engine, path)
+		if parseErr.Err != nil {
+			skipped.Files = append(skipped.Files, parseErr)
 			continue
 		}
 		pkgNames[doc.Package] = true
@@ -95,8 +95,13 @@ func Resolve(engine domain.Engine, name, target string) (domain.Symbol, domain.D
 		} else if err != nil {
 			return domain.Symbol{}, domain.Document{}, pkgSkipped, err
 		}
-		if pq, ok := packageQualified(name, pkgNames, skipped); ok {
-			return domain.Symbol{}, domain.Document{}, skipped, pq
+		if pkg, rest, ok := packageQualifiedParts(name, pkgNames); ok {
+			return domain.Symbol{}, domain.Document{}, skipped, NotFoundInPackage{
+				Name:    rest,
+				Package: pkg,
+				Skipped: len(skipped.Files),
+				Total:   len(paths),
+			}
 		}
 		return domain.Symbol{}, domain.Document{}, skipped, notFoundAmong(name, skipped)
 	case 1:
@@ -107,7 +112,11 @@ func Resolve(engine domain.Engine, name, target string) (domain.Symbol, domain.D
 		}
 		names := make([]string, 0, len(matches))
 		for _, m := range matches {
-			names = append(names, filepath.ToSlash(m.File)+": "+m.QualifiedName)
+			candidate := filepath.ToSlash(m.File) + ": " + m.QualifiedName
+			if m.Build != "" {
+				candidate += "  [build: " + m.Build + "]"
+			}
+			names = append(names, candidate)
 		}
 		return domain.Symbol{}, domain.Document{}, skipped, AmbiguousSymbol{
 			Name:    name,
@@ -123,8 +132,8 @@ func Resolve(engine domain.Engine, name, target string) (domain.Symbol, domain.D
 // Returns (symbol, document, skipped, nil) when found; (zero, zero, skipped, NotFound) when not found;
 // (zero, zero, skipped, AmbiguousSymbol) when ambiguous in the named package.
 func tryPackageQualified(engine domain.Engine, name string, pkgNames map[string]bool, paths []string, skipped Skipped) (domain.Symbol, domain.Document, Skipped, error) {
-	pkg, rest, found := strings.Cut(name, ".")
-	if !found || rest == "" || !pkgNames[pkg] {
+	pkg, rest, found := packageQualifiedParts(name, pkgNames)
+	if !found {
 		return domain.Symbol{}, domain.Document{}, skipped, nil
 	}
 
@@ -135,9 +144,9 @@ func tryPackageQualified(engine domain.Engine, name string, pkgNames map[string]
 	pkgSkipped.Total = len(paths)
 
 	for _, path := range paths {
-		doc, parseErr := engine.Parse(path)
-		if parseErr != nil {
-			pkgSkipped.Files = append(pkgSkipped.Files, ParseError{Path: path, Err: parseErr})
+		doc, parseErr := parseOne(engine, path)
+		if parseErr.Err != nil {
+			pkgSkipped.Files = append(pkgSkipped.Files, parseErr)
 			continue
 		}
 		if doc.Package != pkg {
@@ -161,7 +170,11 @@ func tryPackageQualified(engine domain.Engine, name string, pkgNames map[string]
 		// Multiple matches in the same package — genuine ambiguity.
 		names := make([]string, 0, len(matches))
 		for _, m := range matches {
-			names = append(names, filepath.ToSlash(m.File)+": "+m.QualifiedName)
+			candidate := filepath.ToSlash(m.File) + ": " + m.QualifiedName
+			if m.Build != "" {
+				candidate += "  [build: " + m.Build + "]"
+			}
+			names = append(names, candidate)
 		}
 		return domain.Symbol{}, domain.Document{}, pkgSkipped, AmbiguousSymbol{
 			Name:    rest,
@@ -228,6 +241,20 @@ func (s Skipped) asError() error {
 	return SkippedFilesError{Failures: s.Files, Total: s.Total}
 }
 
+// packageQualifiedParts splits a dotted query into a package name and the remainder when the
+// first segment names a package the search parsed.
+//
+// It is deliberately a split, not a resolution: the caller decides whether the remainder names
+// a declaration. It needs at least two segments, because "Type.Method" is a legal query whose
+// first segment is a type name and will not match a package name anyway.
+func packageQualifiedParts(name string, pkgs map[string]bool) (pkg, rest string, ok bool) {
+	prefix, remainder, found := strings.Cut(name, ".")
+	if !found || remainder == "" || !pkgs[prefix] {
+		return "", "", false
+	}
+	return prefix, remainder, true
+}
+
 // notFoundAmong reports a symbol that resolved nowhere, saying so only when files were
 // skipped that might have declared it.
 //
@@ -235,32 +262,6 @@ func (s Skipped) asError() error {
 // noise. With some skipped it is not the truth: the declaration may sit in a file that
 // could not be read, and an agent told only "not found" would rename or delete a symbol
 // that exists.
-// packageQualified reports a query that opened with the name of a package the search parsed.
-//
-// `domain.Node` and `main.main` both look like the way to name a symbol in its package, and
-// outline prints its candidates as `file: Type.Method`, so the dotted form reads as
-// supported. It is not: Lookup matches a bare name or a qualified method name and nothing
-// else. Letting that read as "the symbol does not exist" is the failure — that is the answer
-// a caller acts on by renaming or deleting code — so say which segment was a package and
-// which form resolves instead.
-//
-// Only wired into the zero-match branch, so it can never override a symbol that did resolve,
-// and it needs at least two segments: `Type.Method` is a legal query and its first segment
-// is a type name that will not match a package name anyway.
-func packageQualified(name string, pkgs map[string]bool, skipped Skipped) (PackageQualifiedSymbol, bool) {
-	prefix, rest, found := strings.Cut(name, ".")
-	if !found || rest == "" || !pkgs[prefix] {
-		return PackageQualifiedSymbol{}, false
-	}
-	return PackageQualifiedSymbol{
-		Name:    name,
-		Package: prefix,
-		Symbol:  rest,
-		Skipped: len(skipped.Files),
-		Total:   skipped.Total,
-	}, true
-}
-
 func notFoundAmong(name string, skipped Skipped) error {
 	if len(skipped.Files) == 0 {
 		return NotFoundSymbol(name)
