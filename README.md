@@ -124,7 +124,7 @@ elsewhere is the `-ldflags="-s -w"` build above. Both are inside the 15 MiB budg
 
 `--version` reports the version the **tag** decides. Nothing in the source states a release
 number — it was `const Version = "0.1.0"` once, which meant every build ever produced reported
-v0.1.0, including one built after v0.2.0 shipped.
+v0.1.0, including one built after v0.2.0 shipped. Tags from v0.2.7 onward carry the fix.
 
 For a release build, stamp it at link time:
 
@@ -209,6 +209,11 @@ exported and unexported identifiers resolve. Passing a directory searches the wh
 A bare method name is accepted when it is unique. When two receivers share a name the command
 exits `2` and lists the candidates rather than guessing.
 
+Package-qualified lookup (`Package.Symbol`) resolves `Symbol` in the named package. This is
+distinct from `Type.Method`, which selects a method within a type. The package name must match a
+package parsed in the search. If the first segment matches both a package and a type,
+`Type.Method` is tried first; package-qualified lookup applies only when it finds nothing.
+
 A directory may hold `package p` beside an external test `package p_test`, and both may declare
 the same name without either redeclaring anything. That is reported separately — as a name found
 in two packages, not as an ambiguity — and the remedy is a file, because a qualified name selects
@@ -239,7 +244,7 @@ than something they inherit by asking a structural question.
 Checks performed:
 
 - Fatal parse errors, in `file:line:col: message` form
-- Unused imports
+- Unused imports, including dot imports (`import . "pkg"`)
 - Duplicate top-level declarations, within one file or across a package
 - Malformed import paths
 

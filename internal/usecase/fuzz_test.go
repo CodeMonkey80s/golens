@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/CodeMonkey80s/golens/internal/engine/goast"
@@ -11,135 +12,142 @@ import (
 	"github.com/CodeMonkey80s/golens/internal/usecase"
 )
 
-// FuzzOutline fuzzes outline with arbitrary Go source, ensuring it never
-// panics and always produces valid output (or a clean error).
+// writeSource places src in a fresh file inside dir and returns its path.
+// The fuzz targets reuse one directory per process because each worker runs one
+// input at a time; allocating a t.TempDir per execution would spend the whole
+// budget on filesystem churn.
+func writeSource(t *testing.T, dir, src string) string {
+	t.Helper()
+	path := filepath.Join(dir, "fuzz.go")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func fuzzDir(f *testing.F) string {
+	dir, err := os.MkdirTemp("", "golens-fuzz-")
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
+// FuzzOutline checks that arbitrary bytes on disk either produce a parse error
+// or a JSON payload with the documented shape. A panic here is a bug in the
+// engine, not in the input.
 func FuzzOutline(f *testing.F) {
-	engine := goast.New()
+	f.Add("package p\n\nfunc F() {}\n")
+	f.Add("package p\n\ntype T struct{ A int }\n\nfunc (t T) M() {}\n")
+	f.Add("")
+	f.Add("package p\n\nfunc F( {\n")
 
-	f.Fuzz(func(t *testing.T, src []byte) {
-		dir := t.TempDir()
-		path := dir + "/fuzz.go"
-		if err := os.WriteFile(path, src, 0o644); err != nil {
-			t.Fatal(err)
-		}
+	engine := goast.New()
+	dir := fuzzDir(f)
+
+	f.Fuzz(func(t *testing.T, src string) {
+		path := writeSource(t, dir, src)
 
 		var buf bytes.Buffer
-		err := usecase.Outline(engine, path, usecase.DepthUnlimited, &buf, format.Options{})
-		// Outline must never panic. It may return an error for unparseable input,
-		// but the output on stdout must still be valid (or empty).
-		if err != nil {
+		if err := usecase.Outline(engine, path, usecase.DepthUnlimited, &buf, format.Options{JSON: true}); err != nil {
 			return
 		}
 
-		if buf.Len() == 0 {
-			t.Errorf("outline produced empty output for parseable input:\n%s", string(src))
+		var files []struct {
+			SchemaVersion int               `json:"schema_version"`
+			Nodes         []json.RawMessage `json:"nodes"`
+		}
+		if err := json.Unmarshal(buf.Bytes(), &files); err != nil {
+			t.Fatalf("outline output is not valid JSON: %v\n%s", err, buf.String())
+		}
+		if len(files) != 1 || files[0].SchemaVersion != 1 {
+			t.Fatalf("outline JSON must be one file with schema_version 1: %s", buf.String())
 		}
 	})
 }
 
-// FuzzGet fuzzes get with arbitrary Go source and symbol names, ensuring it
-// never panics.
+// FuzzGet checks that a symbol lookup never panics and that a successful answer
+// satisfies the byte invariant: src[start_byte:end_byte] is exactly the returned
+// source.
 func FuzzGet(f *testing.F) {
+	f.Add("package p\n\nfunc F() {}\n", "F")
+	f.Add("package p\n\ntype T struct{}\n\nfunc (t T) M() {}\n", "T.M")
+	f.Add("package p\n\nvar X = 1\n", "X")
+	f.Add("package p\n\nimport . \"fmt\"\n\nfunc F() { Println(1) }\n", "F")
+	f.Add("not go at all\n", "F")
+
 	engine := goast.New()
+	dir := fuzzDir(f)
 
-	f.Fuzz(func(t *testing.T, data []byte) {
-		if len(data) == 0 {
-			return
-		}
-		mid := len(data) / 2
-		if mid == 0 {
-			mid = 1
-		}
-		src := data[:mid]
-		var sb bytes.Buffer
-		for _, b := range data[mid:] {
-			if b < 32 || b > 126 {
-				sb.WriteByte('_')
-			} else {
-				sb.WriteByte(b)
-			}
-		}
-		symbolName := sb.String()
-		if symbolName == "" {
-			symbolName = "F"
-		}
-
-		dir := t.TempDir()
-		path := dir + "/fuzz.go"
-		if err := os.WriteFile(path, src, 0o644); err != nil {
-			t.Fatal(err)
-		}
+	f.Fuzz(func(t *testing.T, src, symbol string) {
+		path := writeSource(t, dir, src)
 
 		var buf bytes.Buffer
-		err := usecase.Get(engine, symbolName, path, true, &buf, format.Options{})
-		if err != nil {
+		if err := usecase.Get(engine, symbol, path, true, &buf, format.Options{JSON: true}); err != nil {
 			if buf.Len() != 0 {
-				t.Errorf("get produced stdout on error:\n%s", buf.String())
+				t.Fatalf("get wrote a payload on error: %s", buf.String())
 			}
 			return
 		}
 
-		if buf.Len() == 0 {
-			t.Errorf("get produced empty output for found symbol %q:\n%s", symbolName, string(src))
+		var got struct {
+			SchemaVersion int    `json:"schema_version"`
+			StartByte     int    `json:"start_byte"`
+			EndByte       int    `json:"end_byte"`
+			Source        string `json:"source"`
+		}
+		if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+			t.Fatalf("get output is not valid JSON: %v\n%s", err, buf.String())
+		}
+		if got.SchemaVersion != 1 {
+			t.Fatalf("schema_version = %d, want 1", got.SchemaVersion)
+		}
+		if got.StartByte < 0 || got.EndByte < got.StartByte || got.EndByte > len(src) {
+			t.Fatalf("span [%d,%d) is outside a %d-byte source", got.StartByte, got.EndByte, len(src))
+		}
+		if src[got.StartByte:got.EndByte] != got.Source {
+			t.Fatalf("src[%d:%d] != source\nspan:   %q\nsource: %q",
+				got.StartByte, got.EndByte, src[got.StartByte:got.EndByte], got.Source)
 		}
 	})
 }
 
-// FuzzBounds fuzzes bounds with arbitrary Go source and symbol names, ensuring
-// it never panics and byte offsets are valid.
+// FuzzBounds checks that bounds never panics and never returns a span outside
+// the file it was given.
 func FuzzBounds(f *testing.F) {
+	f.Add("package p\n\nfunc F() {}\n", "F")
+	f.Add("package p\n\ntype T struct{}\n\nfunc (t T) M() {}\n", "T.M")
+	f.Add("package p\n\nvar X = 1\n", "X")
+	f.Add("not go at all\n", "F")
+
 	engine := goast.New()
+	dir := fuzzDir(f)
 
-	f.Fuzz(func(t *testing.T, data []byte) {
-		if len(data) == 0 {
-			return
-		}
-		mid := len(data) / 2
-		if mid == 0 {
-			mid = 1
-		}
-		src := data[:mid]
-		var sb bytes.Buffer
-		for _, b := range data[mid:] {
-			if b < 32 || b > 126 {
-				sb.WriteByte('_')
-			} else {
-				sb.WriteByte(b)
-			}
-		}
-		symbolName := sb.String()
-		if symbolName == "" {
-			symbolName = "F"
-		}
-
-		dir := t.TempDir()
-		path := dir + "/fuzz.go"
-		if err := os.WriteFile(path, src, 0o644); err != nil {
-			t.Fatal(err)
-		}
+	f.Fuzz(func(t *testing.T, src, symbol string) {
+		path := writeSource(t, dir, src)
 
 		var buf bytes.Buffer
-		err := usecase.Bounds(engine, symbolName, path, &buf, format.Options{JSON: true})
-		if err != nil {
+		if err := usecase.Bounds(engine, symbol, path, &buf, format.Options{JSON: true}); err != nil {
+			if buf.Len() != 0 {
+				t.Fatalf("bounds wrote a payload on error: %s", buf.String())
+			}
 			return
 		}
 
-		var result struct {
-			StartByte int `json:"start_byte"`
-			EndByte   int `json:"end_byte"`
+		var got struct {
+			SchemaVersion int `json:"schema_version"`
+			StartByte     int `json:"start_byte"`
+			EndByte       int `json:"end_byte"`
 		}
-		if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
-			t.Fatalf("bounds output not valid JSON: %v\n%s", err, buf.String())
+		if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+			t.Fatalf("bounds output is not valid JSON: %v\n%s", err, buf.String())
 		}
-
-		if result.StartByte < 0 || result.EndByte < 0 {
-			t.Errorf("negative bounds: start=%d end=%d", result.StartByte, result.EndByte)
+		if got.SchemaVersion != 1 {
+			t.Fatalf("schema_version = %d, want 1", got.SchemaVersion)
 		}
-		if result.StartByte > result.EndByte {
-			t.Errorf("start > end: start=%d end=%d", result.StartByte, result.EndByte)
-		}
-		if result.EndByte > len(src) {
-			t.Errorf("end=%d beyond source length=%d", result.EndByte, len(src))
+		if got.StartByte < 0 || got.EndByte < got.StartByte || got.EndByte > len(src) {
+			t.Fatalf("span [%d,%d) is outside a %d-byte source", got.StartByte, got.EndByte, len(src))
 		}
 	})
 }

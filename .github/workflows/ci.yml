@@ -57,6 +57,16 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # A short fuzz run per target. This is a smoke test for panics and broken
+      # invariants, not a coverage goal: the seed corpus already runs in the Test
+      # step, and 10 seconds per target catches the crashes that matter without
+      # making CI slow. Run longer locally after touching the engine.
+      - name: Fuzz smoke
+        run: |
+          go test -run '^$' -fuzz FuzzOutline -fuzztime 10s ./internal/usecase
+          go test -run '^$' -fuzz FuzzGet -fuzztime 10s ./internal/usecase
+          go test -run '^$' -fuzz FuzzBounds -fuzztime 10s ./internal/usecase
+
       - name: Check formatting
         run: |
           unformatted=$(gofmt -l .)
@@ -132,9 +142,17 @@ jobs:
       # cross-package resolution, unused-import heuristics on real import graphs,
       # and build-tag interactions. A clean exit here means golens agrees with
       # go build on a real cross-platform codebase.
+      #
+      # The commit is pinned deliberately. Cloning the default branch would turn
+      # every upstream change into a failure in this repository's PRs, with no
+      # local change to blame and no way to reproduce the run later. Bump it in
+      # a dedicated commit when you want newer coverage.
       - name: golens on containerd
         run: |
-          git clone --depth 1 https://github.com/containerd/containerd.git /tmp/containerd
+          git init -q /tmp/containerd
+          git -C /tmp/containerd remote add origin https://github.com/containerd/containerd.git
+          git -C /tmp/containerd fetch -q --depth 1 origin 7cdee0c4ae07816b176488b0ab375bffcfa1ea68
+          git -C /tmp/containerd checkout -q FETCH_HEAD
           ./golens check /tmp/containerd
 
       - name: Upload the binary

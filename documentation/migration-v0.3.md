@@ -31,7 +31,7 @@ Previously, `golens get domain.Node .` answered `"domain.Node" not found` — th
 
 - `Type.Method` still selects a method within a type, not a package
 - A bare name resolving in more than one package is still reported as cross-package (exit 2), not as package-qualified ambiguity
-- If the first segment matches both a package and a type, package-qualified lookup takes precedence
+- If the first segment matches both a package and a type, `Type.Method` is tried first; package-qualified lookup applies only when it finds nothing
 
 ---
 

@@ -305,6 +305,25 @@ func TestAdversarialPackageNameMatchesTypeName(t *testing.T) {
 	}
 }
 
+// TestAdversarialTypeMethodBeatsPackageQualified pins the precedence rule when a
+// query could mean either a method on a type or a symbol in a package: Type.Method
+// is tried first, and package-qualified lookup only runs when it finds nothing.
+func TestAdversarialTypeMethodBeatsPackageQualified(t *testing.T) {
+	dir := t.TempDir()
+	testfixture.Write(t, dir, "a.go", "package p\n\ntype p struct{}\n\nfunc (p) M() {}\n\nfunc M() {}\n")
+
+	var out bytes.Buffer
+	if err := usecase.Get(goast.New(), "p.M", dir, true, &out, format.Options{}); err != nil {
+		t.Fatalf("get p.M: %v", err)
+	}
+	if !strings.Contains(out.String(), "(p) M()") {
+		t.Errorf("expected the method on type p, not the package-level func:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "\nfunc M()") {
+		t.Errorf("package-qualified lookup overrode a successful Type.Method resolution:\n%s", out.String())
+	}
+}
+
 // TestAdversarialNestedBuildConstraintFilename tests _linux_amd64 implicit constraint.
 // On linux/amd64, both files are built (linux_amd64 matches current platform,
 // untagged is always built), so they conflict. On other platforms they wouldn't.

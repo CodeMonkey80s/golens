@@ -4,7 +4,44 @@ All notable changes to golens are documented in this file.
 
 ---
 
-## v0.3.0 (unreleased)
+## v0.3.2 (2026-10-26)
+
+### Fixed
+
+- `documentation/CI.md` claimed `golens check ./internal ./cmd` was valid; `check` accepts exactly one path, so the docs now show two invocations
+- Root `AGENTS.md` had been replaced with the target-repository template, losing the repository's own build, layout, trap and acceptance-criteria guidance; restored and brought up to date
+- The containerd CI target cloned the default branch, so unrelated upstream changes could fail this repository's PRs; it is now pinned to a commit
+
+### Changed
+
+- Fuzz targets take source and symbol as separate arguments instead of splitting one byte slice in half, which made almost every input unparseable Go
+- Fuzz seed corpus added: valid files, methods, vars, dot imports and malformed input now run on every `go test`
+- Fuzz assertions now check the byte invariant (`src[start:end] == source`), `schema_version`, and span bounds
+- CI runs a 10-second fuzz campaign per target
+
+### Added
+
+- README covers package-qualified lookup and dot-import detection
+
+---
+
+## v0.3.1 (2026-10-26)
+
+### Added
+
+- Documentation set: `documentation/CI.md`, `documentation/json-schema.md` (every JSON payload field by field), `documentation/migration-v0.3.md`, `CONTRIBUTING.md`, `CHANGELOG.md`
+- Fuzz targets `FuzzOutline`, `FuzzGet`, `FuzzBounds` in `internal/usecase`
+- Dot-import test cases: used, unused, and import-only-local-declarations
+- containerd added to CI as a real-world validation target
+- Spec clarifications: package-qualified lookup precedence (§2.2), dot-import heuristic (§2.4), anonymous functions excluded (§2.1), version-injection fragility (§1.2)
+
+### Changed
+
+- `AGENTS.md`/template: target-repository guidance kept in `documentation/AGENTS.template.md`
+
+---
+
+## v0.3.0 (2026-10-25)
 
 ### Added
 

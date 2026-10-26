@@ -90,7 +90,7 @@ If your change affects user-facing behavior, update these files:
 | New command, flag, or exit code | `documentation/specification.md` |
 | Why a decision was made | `documentation/decisions.md` |
 | How to use the tool | `README.md` |
-| How to use the tool as an agent | `documentation/AGENTS.template.md` (root `AGENTS.md` is synced from this) |
+| How to use the tool as an agent | `documentation/AGENTS.template.md` (this is for target repositories; root `AGENTS.md` is this repository's own guide) |
 | How to run CI | `documentation/CI.md` |
 | Breaking changes | `documentation/migration-vX.Y.md` |
 | What changed | `CHANGELOG.md` |
