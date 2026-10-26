@@ -481,7 +481,7 @@ MIT — see [LICENSE](LICENSE). Copyright is held by the maintainer.
 
 ## Acknowledgements
 
-Written with assistance from **Space Bunny Free** (via [OpenCode](https://opencode.ai)).
+Written with assistance from **multiple LLMs** (via [OpenCode](https://opencode.ai)).
 
 Scope, design decisions, naming, module path and review were directed by the maintainer; the
 per-session retrospectives in `documentation/` record what was learned along the way.
