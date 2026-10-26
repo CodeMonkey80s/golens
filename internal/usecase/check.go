@@ -362,6 +362,36 @@ func containsEscape(literal string) bool {
 	return strings.Contains(literal, `\`)
 }
 
+// goKeywords is the set of Go keywords. They are excluded from orphan-identifier
+// detection because they are never dot-imported names.
+var goKeywords = map[string]bool{
+	"break":       true,
+	"case":        true,
+	"chan":        true,
+	"const":       true,
+	"continue":    true,
+	"default":     true,
+	"defer":       true,
+	"else":        true,
+	"fallthrough": true,
+	"for":         true,
+	"func":        true,
+	"go":          true,
+	"goto":        true,
+	"if":          true,
+	"import":      true,
+	"interface":   true,
+	"map":         true,
+	"package":     true,
+	"range":       true,
+	"return":      true,
+	"select":      true,
+	"struct":      true,
+	"switch":      true,
+	"type":        true,
+	"var":         true,
+}
+
 // unusedImports reports imports whose local name is never referenced in the file.
 //
 // The method is selector-base-name analysis: an import binds its local name into the
@@ -372,6 +402,21 @@ func containsEscape(literal string) bool {
 //
 // Blank and dot imports are skipped: "_" is a deliberate discard and "." contributes no
 // local name to test.
+// unusedImports reports imports whose local name is never referenced in the file.
+//
+// The method is selector-base-name analysis: an import binds its local name into the
+// file scope, and every qualified use of that name appears as the X of a SelectorExpr.
+// This is deliberately best effort, as stated in the specification: a local name that is
+// shadowed by a local variable, or referenced only inside a string, can yield a false
+// positive. A false negative is not possible for a genuinely unused import.
+//
+// Blank imports are skipped: "_" is a deliberate discard.
+// Dot imports (".") contribute all exported names directly, so we cannot know which local
+// names they bind without type resolution (out of scope). To avoid false negatives on
+// genuinely unused dot imports while avoiding false positives on working code, we report
+// a dot import as unused only when the source contains no identifiers that are not
+// declared locally or bound by named imports -- i.e., there is no evidence any
+// dot-imported name is in use.
 func unusedImports(doc domain.Document) []Diagnostic {
 	// Import declarations themselves must be excluded from the scan, otherwise every
 	// import's own local name appears in the source and nothing is ever reported.
@@ -381,16 +426,31 @@ func unusedImports(doc domain.Document) []Diagnostic {
 
 	var diags []Diagnostic
 	for _, decl := range declarations {
-		// Blank and dot imports bind no local name to test: "_" is a deliberate discard and
-		// "." contributes the imported names directly.
-		if decl.name == "_" || decl.name == "." || decl.name == "" {
+		// Blank imports are skipped: "_" is a deliberate discard.
+		if decl.name == "_" {
+			continue
+		}
+		// Dot imports (".") bring all exported names directly. Without type resolution we
+		// cannot know which names they bind, so we only report them as unused when there
+		// is no evidence any identifier comes from them: if every identifier in the source
+		// is declared locally or bound by a named import, the dot import is unused.
+		if decl.name == "." {
+			if !hasOrphanIdentifiers(doc, declarations) {
+				diags = append(diags, Diagnostic{
+					Severity: "warning",
+					Path:     doc.Path,
+					Line:     decl.startLine,
+					Column:   1,
+					Message:  fmt.Sprintf("imported and not used: %s", decl.detail),
+				})
+			}
 			continue
 		}
 		// `import "C"` is cgo's marker, not a package import. The name C never appears in
 		// the source as a selector base, because cgo rewrites the file before the type
 		// checker sees it, so treating it as an ordinary import reports every cgo file in a
 		// tree as carrying an unused import. Five such diagnostics on the standard library.
-		if decl.name == "C" && strings.Trim(decl.detail, `"`) == "C" {
+		if decl.name == "C" && strings.Trim(decl.detail, "\"") == "C" {
 			continue
 		}
 		// The local name is derived from the last path element, which is not always the name
@@ -432,6 +492,54 @@ func unusedImports(doc domain.Document) []Diagnostic {
 		}
 	}
 	return diags
+}
+
+// hasOrphanIdentifiers reports whether the source contains identifiers that are not
+// declared locally and not bound by named imports. Such identifiers could come from dot
+// imports, so we cannot accuse dot imports of being unused.
+func hasOrphanIdentifiers(doc domain.Document, declarations []importDecl) bool {
+	// Collect all locally declared names.
+	declared := make(map[string]bool)
+	for _, sym := range doc.Symbols {
+		declared[sym.Name] = true
+	}
+	// Collect named import local names.
+	for _, decl := range declarations {
+		if decl.name != "_" && decl.name != "." && decl.name != "" && isIdentifier(decl.name) {
+			declared[decl.name] = true
+		}
+	}
+	// The package name itself is always in scope.
+	declared[doc.Package] = true
+	// Go keywords are never dot-imported names, so exclude them from orphan detection.
+	for kw := range goKeywords {
+		declared[kw] = true
+	}
+
+	// Scan the source for every identifier. Any identifier not declared locally or bound
+	// by a named import could come from a dot import. Import declaration byte ranges are
+	// skipped because the import path itself is not an identifier in the file scope.
+	for i := 0; i < len(doc.Source); i++ {
+		if !isIdentStart(doc.Source[i]) || !atWordStart(doc.Source, i) {
+			continue
+		}
+		if withinAny(declarations, i) {
+			// Skip past the import declaration.
+			for _, decl := range declarations {
+				if i >= decl.startByte && i < decl.endByte {
+					i = decl.endByte - 1
+					break
+				}
+			}
+			continue
+		}
+		end := identEnd(doc.Source, i)
+		if !declared[string(doc.Source[i:end])] {
+			return true
+		}
+		i = end - 1
+	}
+	return false
 }
 
 // alternativeImportNames returns possible local names for an import path when the
