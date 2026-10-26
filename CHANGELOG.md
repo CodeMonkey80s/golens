@@ -4,10 +4,19 @@ All notable changes to golens are documented in this file.
 
 ---
 
+## v0.3.3 (2026-10-27)
+
+### Changed
+
+- Bumped `github.com/spf13/pflag` from v1.0.9 to v1.0.10. Patch release with no CLI behavior change; the flag-parsing suite and CLI examples are unchanged.
+
+---
+
 ## v0.3.2 (2026-10-26)
 
 ### Fixed
 
+- The spec, README and migration guide claimed package-qualified lookup overrides `Type.Method`; the code tries `Type.Method` first, and the documents now match, pinned by `TestAdversarialTypeMethodBeatsPackageQualified`
 - `documentation/CI.md` claimed `golens check ./internal ./cmd` was valid; `check` accepts exactly one path, so the docs now show two invocations
 - Root `AGENTS.md` had been replaced with the target-repository template, losing the repository's own build, layout, trap and acceptance-criteria guidance; restored and brought up to date
 - The containerd CI target cloned the default branch, so unrelated upstream changes could fail this repository's PRs; it is now pinned to a commit
