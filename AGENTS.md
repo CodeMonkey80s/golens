@@ -461,6 +461,7 @@ any command's help should be followed by `documentation/COLDSTART.md`.
 |---|---|
 | `documentation/specification.md` | **Normative.** Change this first, then the code |
 | `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A25 stated |
+| `documentation/retrospection.md` | Using golens as a case study for writing specifications agents can implement |
 | `documentation/AGENTS.template.md` | Copy into a target repo's root so its agents inherit the traps |
 | `documentation/CI.md` | What CI runs, which gates are load-bearing, how to reproduce locally |
 | `golens.go` | Public API. Keep it output-oriented; do not leak internal AST types |

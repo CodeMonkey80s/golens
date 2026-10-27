@@ -558,6 +558,7 @@ The rest:
 | `documentation/specification.md` | The normative spec |
 | `documentation/decisions.md` | Design decisions, frozen interfaces, acceptance criteria |
 | `documentation/COLDSTART.md` | A scored cold-start exercise that tests the instructions rather than the tool |
+| `documentation/retrospection.md` | What writing the golens specification got right, wrong, and when to correct it |
 | `AGENTS.md` | Where the project stands, the traps, and what is deliberately not done |
 | `documentation/implementation-plan.md` | Session plan and sequencing |
 | `documentation/retrospective-s1.md` | The `go/ast` position model; why tests lie |
