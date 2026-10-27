@@ -38,7 +38,8 @@ This is the most important part of the history. Every defect below was **in gree
 | Package-prefixed query answered "not found" | S5 | No dotted-query test | `CrossPackageSymbol` + `PackageQualifiedSymbol` |
 | Multi-name struct field (`A, B int`) dropped `B` | S3 | Corpus had no multi-name fields | One node per name + bounds per name |
 | Unnamed function params rendered nothing | S3 | Reused `fieldNodes` which skipped nameless | Unified renderer for fields and params |
-| `get`/`check` disagreed on platform variants; `get` hid filename constraints | v0.4 | No test compared resolution with the build set | `decorateDocument`, `build` in get/bounds, `check --tags` annotations |
+| `get`/`check` disagreed on platform variants; `get` hid filename constraints | v0.4 | No test compared resolution with the build set | `decorateDocument`, `build`/`buildable_now`, `check --tags` annotations |
+| Fuzz filenames exceeded the filesystem limit; hidden names produced a legitimate no-files error | v0.6 | Filenames were fixed at `a.go`/`b.go` | Sanitized, capped filenames; no-payload errors accepted |
 
 **Pattern**: The corpus didn't contain the construct. The test asserted a subset. The defect worked by **omission** — the output was silently wrong rather than visibly broken.
 

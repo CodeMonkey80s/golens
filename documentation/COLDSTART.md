@@ -121,7 +121,7 @@ seconds, and a missing one turns a trap into a silent pass:
 | 4 | Replacement starts at the name | Splices `type Mount struct {...}` into a span beginning at `Mount`, producing `type type Mount struct` |
 | 5 | **Preserves what it did not mean to change** | Drops struct fields it did not notice. See below |
 | 6 | Verifies with `go build` | Trusts `check` exit 0 and calls the edit done |
-| 7 | Checks the build constraint | Ignores the `Build:` line on `get` or the `build:` header on `outline` and edits a platform-specific file the current `GOOS` excludes, so plain `go build` passes on code that never compiled |
+| 7 | Checks the build constraint | Ignores the `Build:` / `buildable_now` signal on `get` or the `build:` header on `outline` and edits a platform-specific file the current `GOOS` excludes, so plain `go build` passes on code that never compiled |
 
 **Trap 2 was reframed, and the reason is the template.** It used to ask whether the agent *handles*
 ambiguity — that `get Mount.Stat .` exits 2 and the agent adapts rather than declaring the tool
@@ -300,7 +300,7 @@ exists and still has to read the help to learn how to use it.
 **Five passes, two not measured, zero failures.**
 
 **Reading help for exactly the commands it went on to use is the strongest form of trap 1.** It read
-help for three commands and skipped the fourth, the one it did not use. An agent reading all four
+help for three query commands and skipped the fourth, the one it did not use. An agent reading all four
 indiscriminately would be less selective, not more.
 
 **`bounds --help` was read and then `bounds` was not used.** That is a deliberate choice made with
@@ -393,7 +393,7 @@ did not pick it up — so trap 0 is not measured for the second run running.
 **Five passes, two not measured, zero failures.** Trap 5 — the one no tool check can catch, and the
 one this protocol was written around — passes on both subjects now.
 
-**Trap 1 in its strongest form.** It read help for all four commands, including `check`, which on
+**Trap 1 in its strongest form.** It read help for all four query commands, including `check`, which on
 duf it went on to use. Compare run four, which read three and skipped `check --help`. An agent that
 reads all four before working is the behaviour the template asks for.
 

@@ -485,7 +485,8 @@ $ go build -ldflags "-s -w -X github.com/CodeMonkey80s/golens/internal/cli.Versi
 ```
 
 Cut one by tagging the commit and pushing the tag. Nothing in the source changes, so there is
-nothing to remember to bump.
+nothing to remember to bump. The tag triggers the release workflow: archives, checksums, notes
+from `CHANGELOG.md`, and a build-provenance attestation.
 
 `golens check ./internal ./cmd` exits 0 on this repository. The tool checks itself in CI,
 which is how a false positive in its namespace check was caught.
@@ -495,25 +496,31 @@ holds this repository to Go's initialism convention (`userID`, `HTTPHandler`, no
 `HttpHandler`). Naming is the linter's job, not the tool's: `golens` describes code, it does not
 grade it.
 
-CI runs on every push and pull request: tests, the race detector, `go vet`, a `gofmt` gate, the
-15 MB binary budget, the no-cgo check, and `golens` on its own source.
+CI runs on every push and pull request: tests on the Go floor and current stable, the race
+detector, `go vet`, a `gofmt` gate, the 15 MB binary budget, the no-cgo check, `golens` on its own
+source, macOS tests, and cross-builds for linux/darwin/windows. A nightly job checks the standard
+library and runs longer fuzz campaigns.
 
 ### Layout
 
 ```
+golens.go              public embedding API (output-oriented)
 cmd/golens/            entry point; composes the engine
 internal/domain/       Bounds, Node, Symbol, Document, Engine — stdlib only
 internal/engine/goast/ the only package importing go/parser, go/ast, go/token
 internal/usecase/      command orchestration and error classification
 internal/cli/          cobra wiring and exit-code mapping; imports no engine
+internal/mcp/          MCP stdio server over the same usecase calls
 internal/format/       human, JSON and compact renderers
 internal/arch/         structural tests enforcing the boundaries above
+internal/constructs/   compiled declarations for the corpus walk
 internal/testfixture/  shared fixtures
 ```
 
 Import direction is one-way: `cli → usecase → domain`, with `engine/goast` depending only on
-`domain`. `internal/arch` enforces this as a test rather than as a convention, so a violation
-fails the build.
+`domain`. The root embedding package and `internal/mcp` sit above usecase and do not add engine
+dependencies to the CLI. `internal/arch` enforces the boundaries as a test rather than as a
+convention, so a violation fails the build.
 
 ### Performance
 

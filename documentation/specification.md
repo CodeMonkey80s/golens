@@ -1,6 +1,6 @@
-# SPEC.md: golens (v0.1 MVP)
+# Specification: golens
 
-golens is a high-performance, stateless CLI tool written in Go that provides AI coding agents and developers with structural AST queries (outline, get, bounds, check). It replaces full-file reads with targeted, token-efficient source extraction and byte-accurate editing bounds.
+golens is a high-performance, stateless CLI tool written in Go that provides AI coding agents and developers with structural AST queries (outline, get, bounds, check), a small embedding API, and an MCP stdio server. It replaces full-file reads with targeted, token-efficient source extraction and byte-accurate editing bounds.
 
 ## 1. System Architecture & Design Goals
 
@@ -353,6 +353,17 @@ position: a diagnostic at `1:1` with no position is a file that could not be rea
 in one run the text for both reaches stderr and the run exits `4`, because a caller told `3` would
 believe every file was readable. Under `--json` the unreadable file appears in the payload and
 stderr stays empty, as the stream contract requires.
+
+### 2.5 `golens mcp`
+
+Serves the four query tools over the Model Context Protocol on stdin/stdout. The transport is
+newline-delimited JSON-RPC 2.0; stdout carries protocol messages only, and tool output is returned
+in a `text` content block. Supported methods are `initialize`, `tools/list`, `tools/call`, `ping`
+and the standard notifications. The MCP command is a transport over the same usecase calls, not a
+second implementation: tool errors set `isError` in the result rather than changing the process
+exit code.
+
+---
 
 ## 3. Project Constraints & Guidelines
 

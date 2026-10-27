@@ -1,6 +1,8 @@
 # Migration Guide: v0.2.x → v0.3.0
 
 This document describes the changes in golens v0.3.0 and what you need to do when upgrading.
+It is not updated for later releases: v0.4–v0.6 additions are listed in `CHANGELOG.md`, and
+they are additive (new flags and fields, no breaking changes).
 
 ## New Feature: Package-Qualified Lookup
 

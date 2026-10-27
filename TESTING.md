@@ -1,7 +1,7 @@
 # Manual test plan — golens against a real repository
 
-Eighteen cases to run by hand against a real Go project. Written for golens v0.1 (Go sources
-only).
+Eighteen core cases to run by hand against a real Go project, plus the v0.6 surface checks at
+the end. Written for golens v0.6 (Go sources only).
 
 **Cases 4, 6, 8 and 9 probe Go constructs the test fixtures do not cover.** Those are the
 places a bug is most likely, which is why they are here rather than only in the automated suite.
@@ -132,7 +132,7 @@ $ /tmp/golens --version
 $ /tmp/golens --help | head -5
 ```
 
-Look for: a version string, and a root help that names all four commands with the exit codes.
+Look for: a version string, and a root help that names the four query commands plus `mcp`, with the exit codes.
 `--version` is what an agent reaches for before reading anything, so an empty or error response
 here is the first sign of a broken build.
 
@@ -924,4 +924,31 @@ worth knowing too.
 | JSON | `"schema_version": 1` first; payload on stdout, diagnostics on stderr |
 | JSON outline node | Carries `type_params`, `receiver` and `is_alias`; an alias is distinguishable from a defined type |
 | `--compact` | Removes decoration, never information |
+| `build` / `buildable_now` | Effective constraint and whether the current platform compiles the file |
+| `--package-dir` | Narrows a symbol search when two packages share a name |
+| `--skip-testdata`, `--skip-ignored` | Structural-command traversal policy (`check` skips both by default) |
+| MCP | `golens mcp` serves the four tools over stdio JSON-RPC |
 | Out of scope | Unreachable code, type-level conflicts, module import resolution, non-Go languages |
+
+---
+
+## v0.6 surface checks
+
+These are the additions that the original eighteen cases predate. Run them in a repository that
+has a platform-specific file and a testdata directory.
+
+1. **Build awareness.** `golens get <symbol> <platform-file>` prints a `Build:` line; `--json`
+   carries `build` and `buildable_now`. A file for another OS must say `buildable_now: false` on
+   this machine.
+2. **Directory bounds.** Compare `golens get <symbol> <dir> --bounds-only --json` with
+   `golens bounds <symbol> <dir> --json`; they must be identical.
+3. **Multiple check targets.** `golens check ./pkg ./other` must exit 0 on clean trees, 3 on a
+   finding, and 2 when a target is missing.
+4. **Traversal flags.** `golens outline . --skip-testdata --skip-ignored` must not fail on a
+   broken fixture under `testdata`.
+5. **JSON errors.** `golens get Missing . --json-errors` must exit 2 and write a JSON envelope to
+   stderr with `kind: not_found`; a broken file must report `parse`, a permission failure `io`.
+6. **MCP.** `printf '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n' | golens mcp` must return
+   the four tool definitions and keep stdout protocol-only.
+7. **Embedding.** `go test .` exercises the root package; `golens.ExitCodeFor` must return the
+   documented code for a missing symbol.

@@ -39,15 +39,19 @@ $ golens outline <path> --depth 1
 $ golens outline <path> --depth 2      # adds struct fields and parameters
 ```
 
-`--depth` defaults to unlimited, so omit it when you want everything.
+`--depth` defaults to unlimited, so omit it when you want everything. `--skip-testdata` and
+`--skip-ignored` opt into the view a build sees when fixtures do not parse.
 
 **2. Read it.**
 
 ```console
 $ golens get <Type>.<Method> <path>/file.go
+$ golens get Package.Symbol <dir>     # when package and type names collide
 ```
 
-The output is the file's own bytes, so it is safe to write back verbatim.
+The source block is the file's own bytes, so it is safe to write back verbatim. When the file is
+not built everywhere, `get` also prints a `Build:` line with `buildable_now` in JSON; read it
+before editing code for another platform.
 
 **3. Place the edit.**
 

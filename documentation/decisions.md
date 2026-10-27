@@ -1,4 +1,4 @@
-# golens — Engineering Decision Log (v0.1 MVP)
+# golens — Engineering Decision Log
 
 Status: **Decided.** This document resolves every ambiguity found in `specification.md`.
 No normative content was removed; §5 below contains the historical record of the spec patch.
@@ -46,7 +46,13 @@ the choice is the one that cannot be misread and cannot silently corrupt a file.
 | D28 | An interface lists its method set; a type union lists nothing | An interface rendered bare, and its method set is the entire content of the type. "Method sets" in §2.1 means what a Go programmer reads it to mean |
 | D29 | A name found in two packages of one directory is not an ambiguity; the remedy is a file | `check` keyed its namespace on directory *and* package, `get` did not, so the two disagreed about whether a conflict existed — and the old advice recommended a qualified name, which cannot select a package |
 | D30 | `check` exits 4 for a file it could not open, 3 for a problem in the code; 4 wins when both occur | An I/O failure was reported as a finding, so `check` exited 3 where `outline` exited 4 on the very same file — and 3 tells a caller to edit code that is fine |
-| D31 | A query opening with a package name is told the form that resolves, not merely "not found" | `get domain.Node .` returned the message an absent symbol returns, so a caller could not tell an unsupported form from a missing declaration; package-qualified lookup is its own spec change |
+| D31 | A query opening with a package name is told the form that resolves, not merely "not found" | Superseded by v0.3 package-qualified lookup and `NotFoundInPackage`; see the note in §D31 |
+| D32 | `check` reports what a build would reject; no build reaches `testdata` | Compiler fixtures are written to be broken, and 1,212 diagnostics on the standard library sent callers to edit test bytes |
+| D33 | One member renderer for struct fields and parameters | Two renderers let one half drop nameless parameters while the other was fixed |
+| D34 | Build constraints are reported everywhere; `check --tags` models the build's tags | `get`/`check` disagreed on platform variants, and a tagged build could fail where `check` passed |
+| D35 | `bounds` accepts a directory, because A6 says it does | A6's payload equivalence held only for files while `get --bounds-only` accepted directories |
+| D36 | The embedding API and MCP are thin layers over usecase | One implementation keeps CLI, library and MCP output identical; MCP must keep stdout protocol-only |
+| D37 | Traversal flags are opt-in for structural commands, default for `check` | `check` asks what a build rejects; `outline`/`get`/`bounds` ask what the tree contains |
 
 ---
 
@@ -872,6 +878,32 @@ equivalence held only for the input nobody was comparing.
 target therefore resolves, an ambiguous name exits 2, and a broken neighbour produces the span
 and exit 4 exactly as `get` does. `TestSpecBoundsAcceptsDirectory` compares the two JSON payloads;
 `TestBoundsDirectoryReportsAmbiguity` guards against silently picking one declaration.
+
+---
+
+### D36 · The embedding API and MCP are thin layers, not second implementations
+
+The root `golens` package and `internal/mcp` both call the same usecase functions as the CLI.
+The public API is output-oriented: it exposes `Options`, the four operations and `ExitCodeFor`,
+but not `domain.Document` or AST types, so internal restructuring stays possible. MCP is a
+transport: tool calls render into buffers and return the same text/JSON the CLI would write,
+with command failures mapped to `isError` rather than changing a process exit code. stdout stays
+protocol-only, which is the one rule a stdio server cannot break.
+
+Neither layer imports an engine into `internal/cli`; the CLI still receives a `domain.Engine`
+from `main`.
+
+---
+
+### D37 · Traversal flags are opt-in for structural commands
+
+`outline`, `get` and `bounds` answer what the tree contains, so they include `testdata` and
+names beginning with `_` by default. `--skip-testdata` and `--skip-ignored` opt into the build's
+view. `check` is the opposite: it answers what a build would reject, so it always skips both,
+and a name given explicitly still wins because that is a caller asking about that file.
+
+The alternative — making `check` opt into testdata — was rejected because the standard library
+produced 1,212 diagnostics from deliberately broken compiler fixtures.
 
 ---
 

@@ -42,7 +42,7 @@ file, corrected `documentation/CI.md`, pinned the containerd target and strength
 seeds. v0.4.0 made build constraints visible everywhere, added `check --tags` and
 `--json-errors`, and added `FuzzCheck`/`FuzzResolve` plus the release workflow.
 
-Parse dominates three of the four commands, and `check` is about ten times a parse because it runs
+Parse dominates three of the four query commands, and `check` is about ten times a parse because it runs
 several analyses. Reproduce with
 `go test -run XXX -bench . ./internal/usecase ./internal/engine/goast`; expect roughly ±20%
 run-to-run, so hold to the budget rather than to a single figure.
@@ -105,8 +105,9 @@ not.
 
 CI runs 10 seconds per target. That is a smoke test for crashes, not a coverage goal; run longer
 locally after touching the engine, the checks or the formatters. `FuzzCheck` and `FuzzResolve`
-write two-file directories, so they exercise custom build tags, duplicate detection and the
-multi-file JSON paths that the single-file targets do not.
+write two-file directories, so they exercise custom build tags, duplicate detection, filename
+constraints and the multi-file JSON paths that the single-file targets do not. Their seed corpus
+is committed under `internal/usecase/testdata/fuzz`.
 
 ## Layout
 
@@ -317,9 +318,9 @@ four headings and none of the declarations. When you change depth handling, comp
 an agent delete working code, so the check stays silent whenever it cannot determine the local
 name. When adding a check, bias toward silence and say so in the comment.
 
-**`check` models a build, and no build reaches `testdata`.** It uses GOOS/GOARCH, cgo and the
-`--tags` values; a tag not supplied is treated as absent. It is not a type checker — undefined
-types and duplicate struct fields still pass. `outline`,
+**`check` models a build, and no build reaches `testdata` or `_`-prefixed names.** It uses
+GOOS/GOARCH, cgo and the `--tags` values; a tag not supplied is treated as absent. It is not a
+type checker — undefined types and duplicate struct fields still pass. `outline`,
 `get` and `bounds` answer "what does this tree contain", so they walk those directories (D22).
 `check` answers "would a build reject this", so it does not — the go tool ignores `testdata`
 by documented rule, and on the standard library those directories held 1,212 diagnostics and
@@ -342,7 +343,7 @@ criteria; this is which test pins each.
 | A1 | `file[start:end]` == extracted source | `TestByteInvariantThroughGet` across 12 fixture classes, `TestOverwriteRoundTrip`, `TestOverwritePreservesLineStructure` |
 | A2 | Two runs → byte-identical stdout | `TestOutlineDirectoryIsDeterministic`, `TestConcurrentDeterministicAcrossRuns` |
 | A3 | Concurrent == serial output | `TestConcurrentOutputMatchesSerial`, all four output modes, tree sizes straddling the threshold |
-| A4 | JSON parses, `schema_version: 1` first | `TestSpecSchemaVersionIsFirstField`, all four commands |
+| A4 | JSON parses, `schema_version: 1` first | `TestSpecSchemaVersionIsFirstField`, all four payload commands |
 | A5 | `--compact` loses no information | `TestCompactIsLosslessSubset` |
 | A6 | `get --bounds-only` ≡ `bounds` | `TestSpecBoundsOnlyMatchesBounds`, plus format and usecase level |
 | A7 | golens never reports style | `TestCheckDoesNotJudgeStyle`, `TestCheckAcrossFilesReportsNothingStructural` |

@@ -90,6 +90,7 @@ If your change affects user-facing behavior, update these files:
 | New command, flag, or exit code | `documentation/specification.md` |
 | Why a decision was made | `documentation/decisions.md` |
 | How to use the tool | `README.md` |
+| Embedding or MCP behavior | `README.md`, `golens.go`, `internal/mcp` |
 | How to use the tool as an agent | `documentation/AGENTS.template.md` (this is for target repositories; root `AGENTS.md` is this repository's own guide) |
 | How to run CI | `documentation/CI.md` |
 | Breaking changes | `documentation/migration-vX.Y.md` |
@@ -103,6 +104,8 @@ If your change affects behavior, add or update tests:
 | New check behavior | `internal/usecase/*_test.go` |
 | New AST/domain behavior | `internal/engine/goast/*_test.go` |
 | New rendering behavior | `internal/format/*_test.go` |
+| MCP transport or tool behavior | `internal/mcp/*_test.go` |
+| Public API behavior | `golens_test.go` |
 | Byte-offset invariant | `TestBoundsAreHalfOpen` or similar |
 
 ---
@@ -115,7 +118,7 @@ This project has a history of bugs that shipped in green code. Read `AGENTS.md` 
 - **Byte offsets are half-open** — `file[start:end]` must equal the extracted source byte for byte
 - **Span starts at the name, not the keyword** — for type/var/const, the keyword is outside the range
 - **`check` never reports style** — naming, formatting, and idiom are out of scope
-- **`check` stays out of `testdata`** — the go tool ignores it, so no build reaches it
+- **`check` stays out of `testdata` and `_`-prefixed names** — the go tool ignores both, so no build reaches them
 - **Unreachable-code detection is out of scope** — it is a lint category
 - **Exit codes are claims** — exit 3 means "fix the code", exit 4 means "fix the machine"
 - **`--compact` is lossless** — it removes decoration, never information
@@ -125,9 +128,11 @@ This project has a history of bugs that shipped in green code. Read `AGENTS.md` 
 ## Release Process
 
 1. Make your changes on `main`
-2. Tag the commit: `git tag vX.Y.Z`
-3. Push the tag: `git push origin vX.Y.Z`
-4. The version is injected at link time — nothing in the source states a release number
+2. Add a `## vX.Y.Z` section to `CHANGELOG.md`; the release workflow refuses a tag without one
+3. Tag the commit: `git tag -a vX.Y.Z -m "vX.Y.Z"`
+4. Push the tag: `git push origin vX.Y.Z`
+5. The tag triggers the release workflow: archives, checksums, notes, and build provenance
+6. The version is injected at link time — nothing in the source states a release number
 
 The version is reported by `golens --version` and is stamped at link time with
 `-ldflags "-X …/internal/cli.Version=<v>"`. The variable must stay initialised to a
