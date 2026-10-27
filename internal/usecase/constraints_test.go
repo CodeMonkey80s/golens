@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -32,7 +33,8 @@ func TestGetReportsEffectiveBuildConstraint(t *testing.T) {
 		t.Fatalf("Get JSON: %v", err)
 	}
 	var payload struct {
-		Build string `json:"build"`
+		Build        string `json:"build"`
+		BuildableNow *bool  `json:"buildable_now"`
 	}
 	if err := json.Unmarshal(js.Bytes(), &payload); err != nil {
 		t.Fatalf("Unmarshal get: %v\n%s", err, js.String())
@@ -40,19 +42,27 @@ func TestGetReportsEffectiveBuildConstraint(t *testing.T) {
 	if payload.Build != "windows" {
 		t.Errorf("get JSON build = %q, want windows", payload.Build)
 	}
+	wantBuildable := runtime.GOOS == "windows"
+	if payload.BuildableNow == nil || *payload.BuildableNow != wantBuildable {
+		t.Errorf("buildable_now = %v, want %v on %s", payload.BuildableNow, wantBuildable, runtime.GOOS)
+	}
 
 	var outline bytes.Buffer
 	if err := usecase.Outline(goast.New(), dir, usecase.DepthUnlimited, &outline, format.Options{JSON: true}); err != nil {
 		t.Fatalf("Outline: %v", err)
 	}
 	var files []struct {
-		Build string `json:"build"`
+		Build        string `json:"build"`
+		BuildableNow *bool  `json:"buildable_now"`
 	}
 	if err := json.Unmarshal(outline.Bytes(), &files); err != nil {
 		t.Fatalf("Unmarshal outline: %v\n%s", err, outline.String())
 	}
 	if len(files) != 1 || files[0].Build != "windows" {
 		t.Errorf("outline JSON builds = %+v, want one file with windows", files)
+	}
+	if files[0].BuildableNow == nil || *files[0].BuildableNow != (runtime.GOOS == "windows") {
+		t.Errorf("outline buildable_now = %v, want %v", files[0].BuildableNow, runtime.GOOS == "windows")
 	}
 }
 

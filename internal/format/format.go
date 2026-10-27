@@ -32,11 +32,12 @@ type BoundsPayload struct {
 	// Build is the effective build constraint of the declaring file, or empty when the file
 	// is always built. It is carried on bounds as well as get so the A6 payloads stay
 	// identical.
-	Build     string `json:"build,omitempty"`
-	StartLine int    `json:"start_line"`
-	EndLine   int    `json:"end_line"`
-	StartByte int    `json:"start_byte"`
-	EndByte   int    `json:"end_byte"`
+	Build        string `json:"build,omitempty"`
+	BuildableNow *bool  `json:"buildable_now,omitempty"`
+	StartLine    int    `json:"start_line"`
+	EndLine      int    `json:"end_line"`
+	StartByte    int    `json:"start_byte"`
+	EndByte      int    `json:"end_byte"`
 }
 
 // GetPayload extends BoundsPayload with the extracted source.
@@ -50,6 +51,7 @@ type GetPayload struct {
 	Symbol        string `json:"symbol"`
 	File          string `json:"file"`
 	Build         string `json:"build,omitempty"`
+	BuildableNow  *bool  `json:"buildable_now,omitempty"`
 	StartLine     int    `json:"start_line"`
 	EndLine       int    `json:"end_line"`
 	StartByte     int    `json:"start_byte"`
@@ -89,6 +91,7 @@ type OutlineFile struct {
 	File          string        `json:"file"`
 	Package       string        `json:"package"`
 	Build         string        `json:"build,omitempty"`
+	BuildableNow  *bool         `json:"buildable_now,omitempty"`
 	Imports       []string      `json:"imports,omitempty"`
 	Nodes         []OutlineNode `json:"nodes,omitempty"`
 }
@@ -125,7 +128,7 @@ func WriteJSON(w io.Writer, v any, compact bool) error {
 
 // Bounds builds the shared bounds payload.
 func Bounds(sym domain.Symbol, file string) BoundsPayload {
-	return BoundsPayload{
+	p := BoundsPayload{
 		SchemaVersion: SchemaVersion,
 		Symbol:        sym.QualifiedName,
 		File:          file,
@@ -135,6 +138,11 @@ func Bounds(sym domain.Symbol, file string) BoundsPayload {
 		StartByte:     sym.Bounds.StartByte,
 		EndByte:       sym.Bounds.EndByte,
 	}
+	if sym.Build != "" {
+		buildable := sym.BuildableNow
+		p.BuildableNow = &buildable
+	}
+	return p
 }
 
 // Get builds the get payload. source is omitted when includeSource is false, which is how
@@ -146,6 +154,7 @@ func Get(sym domain.Symbol, file, source string, includeSource bool) GetPayload 
 		Symbol:        b.Symbol,
 		File:          b.File,
 		Build:         b.Build,
+		BuildableNow:  b.BuildableNow,
 		StartLine:     b.StartLine,
 		EndLine:       b.EndLine,
 		StartByte:     b.StartByte,
@@ -184,7 +193,11 @@ func WriteGetHuman(w io.Writer, sym domain.Symbol, file, source string, compact 
 	// outline has always reported it; get did not, so a symbol in a _windows.go file looked
 	// exactly like a live one.
 	if sym.Build != "" {
-		sb.WriteString("Build: " + sym.Build + "\n")
+		line := "Build: " + sym.Build
+		if !sym.BuildableNow {
+			line += " (not buildable on this platform)"
+		}
+		sb.WriteString(line + "\n")
 	}
 	sb.WriteString("Symbol: " + sym.QualifiedName + "\n")
 	// The specification's sample reads "Lines: 17-25 (9 lines)" -- a bare range, since the
@@ -309,6 +322,7 @@ func Outline(doc domain.Document, depth int) OutlineFile {
 		File:          doc.Path,
 		Package:       doc.Package,
 		Build:         displayBuild(doc),
+		BuildableNow:  outlineBuildableNow(doc),
 		Imports:       doc.Imports,
 		Nodes:         convertNodes(doc.Nodes, 0, depth),
 	}
@@ -324,6 +338,14 @@ func displayBuild(doc domain.Document) string {
 		return doc.EffectiveConstraint
 	}
 	return doc.BuildConstraint
+}
+
+func outlineBuildableNow(doc domain.Document) *bool {
+	if displayBuild(doc) == "" {
+		return nil
+	}
+	buildable := doc.BuildableNow
+	return &buildable
 }
 
 // bullet is the marker used by the human outline. It matches the specification's examples.
@@ -376,7 +398,11 @@ func WriteOutlineHuman(w io.Writer, doc domain.Document, depth int, compact bool
 	// constraints: without this line, an agent editing a variant the current platform
 	// excludes gets no signal from the outline that the change will not be compiled.
 	if build := displayBuild(doc); build != "" {
-		sb.WriteString("build: " + build + "\n")
+		line := "build: " + build
+		if doc.EffectiveConstraint != "" && !doc.BuildableNow {
+			line += " (not buildable on this platform)"
+		}
+		sb.WriteString(line + "\n")
 	}
 
 	if err := writeSection(&sb, doc.Nodes, depth); err != nil {
@@ -396,7 +422,11 @@ func writeOutlineCompact(w io.Writer, doc domain.Document, depth int) error {
 	var sb strings.Builder
 
 	if build := displayBuild(doc); build != "" {
-		sb.WriteString(doc.Path + "\t" + doc.Package + "\t" + build + "\n")
+		sb.WriteString(doc.Path + "\t" + doc.Package + "\t" + build)
+		if doc.EffectiveConstraint != "" && !doc.BuildableNow {
+			sb.WriteString("\tnot_buildable_here")
+		}
+		sb.WriteString("\n")
 	} else {
 		sb.WriteString(doc.Path + "\t" + doc.Package + "\n")
 	}

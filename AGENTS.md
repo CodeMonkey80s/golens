@@ -4,7 +4,7 @@ Instructions for agents working in this repository.
 
 ## What this is
 
-golens is a Go CLI that answers structural questions about Go source: what is in
+golens is a Go CLI, with a small embedding API, that answers structural questions about Go source: what is in
 this file, where is this symbol, what are its exact byte offsets, is this package valid. It
 exists so an agent can read a targeted slice of a file instead of the whole thing.
 
@@ -112,12 +112,14 @@ multi-file JSON paths that the single-file targets do not.
 
 | Path | Holds |
 |---|---|
+| `golens` (root) | Public embedding API: Outline, Get, Bounds, Check, ExitCodeFor |
 | `cmd/golens` | main; composition only |
 | `internal/cli` | cobra wiring, exit codes, stream routing |
 | `internal/usecase` | command behaviour, the checks |
 | `internal/engine/goast` | AST to domain model |
 | `internal/domain` | shared types, including `Declaration()` |
 | `internal/format` | human and JSON rendering |
+| `internal/mcp` | MCP stdio server over the same usecase calls |
 | `internal/constructs` | compiled declarations the cross-renderer corpus walk needs; not imported by anything |
 
 ## Traps
@@ -182,7 +184,7 @@ every declaration in this repository rather than the constructs a test remembere
 effective constraint is the conjunction of its filename suffix, its `//go:build` line and `cgo`.
 The engine records only the comment; the usecase layer owns the rest. If you parse a document
 without going through `parseOne` (or forget to decorate it), `outline` loses the `build:` header,
-`get` loses `Build:`, and ambiguity candidates lose their `[build: ...]` markers — the exact
+`get` loses `Build:` and `buildable_now`, and ambiguity candidates lose their `[build: ...]` markers — the exact
 asymmetry that let a Windows-only symbol look live on Linux. `CheckWithOptions` takes the tags
 `go build -tags` would take and the cache is keyed on them; do not reintroduce a global tag set.
 
@@ -382,8 +384,8 @@ type Node struct {
     Children []Node
     IsGroup  bool
 }
-type Symbol struct{ Name, QualifiedName string; Kind Kind; Bounds Bounds; File, Detail, Receiver, TypeParams, Build string; IsAlias bool }
-type Document struct{ Path, Package string; Bounds Bounds; Nodes []Node; Symbols []Symbol; Imports []string; Source []byte; BuildConstraint, ImplicitConstraint, EffectiveConstraint string; Comments bool }
+type Symbol struct{ Name, QualifiedName string; Kind Kind; Bounds Bounds; File, Detail, Receiver, TypeParams, Build string; BuildableNow, IsAlias bool }
+type Document struct{ Path, Package string; Bounds Bounds; Nodes []Node; Symbols []Symbol; Imports []string; Source []byte; BuildConstraint, ImplicitConstraint, EffectiveConstraint string; BuildableNow, Comments bool }
 type Engine interface{ Parse(path string) (Document, error) }
 ```
 
@@ -455,6 +457,7 @@ any command's help should be followed by `documentation/COLDSTART.md`.
 | `documentation/decisions.md` | Why each call was made; frozen interfaces; A1–A25 stated |
 | `documentation/AGENTS.template.md` | Copy into a target repo's root so its agents inherit the traps |
 | `documentation/CI.md` | What CI runs, which gates are load-bearing, how to reproduce locally |
+| `golens.go` | Public API. Keep it output-oriented; do not leak internal AST types |
 | `documentation/json-schema.md` | Every JSON payload, field by field |
 | `documentation/migration-v0.3.md` | Upgrading from v0.2.x: package-qualified lookup, dot imports |
 | `CHANGELOG.md` | What changed in each release |

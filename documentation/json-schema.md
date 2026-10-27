@@ -37,6 +37,7 @@ Always an array of per-file objects, even for a single file.
 | `file` | string | yes | File path, as named by the caller |
 | `package` | string | yes | Package name |
 | `build` | string | no | Effective build constraint (filename + `//go:build` + cgo), present only when the file is not always built |
+| `buildable_now` | boolean | no | Whether the current GOOS/GOARCH can compile the file; present with `build` |
 | `nodes` | array[Node] | yes | Declaration nodes (may be empty) |
 | `imports` | array[string] | no | Import paths, present only when the file has imports |
 
@@ -94,6 +95,7 @@ A single JSON object:
 | `symbol` | string | yes | Symbol name (e.g., `UserStore.GetUser`, `MyFunc`) |
 | `file` | string | yes | File path |
 | `build` | string | no | Effective build constraint; omitted when the file is always built |
+| `buildable_now` | boolean | no | Whether the current platform can compile the file; present with `build` |
 | `start_line` | integer | yes | Inclusive line number |
 | `end_line` | integer | yes | Inclusive line number |
 | `start_byte` | integer | yes | Half-open start byte offset |
@@ -128,6 +130,7 @@ Identical to `get --bounds-only --json` without the `source` field.
 | `symbol` | string | yes | Symbol name |
 | `file` | string | yes | File path |
 | `build` | string | no | Effective build constraint; omitted when the file is always built |
+| `buildable_now` | boolean | no | Whether the current platform can compile the file; present with `build` |
 | `start_line` | integer | yes | Inclusive line number |
 | `end_line` | integer | yes | Inclusive line number |
 | `start_byte` | integer | yes | Half-open start byte offset |
@@ -188,7 +191,7 @@ partial payload already written by `outline` or `get` stays valid.
 |-------|------|----------|-------------|
 | `schema_version` | integer | yes | Always `1` |
 | `error` | object | yes | Error detail; see the fields below |
-| `error.kind` | string | yes | `not_found`, `ambiguous`, `usage`, or `parse_or_io` |
+| `error.kind` | string | yes | `not_found`, `ambiguous`, `usage`, `parse`, `io`, or `parse_or_io` |
 | `error.message` | string | yes | Human-readable detail |
 | `error.exit_code` | integer | yes | The process exit code |
 | `error.candidates` | array[string] | no | Present for `ambiguous` |

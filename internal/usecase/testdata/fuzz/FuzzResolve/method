@@ -1,0 +1,6 @@
+go test fuzz v1
+string("package p\n\ntype T struct{}\n\nfunc (T) M() {}\n")
+string("package p\n")
+string("T.M")
+string("a.go")
+string("b.go")

@@ -4,6 +4,28 @@ All notable changes to golens are documented in this file.
 
 ---
 
+## v0.6.0 (2026-10-27)
+
+### Added
+
+- `--skip-testdata` and `--skip-ignored` on `outline`, `get` and `bounds`, so a source tree with intentionally broken fixtures can be viewed the way a build sees it.
+- `buildable_now` on `get`, `bounds` and `outline` JSON, plus a human marker, so a platform-excluded declaration is explicit rather than inferred from its path.
+- Public embedding package at the module root: `Outline`, `Get`, `Bounds`, `Check`, `Options` and `ExitCodeFor`.
+- `golens mcp`: a Model Context Protocol stdio server exposing all four tools.
+- Committed fuzz seed corpus for `FuzzCheck` and `FuzzResolve`, including filename constraints.
+
+### Changed
+
+- Release workflow now takes notes from `CHANGELOG.md` and attaches a GitHub build-provenance attestation.
+- `--json-errors` distinguishes `parse` from `io` failures instead of collapsing both into `parse_or_io`.
+- Effective constraint display de-duplicates terms (`linux && linux && amd64` is now `linux && amd64`).
+
+### Fixed
+
+- Fuzzing filenames exposed a harness bug: unbounded names exceeded the filesystem limit and hidden names produced a legitimate no-files error. The filename is now sanitized and length-capped.
+
+---
+
 ## v0.5.0 (2026-10-27)
 
 ### Added

@@ -40,8 +40,21 @@ import (
 // and exits 4, and when nothing resolved at all the not-found answer names them too — the
 // symbol may be in one of the files that were skipped, and saying so is the difference
 // between "this does not exist" and "this could not be read".
+// ResolveOptions controls the file set a symbol search covers.
+type ResolveOptions struct {
+	// SkipTestdata prunes testdata directories, as the go tool does.
+	SkipTestdata bool
+	// SkipIgnored prunes files and directories whose names begin with "_".
+	SkipIgnored bool
+}
+
 func Resolve(engine domain.Engine, name, target string) (domain.Symbol, domain.Document, Skipped, error) {
-	paths, err := Files(target)
+	return ResolveWithOptions(engine, name, target, ResolveOptions{})
+}
+
+// ResolveWithOptions is Resolve with an explicit traversal policy.
+func ResolveWithOptions(engine domain.Engine, name, target string, resolveOpts ResolveOptions) (domain.Symbol, domain.Document, Skipped, error) {
+	paths, err := FilesWithOptions(target, FileOptions(resolveOpts))
 	if err != nil {
 		return domain.Symbol{}, domain.Document{}, Skipped{}, err
 	}
@@ -278,7 +291,12 @@ func notFoundAmong(name string, skipped Skipped) error {
 // includeSource false corresponds to --bounds-only and emits the identical payload to
 // Bounds, per acceptance criterion A6.
 func Get(engine domain.Engine, name, target string, includeSource bool, w io.Writer, opts format.Options) error {
-	sym, doc, skipped, err := Resolve(engine, name, target)
+	return GetWithOptions(engine, name, target, includeSource, w, opts, ResolveOptions{})
+}
+
+// GetWithOptions is Get with an explicit traversal policy.
+func GetWithOptions(engine domain.Engine, name, target string, includeSource bool, w io.Writer, opts format.Options, resolveOpts ResolveOptions) error {
+	sym, doc, skipped, err := ResolveWithOptions(engine, name, target, resolveOpts)
 	if err != nil {
 		return err
 	}
@@ -311,7 +329,12 @@ func Get(engine domain.Engine, name, target string, includeSource bool, w io.Wri
 // through the same search, and the A6 payload equivalence holds for directory targets too:
 // `get --bounds-only --json` and `bounds --json` are byte-identical.
 func Bounds(engine domain.Engine, name, target string, w io.Writer, opts format.Options) error {
-	sym, _, skipped, err := Resolve(engine, name, target)
+	return BoundsWithOptions(engine, name, target, w, opts, ResolveOptions{})
+}
+
+// BoundsWithOptions is Bounds with an explicit traversal policy.
+func BoundsWithOptions(engine domain.Engine, name, target string, w io.Writer, opts format.Options, resolveOpts ResolveOptions) error {
+	sym, _, skipped, err := ResolveWithOptions(engine, name, target, resolveOpts)
 	if err != nil {
 		return err
 	}

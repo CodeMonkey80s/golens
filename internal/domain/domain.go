@@ -200,6 +200,10 @@ type Symbol struct {
 	// is always built. It travels with the symbol so get and bounds can warn about a
 	// declaration the current platform does not compile.
 	Build string
+	// BuildableNow reports whether the current GOOS/GOARCH can compile the declaring file.
+	// It is meaningful only when Build is non-empty; an unconstrained file is always
+	// buildable.
+	BuildableNow bool
 	// IsAlias marks a type alias rather than a defined type. See Node.IsAlias.
 	IsAlias bool
 }
@@ -234,7 +238,10 @@ type Document struct {
 	// expression a caller needs to read before editing, or is empty when the file is built
 	// everywhere. This is what outline, get and bounds report.
 	EffectiveConstraint string
-	Comments            bool
+	// BuildableNow reports whether the current GOOS/GOARCH can compile this file. It is
+	// meaningful only when EffectiveConstraint is non-empty.
+	BuildableNow bool
+	Comments     bool
 }
 
 // Symbol looks up a package-level declaration by bare or qualified name.

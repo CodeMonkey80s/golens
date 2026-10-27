@@ -470,14 +470,38 @@ func effectiveConstraintText(path, buildConstraint string, requiresCgo bool) str
 
 	add(implicitConstraint(path))
 	if buildConstraint != "" {
-		if strings.Contains(buildConstraint, "||") {
+		if strings.Contains(buildConstraint, "||") || strings.ContainsAny(buildConstraint, "()") {
+			// A disjunction or explicit grouping is one term; splitting it would break
+			// precedence or produce unbalanced parentheses.
 			add("(" + buildConstraint + ")")
 		} else {
-			add(buildConstraint)
+			for _, term := range strings.Split(buildConstraint, "&&") {
+				add(term)
+			}
 		}
 	}
 	if requiresCgo {
 		add("cgo")
 	}
 	return strings.Join(terms, " && ")
+}
+
+// buildableOnCurrentPlatform reports whether the running GOOS/GOARCH can compile the file.
+//
+// cgo is considered in both states: a cgo-only file is buildable on a cgo-capable build, and
+// golens cannot know how the target project will be built. The question this answers is
+// "could this platform compile the file at all", not "would this exact binary include it".
+func buildableOnCurrentPlatform(path, buildConstraint string, requiresCgo bool) bool {
+	expr := fileConstraint(path, buildConstraint, requiresCgo)
+	if expr == nil {
+		return true
+	}
+
+	for _, cgo := range []bool{false, true} {
+		cfg := buildConfig{goos: runtime.GOOS, goarch: runtime.GOARCH, cgo: cgo}
+		if expr.Eval(func(tag string) bool { return cfg.satisfied(tag, nil) }) {
+			return true
+		}
+	}
+	return false
 }

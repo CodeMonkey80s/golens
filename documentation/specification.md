@@ -23,8 +23,8 @@ All commands accept three global flags:
 - `--compact`: Minifies output formatting to minimize context token usage.
 - `--json-errors`: Writes failures as a JSON object to stderr. The payload has
   `"schema_version": 1`, an `error` object with `kind`, `message`, `exit_code`, optional
-  `candidates`, and optional `skipped`/`total`. `kind` is `not_found`, `ambiguous`, `usage` or
-  `parse_or_io`. Errors stay on stderr because `outline` may already have written a partial array to
+  `candidates`, and optional `skipped`/`total`. `kind` is `not_found`, `ambiguous`, `usage`,
+  `parse`, `io` or `parse_or_io` (mixed). Errors stay on stderr because `outline` may already have written a partial array to
   stdout; appending an error object there would make the stream invalid.
 
 **Exit codes.** `0` success · `1` usage error · `2` symbol or file not found or ambiguous · `3` `check` found diagnostics · `4` parse or I/O failure. Payloads are written to stdout, diagnostics to stderr. When `--json` and `--compact` are combined, `--compact` takes precedence and emits non-indented JSON.
@@ -54,6 +54,8 @@ golens outline <file|dir> [flags]
 **Flags**
 
 - `--depth <int>`: Restricts AST hierarchy recursion depth (default: unlimited).
+- `--skip-testdata`: Prunes directories named `testdata`.
+- `--skip-ignored`: Prunes files and directories whose names begin with `_`.
 - `--json`: Returns structured JSON array.
 
 **Directory input.** The path is traversed recursively; `.git`, `vendor`, `node_modules` and
@@ -85,8 +87,10 @@ always yields byte-identical output.
 what the tree contains rather than what one machine compiles. When a file is not built everywhere,
 the header reports its **effective constraint**: the conjunction of the `//go:build` expression,
 the constraint inferred from the file name, and `cgo` when the file imports `"C"`. A file with no
-such constraint has no third line. A consumer editing a platform-specific file should check that
-line before assuming the current `GOOS` will compile the change.
+such constraint has no third line. JSON reports the same value as `build` and `buildable_now`; the
+latter is whether the current GOOS/GOARCH can compile the file. A consumer editing a
+platform-specific file should check that line before assuming the current `GOOS` will compile the
+change.
 
 **Human Output Format (`golens outline user.go`)**
 
@@ -164,6 +168,7 @@ golens get <symbol> <file|dir> [flags]
 **Flags**
 
 - `--bounds-only`: Excludes source code text; returns only line ranges and byte offsets.
+- `--skip-testdata`, `--skip-ignored`: Traversal policy for directory targets, as in §2.1.
 - `--package-dir <dir>`: Resolves the symbol only in this directory. It exists for the case a
   package-qualified name cannot solve: two directories both declaring `package util`.
 - `--json`: Returns a structured JSON object.
@@ -174,7 +179,7 @@ golens get <symbol> <file|dir> [flags]
 
 **Symbol ambiguity.** A bare method name is accepted when it is unique in the package. Any ambiguity exits `2` and lists the candidates on stderr rather than guessing. When a candidate's file has an effective build constraint, the candidate carries a `[build: ...]` marker so the platform variants are distinguishable without opening each file.
 
-**Build constraint of the result.** When the declaring file is not built everywhere, `get` prints a `Build:` line after `File:` and the JSON payload carries `build`. The value is the effective constraint from §2.1. This is a warning, not a filter: the symbol is resolved whatever the current platform compiles.
+**Build constraint of the result.** When the declaring file is not built everywhere, `get` prints a `Build:` line after `File:` and the JSON payload carries `build` and `buildable_now`. The value is the effective constraint from §2.1. This is a warning, not a filter: the symbol is resolved whatever the current platform compiles.
 
 **Packages are distinct namespaces.** A directory may hold `package p` beside an external test `package p_test`, and both may declare the same name without either redeclaring anything. When a bare name resolves in more than one package, the run exits `2` and reports the packages and their files — **it does not call this ambiguous**, because there is no duplicate declaration to fix.
 
@@ -217,6 +222,7 @@ golens bounds <symbol> <file|dir> [flags]
 
 - `--json`: (Default behavior implicitly) Returns byte offsets.
 - `--package-dir <dir>`: Resolves the symbol only in this directory, as for `get`.
+- `--skip-testdata`, `--skip-ignored`: Traversal policy for directory targets, as in §2.1.
 
 **Human output.** `golens bounds <symbol> <file|dir>` prints a single line: `UserStore.GetUser  lines 17-25  bytes 430-612`.
 
@@ -238,8 +244,9 @@ golens bounds <symbol> <file|dir> [flags]
 }
 ```
 
-`build` is added when the declaring file is not always built, and omitted otherwise. The same field
-appears in `get`'s payload, so `get --bounds-only --json` remains identical to `bounds --json`.
+`build` and `buildable_now` are added when the declaring file is not always built, and omitted
+otherwise. The same fields appear in `get`'s payload, so `get --bounds-only --json` remains
+identical to `bounds --json`.
 
 ### 2.4 `golens check`
 
@@ -313,7 +320,8 @@ undefined types and duplicate struct fields still pass.
 **A `testdata` directory is not checked.** The go tool ignores it by documented rule — *"Directory
 and file names that begin with `.` or `_` are ignored by the go tool, as are directories named
 `testdata`"* — so no build ever compiles anything in one, and a diagnostic about a file no build
-reaches is not a claim about the source. On the standard library those directories held 1,212
+reaches is not a claim about the source. The same rule excludes files and directories whose names
+begin with `_`. On the standard library those directories held 1,212
 diagnostics, every one of them a compiler fixture written to be broken, and exit `3` pointed a caller
 at editing source whose exact bytes are the test case. The exclusion applies to the walk, not to the
 caller: a `testdata` file named explicitly is still checked, and `outline`, `get` and `bounds` still

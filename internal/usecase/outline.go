@@ -35,17 +35,35 @@ var skippedDirs = []string{".git", "vendor", "node_modules"}
 // This walk is shared by outline, get and check; checkFiles is the one exception, and its
 // comment says why pruning testdata there is not a scope decision made invisibly.
 func Files(target string) ([]string, error) {
-	return files(target, false)
+	return FilesWithOptions(target, FileOptions{})
+}
+
+// FileOptions controls which files a structural walk includes.
+//
+// check deliberately prunes testdata because no build reaches it. outline, get and bounds
+// answer what the tree contains, so they include it by default; the two flags let a caller
+// opt into the build's view without changing that default.
+type FileOptions struct {
+	// SkipTestdata prunes directories named testdata, which the go tool ignores.
+	SkipTestdata bool
+	// SkipIgnored prunes files and directories whose names begin with "_", which the go tool
+	// also ignores. Names beginning with "." are already pruned from every walk.
+	SkipIgnored bool
+}
+
+// FilesWithOptions is Files with an explicit traversal policy.
+func FilesWithOptions(target string, opts FileOptions) ([]string, error) {
+	return files(target, opts)
 }
 
 // checkFiles collects the files a check invocation analyses.
 //
-// The walk is Files' walk minus one directory name: testdata. The go tool ignores it by
-// documented rule -- "Directory and file names that begin with '.' or '_' are ignored by the
-// go tool, as are directories named 'testdata'" -- so no build ever compiles anything in
-// one. check's contract, specification 2.4, is *"reports what go build would reject, without
-// building"*, and reporting a fixture no build reaches is a claim about code that is never
-// compiled.
+// The walk is Files' walk minus the names the go tool ignores: testdata directories and
+// names beginning with "_". The go tool ignores them by documented rule -- "Directory and
+// file names that begin with '.' or '_' are ignored by the go tool, as are directories named
+// 'testdata'" -- so no build ever compiles anything in one. check's contract, specification
+// 2.4, is *"reports what go build would reject, without building"*, and reporting a fixture no
+// build reaches is a claim about code that is never compiled.
 //
 // The cost of getting this wrong is not cosmetic. On $GOROOT/src it was 1,212 diagnostics,
 // every one of them inside a testdata directory, and exit 3 -- which an agent reads as "the
@@ -60,7 +78,7 @@ func Files(target string) ([]string, error) {
 // A testdata file named explicitly is still checked -- files() returns a file target
 // without walking, so "golens check testdata/store.go" keeps working exactly as before.
 func checkFiles(target string) ([]string, error) {
-	paths, err := files(target, true)
+	paths, err := files(target, FileOptions{SkipTestdata: true, SkipIgnored: true})
 	if err != nil {
 		return nil, err
 	}
@@ -84,14 +102,14 @@ func onlyPrunedFiles(target string) bool {
 	if err != nil || !info.IsDir() {
 		return false
 	}
-	found, err := files(target, false)
+	found, err := files(target, FileOptions{})
 	return err == nil && len(found) > 0
 }
 
 // files is the shared walk. pruneTestdata adds testdata to the pruned names, which is what
 // separates check's file set from outline's; the flag exists so the two walks cannot drift
 // apart in any other respect.
-func files(target string, pruneTestdata bool) ([]string, error) {
+func files(target string, opts FileOptions) ([]string, error) {
 	info, err := os.Stat(target)
 	if err != nil {
 		// A missing or unreadable path is "not found" under the documented contract, not
@@ -135,15 +153,19 @@ func files(target string, pruneTestdata bool) ([]string, error) {
 		}
 
 		if d.IsDir() {
-			if path != root && skipDir(d.Name(), pruneTestdata) {
+			if path != root && skipDir(d.Name(), opts) {
 				return fs.SkipDir
 			}
 			return nil
 		}
 
-		if strings.HasSuffix(d.Name(), ".go") && !strings.HasPrefix(d.Name(), ".") {
-			found = append(found, path)
+		if !strings.HasSuffix(d.Name(), ".go") || strings.HasPrefix(d.Name(), ".") {
+			return nil
 		}
+		if opts.SkipIgnored && strings.HasPrefix(d.Name(), "_") {
+			return nil
+		}
+		found = append(found, path)
 		return nil
 	})
 	if err != nil {
@@ -164,11 +186,14 @@ func files(target string, pruneTestdata bool) ([]string, error) {
 
 // skipDir reports whether a directory is pruned from a walk. pruneTestdata adds the one
 // name the go tool ignores that is not already pruned here.
-func skipDir(name string, pruneTestdata bool) bool {
+func skipDir(name string, opts FileOptions) bool {
 	if strings.HasPrefix(name, ".") {
 		return true
 	}
-	if pruneTestdata && name == "testdata" {
+	if opts.SkipIgnored && strings.HasPrefix(name, "_") {
+		return true
+	}
+	if opts.SkipTestdata && name == "testdata" {
 		return true
 	}
 	return slices.Contains(skippedDirs, name)
@@ -176,7 +201,12 @@ func skipDir(name string, pruneTestdata bool) bool {
 
 // Outline renders the outline of every file in target.
 func Outline(engine domain.Engine, target string, depth int, w io.Writer, opts format.Options) error {
-	paths, err := Files(target)
+	return OutlineWithFileOptions(engine, target, depth, w, opts, FileOptions{})
+}
+
+// OutlineWithFileOptions is Outline with an explicit traversal policy.
+func OutlineWithFileOptions(engine domain.Engine, target string, depth int, w io.Writer, opts format.Options, fileOpts FileOptions) error {
+	paths, err := FilesWithOptions(target, fileOpts)
 	if err != nil {
 		return err
 	}

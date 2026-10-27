@@ -254,6 +254,9 @@ func (e UnreadableFilesError) Silent() bool { return e.Quiet }
 // completeness information as the human summary.
 func (e UnreadableFilesError) Skips() (int, int) { return e.Count, e.Total }
 
+// Category marks this as an I/O failure rather than a syntax failure.
+func (e UnreadableFilesError) Category() string { return "io" }
+
 // NotFoundSymbol reports a name that matched nothing.
 type NotFoundSymbol string
 

@@ -17,6 +17,7 @@ func TestEffectiveConstraintText(t *testing.T) {
 		{"a_linux_amd64.go", "", false, "linux && amd64"},
 		{"a_windows.go", "windows", false, "windows"},
 		{"a_linux.go", "amd64", false, "linux && amd64"},
+		{"a_linux.go", "linux && amd64", false, "linux && amd64"},
 		{"a_linux.go", "linux || darwin", false, "linux && (linux || darwin)"},
 		{"a.go", "cgo", true, "cgo"},
 		{"a_linux.go", "", true, "linux && cgo"},

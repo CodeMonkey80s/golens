@@ -21,6 +21,7 @@ import (
 // Env carries the process streams and engine, so the command tree is testable without
 // touching global state.
 type Env struct {
+	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
 	Engine domain.Engine
@@ -82,6 +83,7 @@ you can tell whether the current GOOS compiles an edit before making it.`,
 		newGetCmd(env),
 		newBoundsCmd(env),
 		newCheckCmd(env),
+		newMCPCmd(env),
 	)
 	return root
 }
@@ -189,6 +191,12 @@ func errorKind(err error) string {
 	var notFound interface{ IsNotFound() bool }
 	if errors.As(err, &notFound) && notFound.IsNotFound() {
 		return "not_found"
+	}
+	// The usecase errors know whether their failures were syntax or I/O. This is more precise
+	// than inspecting the chain here, where a mixed skipped-files error would be misread.
+	var categorized interface{ Category() string }
+	if errors.As(err, &categorized) {
+		return categorized.Category()
 	}
 	return "parse_or_io"
 }
@@ -327,6 +335,7 @@ func (u usageError) IsUsage() bool { return true }
 // boundary asserted by internal/arch. Composition happens in cmd/golens.
 func DefaultEnv(engine domain.Engine) Env {
 	return Env{
+		Stdin:  os.Stdin,
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 		Engine: engine,

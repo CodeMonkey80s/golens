@@ -1,0 +1,6 @@
+go test fuzz v1
+string("package p\n\nimport \"fmt\"\n\nfunc F() {}\n")
+string("package p\n\nfunc G() {}\n")
+string("")
+string("a.go")
+string("b.go")

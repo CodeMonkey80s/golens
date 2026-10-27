@@ -2,6 +2,8 @@ package cli
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -94,11 +96,37 @@ func TestJSONErrors(t *testing.T) {
 			t.Fatalf("stdout is not valid JSON after a partial run: %v\n%s", err, stdout)
 		}
 		env := parseJSONError(t, stderr)
-		if env.Error.Kind != "parse_or_io" {
-			t.Errorf("kind = %q, want parse_or_io", env.Error.Kind)
+		if env.Error.Kind != "parse" {
+			t.Errorf("kind = %q, want parse", env.Error.Kind)
 		}
 		if env.Error.Skipped != 1 || env.Error.Total != 2 {
 			t.Errorf("skipped/total = %d/%d, want 1/2", env.Error.Skipped, env.Error.Total)
+		}
+	})
+
+	t.Run("unreadable file is an IO error", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "a.go")
+		writeFile(t, dir, "a.go", "package p\n\nfunc A() {}\n")
+		if err := os.Chmod(path, 0o000); err != nil {
+			t.Skipf("cannot make the file unreadable: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+
+		stdout, stderr, code := run(t, "check", dir, "--json", "--json-errors")
+		if code != 4 {
+			t.Fatalf("exit = %d, want 4", code)
+		}
+		var diagnostics map[string]any
+		if err := json.Unmarshal([]byte(stdout), &diagnostics); err != nil {
+			t.Fatalf("stdout is not valid JSON: %v\n%s", err, stdout)
+		}
+		env := parseJSONError(t, stderr)
+		if env.Error.Kind != "io" {
+			t.Errorf("kind = %q, want io", env.Error.Kind)
+		}
+		if env.Error.Skipped != 1 {
+			t.Errorf("skipped = %d, want 1", env.Error.Skipped)
 		}
 	})
 }

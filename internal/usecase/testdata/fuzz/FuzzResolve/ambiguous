@@ -1,0 +1,6 @@
+go test fuzz v1
+string("package p\n\nfunc F() {}\n")
+string("package p\n\nfunc F() {}\n")
+string("F")
+string("a_linux.go")
+string("a_windows.go")

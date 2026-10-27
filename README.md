@@ -8,6 +8,7 @@ golens outline <file|dir>       structural hierarchy map
 golens get <symbol> <file|dir>  exact source of one symbol
 golens bounds <symbol> <file|dir> byte and line offsets for an edit
 golens check <file|dir>...      fast syntax and namespace validation
+golens mcp                      serve the tools over MCP on stdin/stdout
 ```
 
 Pure Go, no cgo, no daemon, no index. One binary, about 5.4 MiB stripped (`-ldflags="-s -w"`), parses a typical file in tens of
@@ -30,17 +31,17 @@ IMPORTS
   • fmt
   • strconv
 
-TYPES & STRUCTS (lines 18-317)
+TYPES & STRUCTS (lines 18-324)
   • type Kind string (line 18)
   • type Bounds struct (lines 42-47)
   • type Node struct (lines 103-130)
-  • type Symbol struct (lines 189-205)
-  • type Document struct (lines 214-238)
-  • type Engine interface (lines 285-287)
-  • type ErrorExit int (line 293)
-  • type LocatedError struct (lines 312-317)
+  • type Symbol struct (lines 189-209)
+  • type Document struct (lines 218-245)
+  • type Engine interface (lines 292-294)
+  • type ErrorExit int (line 300)
+  • type LocatedError struct (lines 319-324)
 
-FUNCTIONS & METHODS (lines 51-323)
+FUNCTIONS & METHODS (lines 51-330)
   • func (b Bounds) Valid() bool (lines 51-53)
   • func (b Bounds) LineCount() int (lines 57-62)
   • func (b Bounds) ByteLen() int (lines 65-70)
@@ -49,14 +50,14 @@ FUNCTIONS & METHODS (lines 51-323)
   • func (b Bounds) Source(src []byte) string (lines 92-97)
   • func (n Node) Declaration() string (lines 139-171)
   • func (n Node) Keyword() string (lines 178-183)
-  • func (s Symbol) Declaration() string (lines 209-211)
-  • func (d *Document) Symbol(name string) (Symbol, bool) (lines 245-252)
-  • func (d *Document) Lookup(name string) []Symbol (lines 260-268)
-  • func (d *Document) RootNode() Node (lines 271-277)
-  • func (e ErrorExit) Code() int (line 303)
-  • func (e LocatedError) String() string (lines 321-323)
+  • func (s Symbol) Declaration() string (lines 213-215)
+  • func (d *Document) Symbol(name string) (Symbol, bool) (lines 252-259)
+  • func (d *Document) Lookup(name string) []Symbol (lines 267-275)
+  • func (d *Document) RootNode() Node (lines 278-284)
+  • func (e ErrorExit) Code() int (line 310)
+  • func (e LocatedError) String() string (lines 328-330)
 
-VARS & CONSTS (lines 21-300)
+VARS & CONSTS (lines 21-307)
   • const KindPackage Kind (line 21)
   • const KindImport Kind (line 22)
   • const KindType Kind (line 23)
@@ -65,11 +66,11 @@ VARS & CONSTS (lines 21-300)
   • const KindVar Kind (line 26)
   • const KindConst Kind (line 27)
   • const KindField Kind (line 28)
-  • const ExitOk ErrorExit (line 296)
-  • const ExitUsage (line 297)
-  • const ExitNotFound (line 298)
-  • const ExitDiagnostics (line 299)
-  • const ExitParse (line 300)
+  • const ExitOk ErrorExit (line 303)
+  • const ExitUsage (line 304)
+  • const ExitNotFound (line 305)
+  • const ExitDiagnostics (line 306)
+  • const ExitParse (line 307)
 ```
 
 Note `type ErrorExit int` and `const ExitOk ErrorExit` — the type and its typed constant, which is
@@ -182,6 +183,7 @@ nothing.
 | Flag | Effect |
 |---|---|
 | `--depth <int>` | Recursion limit. `1` shows declarations only, `2` adds fields and parameters. Default unlimited |
+| `--skip-testdata`, `--skip-ignored` | Omit directories the go tool ignores, at the cost of a source-only view |
 | `--json` | Array of per-file objects |
 | `--compact` | One record per line, no decoration |
 
@@ -217,6 +219,7 @@ The exact source of one declaration.
 |---|---|
 | `--bounds-only` | Omit the source, return only ranges and offsets |
 | `--package-dir` | Resolve only in this directory; useful when two packages share a name |
+| `--skip-testdata`, `--skip-ignored` | Omit ignored directories; useful when fixtures do not parse |
 | `--json`, `--compact` | As above |
 
 Symbols may be a bare name (`Check`) or qualified for methods (`UserStore.GetUser`). Both
@@ -236,9 +239,10 @@ in two packages, not as an ambiguity — and the remedy is `p.Name` or a specifi
 
 The output reports the declaration's **effective build constraint** when it has one, from the
 filename, the `//go:build` line, or cgo. A symbol in a Windows-only file therefore says
-`Build: windows` even when you are on Linux, and an ambiguous candidate list marks each file with
-its constraint: `/src/a_linux.go: F  [build: linux]` beside `/src/a_windows.go: F  [build: windows]`.
-These paths are illustrative, not a file in this repository.
+`Build: windows (not buildable on this platform)` even when you are on Linux, and JSON carries
+`build` plus `buildable_now`. An ambiguous candidate list marks each file with its constraint:
+`/src/a_linux.go: F  [build: linux]` beside `/src/a_windows.go: F  [build: windows]`. These paths
+are illustrative, not a file in this repository.
 
 `get` resolves every file in the tree whatever its constraints — the question is what the tree
 contains, not what this machine compiles. The build line is the warning that the edit will not be
@@ -252,7 +256,7 @@ be parsed, because it may be sitting in one of them.
 
 ### `bounds <symbol> <file|dir>`
 
-Byte and line offsets for an edit. A directory resolves the symbol through the same search as `get`; the JSON payload is identical to `get --bounds-only --json`. The `--package-dir` flag narrows the search when two packages share a name.
+Byte and line offsets for an edit. A directory resolves the symbol through the same search as `get`; the JSON payload is identical to `get --bounds-only --json`. The `--package-dir` flag narrows the search when two packages share a name. `--skip-testdata` and `--skip-ignored` apply to the search too.
 
 ### `check <file|dir>...`
 
@@ -396,7 +400,7 @@ $ golens get Nope . --json-errors   # ILLUSTRATIVE
 }
 ```
 
-`kind` is `not_found`, `ambiguous`, `usage` or `parse_or_io`; ambiguous failures also carry
+`kind` is `not_found`, `ambiguous`, `usage`, `parse`, `io` or `parse_or_io`; ambiguous failures also carry
 `candidates`, and partial searches carry `skipped`/`total`. The error stays on stderr because a
 partial `outline` may already have written a valid array to stdout.
 
@@ -427,6 +431,37 @@ and use the numbers it gives you; the property that matters is that `end_byte - 
 the length of what `get` printed.
 
 Read with `outline`, extract with `get`, edit with `bounds`, validate with `check`.
+
+---
+
+## Embedding
+
+The root package is a small supported API over the same engine:
+
+```go
+import (
+    "bytes"
+    "github.com/CodeMonkey80s/golens"
+)
+
+var out bytes.Buffer
+err := golens.Get("UserStore.GetUser", "user.go", &out, golens.Options{})
+code := golens.ExitCodeFor(err) // 0, 1, 2, 3 or 4
+```
+
+`Outline`, `Get`, `Bounds` and `Check` write the same human or JSON output as the CLI;
+`Options` carries `JSON`, `Compact`, `Depth`, `BoundsOnly`, `PackageDir`, `Tags`, and the two
+traversal flags. It is deliberately output-oriented: the internal AST types are not public.
+
+## MCP
+
+`golens mcp` serves `outline`, `get`, `bounds` and `check` at
+[Model Context Protocol](https://modelcontextprotocol.io) over stdin/stdout. Point a client at
+the command and pass `mcp` as its argument; the server returns the same payloads as the CLI in a
+`text` content block and sets `isError` when the command fails.
+
+The transport is newline-delimited JSON-RPC 2.0. stdout carries protocol messages only; the
+server exits when stdin closes.
 
 ---
 

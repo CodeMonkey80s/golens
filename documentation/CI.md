@@ -105,14 +105,18 @@ The targets live in `internal/usecase/fuzz_test.go`. `go test` runs their seed c
 10-second campaign per target to catch panics and broken byte invariants. `FuzzCheck` and
 `FuzzResolve` exercise two-file directories, custom build tags and the JSON paths, which the
 single-file outline/get/bounds targets do not. This is a smoke test, not a coverage goal — run
-longer locally after touching the engine, the checks or the formatters.
+longer locally after touching the engine, the checks or the formatters. The committed seed corpus
+under `internal/usecase/testdata/fuzz` covers filename constraints and platform variants in
+addition to the `f.Add` seeds.
 
 ### Release
 
 `.github/workflows/release.yml` runs on a `v*` tag. It builds linux, darwin and windows archives
 for amd64 and arm64 with `CGO_ENABLED=0`, stamps the version with `-X`, writes `checksums.txt`, and
-attaches the assets to the GitHub release (creating it with generated notes if absent). The job
-uses the workflow token, so no personal credentials are needed.
+attaches the assets to the GitHub release. Release notes are extracted from the matching
+`CHANGELOG.md` section, so an undocumented tag fails the job. GitHub build-provenance attestations
+are attached to the archives, tying every byte to this workflow and commit. The job uses the
+workflow token, so no personal credentials are needed.
 
 ---
 

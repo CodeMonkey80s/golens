@@ -50,6 +50,14 @@ func (e ParseError) Error() string {
 
 func (e ParseError) Unwrap() error { return e.Err }
 
+// Category classifies a single failure for the JSON error envelope.
+func (e ParseError) Category() string {
+	if e.Located() {
+		return "parse"
+	}
+	return "io"
+}
+
 // maxListedFailures bounds how many skipped files the message names. The count in the summary
 // line is always exact; only the enumeration is truncated, because a tree with hundreds of
 // broken files should not produce a message nobody reads to the end.
@@ -134,6 +142,28 @@ func (e SkippedFilesError) Unwrap() error {
 // Skips reports how many files are missing from the run.
 func (e SkippedFilesError) Skips() (int, int) { return len(e.Failures), e.Total }
 
+// Category reports whether the skipped files were syntax failures, I/O failures, or both.
+func (e SkippedFilesError) Category() string {
+	var parse, io bool
+	for _, failure := range e.Failures {
+		if failure.Located() {
+			parse = true
+		} else {
+			io = true
+		}
+	}
+	switch {
+	case parse && io:
+		return "parse_or_io"
+	case parse:
+		return "parse"
+	case io:
+		return "io"
+	default:
+		return "parse_or_io"
+	}
+}
+
 // Located reports whether the failure carries a source position, which is what distinguishes a
 // file that does not parse from a file that could not be opened.
 //
@@ -216,10 +246,13 @@ func parseOne(engine domain.Engine, path string) (domain.Document, ParseError) {
 // parses through parseOne reports the same constraint: outline's header, get's header and
 // JSON payload, and the candidate annotation on an ambiguous lookup.
 func decorateDocument(doc *domain.Document) {
+	needsCgo := requiresCgo(*doc)
 	doc.ImplicitConstraint = implicitConstraint(doc.Path)
-	doc.EffectiveConstraint = effectiveConstraintText(doc.Path, doc.BuildConstraint, requiresCgo(*doc))
+	doc.EffectiveConstraint = effectiveConstraintText(doc.Path, doc.BuildConstraint, needsCgo)
+	doc.BuildableNow = buildableOnCurrentPlatform(doc.Path, doc.BuildConstraint, needsCgo)
 	for i := range doc.Symbols {
 		doc.Symbols[i].Build = doc.EffectiveConstraint
+		doc.Symbols[i].BuildableNow = doc.BuildableNow
 	}
 }
 

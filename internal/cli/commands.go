@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"errors"
+
 	"github.com/spf13/cobra"
 
 	"github.com/CodeMonkey80s/golens/internal/format"
+	"github.com/CodeMonkey80s/golens/internal/mcp"
 	"github.com/CodeMonkey80s/golens/internal/usecase"
 )
 
@@ -12,6 +15,23 @@ func flagOptions(cmd *cobra.Command) format.Options {
 	jsonOut, _ := cmd.Flags().GetBool("json")
 	compact, _ := cmd.Flags().GetBool("compact")
 	return format.Options{JSON: jsonOut, Compact: compact}
+}
+
+// fileOptions reads the traversal flags shared by the structural commands.
+func fileOptions(cmd *cobra.Command) usecase.FileOptions {
+	skipTestdata, _ := cmd.Flags().GetBool("skip-testdata")
+	skipIgnored, _ := cmd.Flags().GetBool("skip-ignored")
+	return usecase.FileOptions{SkipTestdata: skipTestdata, SkipIgnored: skipIgnored}
+}
+
+func resolveOptions(cmd *cobra.Command) usecase.ResolveOptions {
+	opts := fileOptions(cmd)
+	return usecase.ResolveOptions(opts)
+}
+
+func addTraversalFlags(cmd *cobra.Command) {
+	cmd.Flags().Bool("skip-testdata", false, "skip directories named testdata, as the go tool does")
+	cmd.Flags().Bool("skip-ignored", false, "skip files and directories whose names begin with _")
 }
 
 func newOutlineCmd(env Env) *cobra.Command {
@@ -23,8 +43,9 @@ func newOutlineCmd(env Env) *cobra.Command {
   Depth   1 = declarations only
           2 = adds struct fields and parameters
           default -1 (unlimited); --depth 3 and above add nothing further
-  Build   a file's //go:build expression, when it has one
+  Build   a file's effective build constraint, when it has one
   Lists   every .go file in a directory, including platform variants
+  Skip    --skip-testdata / --skip-ignored opt into the build's view
 
 Structural, not semantic: imports, types, functions, methods, vars and consts.
 
@@ -51,11 +72,12 @@ one diagnostic among many.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			depth, _ := cmd.Flags().GetInt("depth")
-			return usecase.Outline(env.Engine, args[0], depth, env.Stdout, flagOptions(cmd))
+			return usecase.OutlineWithFileOptions(env.Engine, args[0], depth, env.Stdout, flagOptions(cmd), fileOptions(cmd))
 		},
 	}
 
 	cmd.Flags().Int("depth", usecase.DepthUnlimited, "restrict AST hierarchy recursion depth")
+	addTraversalFlags(cmd)
 	return cmd
 }
 
@@ -105,12 +127,13 @@ is nothing to salvage and the parse error is the whole answer.`,
 			if dir, _ := cmd.Flags().GetString("package-dir"); dir != "" {
 				target = dir
 			}
-			return usecase.Get(env.Engine, args[0], target, !boundsOnly, env.Stdout, flagOptions(cmd))
+			return usecase.GetWithOptions(env.Engine, args[0], target, !boundsOnly, env.Stdout, flagOptions(cmd), resolveOptions(cmd))
 		},
 	}
 
 	cmd.Flags().Bool("bounds-only", false, "omit source text; return only line ranges and byte offsets")
 	cmd.Flags().String("package-dir", "", "resolve the symbol only in this directory (useful when packages share a name)")
+	addTraversalFlags(cmd)
 	return cmd
 }
 
@@ -128,6 +151,7 @@ func newBoundsCmd(env Env) *cobra.Command {
   Parse   a file that does not parse exits 4 with the error on stderr
   Search  a directory resolves the symbol across its packages, as get does
   Filter  --package-dir limits the search when two packages share a name
+  Skip    --skip-testdata / --skip-ignored opt into the build's view
 
   type User struct { ... }      bounds start at "User",  "type" is outside
   func NewUser() *User { ... }  bounds start at "func"
@@ -166,11 +190,12 @@ it back.`,
 			if dir, _ := cmd.Flags().GetString("package-dir"); dir != "" {
 				target = dir
 			}
-			return usecase.Bounds(env.Engine, args[0], target, env.Stdout, flagOptions(cmd))
+			return usecase.BoundsWithOptions(env.Engine, args[0], target, env.Stdout, flagOptions(cmd), resolveOptions(cmd))
 		},
 	}
 
 	cmd.Flags().String("package-dir", "", "resolve the symbol only in this directory (useful when packages share a name)")
+	addTraversalFlags(cmd)
 	return cmd
 }
 
@@ -187,7 +212,7 @@ func newCheckCmd(env Env) *cobra.Command {
            4 = a file could not be read, or the run is incomplete
   Tags     --tags integration matches "go build -tags integration"
   Limits   unused-import check is best-effort
-  Scope    testdata directories are not walked; name a file to check it
+  Scope    testdata and _-prefixed names are not walked; name a file to check it
   Multi    several targets are de-duplicated and checked in one sorted run
 
 Exit 3 and exit 4 are different questions. 3 is about the source: fix the
@@ -197,7 +222,7 @@ are reported and the run exits 4 -- told 3, a caller would believe every
 file was readable.
 
 A testdata directory is not checked. The go tool ignores those directories,
-so no build compiles anything in one, and a finding about a file no build
+and names beginning with "_", so no build compiles anything in one, and a finding about a file no build
 reaches is not a finding about the source: they hold compiler fixtures
 written to be broken, and "fixing" one means editing the bytes that are the
 test. The rule is about the walk, not about you -- name a testdata file
@@ -229,4 +254,34 @@ a structural question.`,
 
 	cmd.Flags().StringSlice("tags", nil, "comma-separated build tags, as in `go build -tags`")
 	return cmd
+}
+
+func newMCPCmd(env Env) *cobra.Command {
+	return &cobra.Command{
+		Use:   "mcp",
+		Short: "Serve outline, get, bounds and check over MCP on stdin/stdout",
+		Long: `Serve the structural tools over the Model Context Protocol.
+
+The transport is newline-delimited JSON-RPC 2.0 on stdin/stdout. stdout carries protocol
+messages only; tool output is returned inside the tool result. This is a stdio server, not a
+daemon: closing stdin ends it.
+
+Tools: outline, get, bounds, check. The argument names mirror the CLI flags: path, depth,
+json, compact, symbol, target, bounds_only, package_dir, targets, tags, skip_testdata and
+skip_ignored.
+
+Point an MCP client at the command:
+
+  {
+    "command": "golens",
+    "args": ["mcp"]
+  }`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if env.Stdin == nil {
+				return errors.New("mcp needs stdin")
+			}
+			return mcp.Serve(env.Stdin, env.Stdout, env.Engine, releaseVersion())
+		},
+	}
 }

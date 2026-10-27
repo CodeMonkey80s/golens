@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/CodeMonkey80s/golens/internal/engine/goast"
@@ -153,30 +154,84 @@ func FuzzBounds(f *testing.F) {
 	})
 }
 
+// safeGoFilename turns arbitrary fuzz input into a single, safe .go filename.
+func safeGoFilename(name string) string {
+	name = filepath.Base(name)
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-', r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	name = b.String()
+	if name == "" || name == "." || name == ".." {
+		name = "fuzz"
+	}
+	name = strings.TrimSuffix(name, ".go")
+	if len(name) > 80 {
+		name = name[:80]
+	}
+	return name + ".go"
+}
+
+// resetFuzzDir removes files from the previous input. The filename is fuzzed, so unlike the
+// single-file targets these directories would otherwise accumulate one file per execution and
+// each input would be analysed alongside every earlier one.
+func resetFuzzDir(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // FuzzCheck fuzzes the heuristic-heavy half of the tool: unused imports, dot imports,
 // duplicate declarations and build constraints across two files. Those analyses are where
 // false positives and panics have historically come from, and they were not covered by the
 // single-file outline/get/bounds targets.
 func FuzzCheck(f *testing.F) {
-	f.Add("package p\n\nfunc F() {}\n", "package p\n\nfunc G() {}\n", "")
-	f.Add("package p\n\nimport \"fmt\"\n\nfunc F() {}\n", "", "")
-	f.Add("package p\n\nimport . \"fmt\"\n\nfunc F() { Println(1) }\n", "", "")
-	f.Add("//go:build integration\n\npackage p\n\nfunc F() {}\n", "package p\n\nfunc F() {}\n", "integration")
-	f.Add("package p\n\nvar A, B = 1, 2\n", "package p\n\ntype T struct{ A int }\n", "")
+	f.Add("package p\n\nfunc F() {}\n", "package p\n\nfunc G() {}\n", "", "a.go", "b.go")
+	f.Add("package p\n\nimport \"fmt\"\n\nfunc F() {}\n", "", "", "a.go", "b.go")
+	f.Add("package p\n\nimport . \"fmt\"\n\nfunc F() { Println(1) }\n", "", "", "a.go", "b.go")
+	f.Add("//go:build integration\n\npackage p\n\nfunc F() {}\n", "package p\n\nfunc F() {}\n", "integration", "a_integration.go", "b.go")
+	f.Add("package p\n\nvar A, B = 1, 2\n", "package p\n\ntype T struct{ A int }\n", "", "a.go", "b.go")
+	f.Add("package p\n\nfunc F() {}\n", "package p\n\nfunc F() {}\n", "", "a_windows.go", "a_linux.go")
 
 	engine := goast.New()
 	dir := fuzzDir(f)
 
-	f.Fuzz(func(t *testing.T, srcA, srcB, tags string) {
-		if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte(srcA), 0o644); err != nil {
+	f.Fuzz(func(t *testing.T, srcA, srcB, tags, rawNameA, rawNameB string) {
+		resetFuzzDir(t, dir)
+		nameA := safeGoFilename(rawNameA)
+		nameB := safeGoFilename(rawNameB)
+		if nameA == nameB {
+			nameB = strings.TrimSuffix(nameB, ".go") + "_b.go"
+		}
+		if err := os.WriteFile(filepath.Join(dir, nameA), []byte(srcA), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte(srcB), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, nameB), []byte(srcB), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
 		var stdout, stderr bytes.Buffer
 		err := usecase.CheckWithOptions(engine, dir, usecase.CheckOptions{Tags: []string{tags}}, &stdout, &stderr, format.Options{JSON: true})
+		if stdout.Len() == 0 {
+			// A directory of only hidden files is a legitimate no-go-files error; there is no
+			// payload to validate.
+			if err == nil {
+				t.Fatal("check returned no error and no payload")
+			}
+			return
+		}
 
 		var payload struct {
 			SchemaVersion int               `json:"schema_version"`
@@ -213,20 +268,27 @@ func FuzzCheck(f *testing.F) {
 // constraints, and an arbitrary query. It checks that a successful payload still satisfies
 // the byte invariant against the file it names.
 func FuzzResolve(f *testing.F) {
-	f.Add("package p\n\nfunc F() {}\n", "package p\n\nfunc G() {}\n", "F")
-	f.Add("package p\n\ntype T struct{}\n\nfunc (T) M() {}\n", "package p\n", "T.M")
-	f.Add("package p\n\nfunc F() {}\n", "package p\n\nfunc F() {}\n", "F")
-	f.Add("package p\n\nfunc A() {}\n", "package p\n\nfunc B( {\n", "A")
-	f.Add("//go:build windows\n\npackage p\n\nfunc Win() {}\n", "package p\n", "Win")
+	f.Add("package p\n\nfunc F() {}\n", "package p\n\nfunc G() {}\n", "F", "a.go", "b.go")
+	f.Add("package p\n\ntype T struct{}\n\nfunc (T) M() {}\n", "package p\n", "T.M", "a.go", "b.go")
+	f.Add("package p\n\nfunc F() {}\n", "package p\n\nfunc F() {}\n", "F", "a.go", "b.go")
+	f.Add("package p\n\nfunc A() {}\n", "package p\n\nfunc B( {\n", "A", "a.go", "b.go")
+	f.Add("//go:build windows\n\npackage p\n\nfunc Win() {}\n", "package p\n", "Win", "a_windows.go", "b.go")
+	f.Add("package p\n\nfunc F() {}\n", "package p\n\nfunc F() {}\n", "F", "a_linux.go", "a_windows.go")
 
 	engine := goast.New()
 	dir := fuzzDir(f)
 
-	f.Fuzz(func(t *testing.T, srcA, srcB, symbol string) {
-		if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte(srcA), 0o644); err != nil {
+	f.Fuzz(func(t *testing.T, srcA, srcB, symbol, rawNameA, rawNameB string) {
+		resetFuzzDir(t, dir)
+		nameA := safeGoFilename(rawNameA)
+		nameB := safeGoFilename(rawNameB)
+		if nameA == nameB {
+			nameB = strings.TrimSuffix(nameB, ".go") + "_b.go"
+		}
+		if err := os.WriteFile(filepath.Join(dir, nameA), []byte(srcA), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte(srcB), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, nameB), []byte(srcB), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
