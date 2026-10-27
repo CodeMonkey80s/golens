@@ -32,13 +32,15 @@ func New(env Env) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "golens",
 		Short: "Structural AST queries for AI coding agents",
-		Long: `golens provides structural AST queries (outline, get, bounds, check) so agents
-can read targeted source instead of whole files, and edit using byte-accurate bounds.
+		Long: `golens provides structural AST queries (outline, get, bounds, check) and an MCP
+server so agents can read targeted source instead of whole files, and edit using
+byte-accurate bounds.
 
   outline  what is in this file or directory
   get      the exact source of one symbol -- safe to write back verbatim
   bounds   where to splice a replacement
   check    is this valid, and are these imports used
+  mcp      serve the four tools over MCP on stdin/stdout
 
 Exit codes:
   0  success
@@ -54,12 +56,14 @@ Streams:
   looks like a clean result.
   check --json is the exception: the payload goes to stdout and stderr
   stays empty, so it pipes. Do not add 2>&1 to a --json call.
+  mcp writes JSON-RPC on stdout; tool output is inside the result.
 
 Run "golens <command> --help" before the first use of a command. The conventions
 differ between them, and bounds in particular will corrupt a file if guessed.
 
-The outline header reports a file's //go:build constraint when it has one, so
-you can tell whether the current GOOS compiles an edit before making it.`,
+The outline header reports a file's effective build constraint when it has one,
+and get adds build/buildable_now, so you can tell whether the current GOOS
+compiles an edit before making it.`,
 		// Errors are reported by Execute, which owns the exit code mapping.
 		SilenceErrors: true,
 		SilenceUsage:  true,

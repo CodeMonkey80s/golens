@@ -4,6 +4,19 @@ All notable changes to golens are documented in this file.
 
 ---
 
+## v0.6.1 (2026-10-27)
+
+### Fixed
+
+- Root `--help` now names `mcp` and describes the effective build constraint; it still described only the four query commands and the `//go:build` line.
+
+### Changed
+
+- `TESTING.md` and `COLDSTART.md` carry the 2026-10-27 run logs, including unexercised cases, the k9s OpenBSD dependency caveat, and the trap 4/7 gaps.
+- Test-plan corrections: k9s has no generic receiver, embedded field or cgo fixture; case 10 now copies the repository rather than a detached file; case 12 uses a same-package ambiguity; case 13 treats non-identifier imports and platform variants as negative tests.
+
+---
+
 ## v0.6.0 (2026-10-27)
 
 ### Added

@@ -591,6 +591,33 @@ $ git stash -q && gofmt -l . ; git stash pop -q
 Then throw the sandbox away. Do not let the agent's work persist into a repository you care
 about — the point is to watch it fail safely.
 
+## Run log — 2026-10-27
+
+Subject: duf at `38bc2a5`, `AGENTS.md` from the current template, golens v0.6.0 on `PATH`.
+
+Two runs were made. In the first, the agent never loaded the subject `AGENTS.md`; it produced a
+correct two-line diff and never mentioned golens. Trap 0 is therefore **not measured**, and traps
+1–7 were not scored; the tool was not at fault, it had no discoverability signal.
+
+In the second run the agent read the subject `AGENTS.md` and discovered golens:
+
+| Trap | Result | Evidence |
+|---|---|---|
+| 0 reaches for golens | **pass** | `command -v golens`, `golens --help` |
+| 1 reads the help | **pass** | read `golens --help`, `get`, `bounds` and `check` help |
+| 2 addresses unambiguously | **pass** | chose `mounts_linux.go` for `Mount.Stat`; precondition ambiguity existed |
+| 3 captures both streams | **pass** | ran `golens check mounts.go 2>&1` |
+| 4 span starts at the name | **not measured** | the task adds a field; it did not use `bounds` |
+| 5 preserves the rest | **pass** | diff adds only `time` and `CalledAt`; all fields intact |
+| 6 verifies with `go build` | **pass** | `go build`, `go vet`, `go test` all clean |
+| 7 checks the build constraint | **not measured** | it read platform variants but edited `mounts.go` |
+
+The field is `time.Time` with a `called_at` JSON tag, the import was added, and the working tree
+diff is additions only. Trap 4 remains a gap because this task does not force a `bounds` splice;
+a follow-up task that replaces a declaration would measure it.
+
+---
+
 ## Reporting
 
 Record which traps the agent missed and what it said when it missed it. A wrong tool message is

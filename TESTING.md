@@ -103,9 +103,10 @@ than one type**, so case 12 is exercised for real rather than assumed — `get A
 
 Two results worth keeping:
 
-- **Case 11 over 524 files: the two renderings agree exactly** — 9,159 declarations at depth 1 and
-  14,139 at depth 2, human bullets against JSON nodes. This is the check that found the `--depth 1`
-  defect, and it holds at a scale the fixtures never reached.
+- **Case 11 over 530 files: the two renderings agree exactly** — 9,245 declarations at depth 1 and
+  14,974 at depth 2 at the time of the latest run, human bullets against JSON nodes. The absolute
+  numbers change with the checkout; equality is the assertion. This is the check that found the
+  `--depth 1` defect, and it holds at a scale the fixtures never reached.
 - **Case 13: zero diagnostics on 524 files that build clean**, with a positive control confirming
   the check still fires. Zero false positives is the direction that matters.
 
@@ -129,7 +130,7 @@ Before anything else, the two calls a caller tries first:
 
 ```console
 $ /tmp/golens --version
-$ /tmp/golens --help | head -5
+$ /tmp/golens --help | sed -n '1,50p'
 ```
 
 Look for: a version string, and a root help that names the four query commands plus `mcp`, with the exit codes.
@@ -210,8 +211,10 @@ $ grep -rl '//go:build' --include='*.go' . | head -3
 $ /tmp/golens outline <one-of-those-files>
 ```
 
-Look for: a clean parse. golens ignores build constraints entirely, so a Linux-only file parses
-fine on Linux.
+Look for: a clean parse, and the effective constraint in the header (`build:`; `buildable_now` in
+JSON). Structural commands list every file whatever its constraints; `check` uses the build set
+for duplicate detection. A Linux-only file parses fine on Linux, and `get` on a platform file says
+`Build:` instead of pretending it is live everywhere.
 
 Failure: a parse error on a file `go build` accepts.
 
@@ -238,6 +241,8 @@ $ /tmp/golens get <Type>.<Method> <file.go>      # e.g. Stack.Push
 
 Look for: the correct body, and a header showing the receiver. If the repository uses type
 parameters (`Stack[T]`), check the offsets carefully — this is the case most likely to break.
+k9s has generic functions but no generic method receiver; use the standard library instead:
+`/tmp/golens get Pointer.Store $GOROOT/src/sync/atomic/type.go`.
 
 Failure: a wrong span, or a parse error involving the receiver.
 
@@ -257,7 +262,9 @@ it must still appear, listed by its type, because a member with no name is still
 A function that outlines with no parameters when the source has two is the same omission
 class as a dropped embedded field.
 
-Failure: a field appearing at depth 1, or a field missing at depth 2.
+Failure: a field appearing at depth 1, or a field missing at depth 2. k9s has no embedded
+fields or unnamed parameters; use a small fixture such as `type S struct { Embedded; A int }`
+and `func F(context.Context, int) {}` to exercise those branches.
 
 ☐
 
@@ -270,6 +277,8 @@ $ /tmp/golens outline <each>
 ```
 
 Look for: clean parses. cgo files contain unusual comment blocks and `unsafe`-adjacent syntax.
+k9s has `go:embed` files but no cgo; use a standard-library cgo file such as
+`$GOROOT/src/cmd/nm/nm_test.go` or `cmd/compile/internal/types2/resolver.go` for that half.
 
 Failure: parse errors.
 
@@ -291,18 +300,22 @@ Failure: a multi-second parse, or wrong offsets on a large file.
 
 ## 10. The overwrite round trip — most important test
 
-Work on a **copy**, not the real repository.
+Work on a **copy of the repository**, not the real repository and not a single file copied out of
+it. A lone file in `/tmp` loses module-internal imports, so `go vet` then fails for a reason that
+has nothing to do with the splice.
 
 ```console
-$ cp <file.go> /tmp/test.go
-$ /tmp/golens bounds <Symbol> /tmp/test.go --json --compact
+$ cp -a /path/to/repo /tmp/rt && cd /tmp/rt
+$ /tmp/golens bounds <Symbol> <file.go> --json --compact
 ```
+
+Run `go vet ./...` from the copied module (or the affected package), not on a detached file.
 
 Note `start_byte` and `end_byte`. Replace exactly those bytes with your own text, using any
 editor or a script. Then verify:
 
 ```console
-$ gofmt -l /tmp/test.go && go vet /tmp/test.go && /tmp/golens outline /tmp/test.go | head -20
+$ gofmt -l <file.go> && go vet ./... && /tmp/golens outline <file.go> | head -20
 ```
 
 **Do the splice programmatically at least once, in binary.** An editor applies its own encoding and
@@ -312,11 +325,11 @@ exercises the offsets the way an agent actually uses them:
 ```console
 $ python3 - <<'EOF'
 import json, subprocess
-b = json.loads(subprocess.run(["/tmp/golens","bounds","SYMBOL","/tmp/test.go","--json"],
+b = json.loads(subprocess.run(["/tmp/golens","bounds","SYMBOL","<file.go>","--json"],
                               capture_output=True, text=True).stdout)
-raw = open("/tmp/test.go","rb").read()                    # bytes, not str
+raw = open("<file.go>","rb").read()                    # bytes, not str
 raw = raw[:b["start_byte"]] + b"NEW" + raw[b["end_byte"]:]
-open("/tmp/test.go","wb").write(raw)
+open("<file.go>","wb").write(raw)
 EOF
 ```
 
@@ -412,13 +425,18 @@ nothing satisfies "every JSON name appears in the human output" trivially, which
 
 ## 12. Ambiguous symbol
 
-Pick a method name that exists on two or more types.
+Pick a method name that exists on two or more types in **one package**.
 
 ```console
-$ /tmp/golens get <MethodName> <dir>; echo "exit=$?"
+$ /tmp/golens get Invert internal/config; echo "exit=$?"
 ```
 
-Look for: **exit 2**, both candidates listed on stderr, and stdout empty.
+Look for: **exit 2**, the candidates listed on stderr, and stdout empty. `Invert` has many
+implementations on style types in k9s; the point is that the tool refuses to guess.
+
+`get ActiveContext .` is a different case: k9s declares it in several packages, so the tool now
+reports a cross-package name and suggests `client.ActiveContext` rather than listing an
+ambiguity. That is correct, but it does not exercise this case.
 
 Failure: if it silently picks one, that is the wrong behaviour.
 
@@ -467,13 +485,14 @@ position is being discarded somewhere.
 
 ### Cross-check per platform, not just once
 
-`go build` compiles one file per build-tag combination. `golens check` parses **every** `.go`
-file in the tree, whatever its constraints. On a repository with platform files that is a
-different file set, so a clean `go build` does not clear the diagnostics. Build each platform:
+`go build` compiles one file per build-tag combination. `golens check` analyses the files a
+build could reach, but it models GOOS/GOARCH, cgo and only the tags supplied with `--tags`; a
+clean `go build` of one platform does not clear every diagnostic. Build each platform with cgo
+disabled so the host C toolchain does not decide the result:
 
 ```console
 $ for os in linux darwin windows freebsd openbsd; do
-      if out=$(GOOS=$os go build ./... 2>&1); then
+      if out=$(CGO_ENABLED=0 GOOS=$os go build ./... 2>&1); then
           echo "GOOS=$os: clean"
       else
           echo "GOOS=$os:"; echo "$out" | head -3
@@ -487,33 +506,40 @@ matter what the compiler said. Capture into a variable so `$?` belongs to the bu
 
 Now group the diagnostics by kind and check each against *some* platform's verdict.
 
-### Two false-positive classes to expect
+### Build-aware checks: what should now be silent
 
-**Redeclarations across mutually exclusive build tags.** If `isFuseFs` appears in
-`filesystems_linux.go`, `filesystems_darwin.go` and `filesystems_windows.go`, no build compiles
-two of them, so the compiler never reports a redeclaration. golens sees one package containing
-all three and does.
-
-**Unused imports whose path element is not a valid identifier.** golens derives an import's
-local name from the last path element, and cannot resolve the real package name — module
-resolution is out of scope. For `github.com/mattn/go-runewidth` that yields `go-runewidth`,
-which is not a Go identifier and never appears in the source, so a genuinely used import is
-reported as unused:
+**Redeclarations across mutually exclusive build tags are not conflicts.** If `isFuseFs` appears
+in `filesystems_linux.go`, `filesystems_darwin.go` and `filesystems_windows.go`, no build compiles
+two of them, so the compiler never reports a redeclaration. `check` evaluates filename, tag and
+cgo constraints and must stay silent. A diagnostic here is a regression. Use `--tags` when the
+project really builds with custom tags:
 
 ```console
-$ cat /tmp/dash.go <<'EOF'
-package dash
+$ printf '//go:build integration\n\npackage p\n\nfunc F() {}\n' > /tmp/impl/a_integration.go
+$ printf 'package p\n\nfunc F() {}\n' > /tmp/impl/b.go
+$ /tmp/golens check /tmp/impl; echo $?                    # 0: no tag -> one file
+$ /tmp/golens check --tags integration /tmp/impl; echo $? # 3: the tagged pair conflicts
+```
+
+**Non-identifier import paths are now silent.** golens derives an import's local name from the
+last path element, and cannot resolve the real package name — module resolution is out of scope.
+When that element is not a valid identifier (`go-runewidth`, `go-isatty`, `go-colorable`), the
+check stays silent rather than accusing a live import. This is a negative test: a diagnostic here
+is a regression, not a finding.
+
+```console
+$ cat > /tmp/dash.go <<'EOF'
+package p
 
 import "github.com/mattn/go-runewidth"
 
 func W(r rune) int { return runewidth.RuneWidth(r) }
 EOF
-$ /tmp/golens check /tmp/dash.go     # reports an import that is used on the last line
+$ /tmp/golens check /tmp/dash.go; echo $?   # 0 and no output
 ```
 
 The rule is that golens must **never falsely accuse an import that is in use**. When it cannot
-determine the name, silence is correct and a diagnostic is not. Affected paths are common:
-`mattn/go-isatty`, `mattn/go-colorable`, anything with a dash or a digit in the final element.
+determine the name, silence is correct.
 
 ### Positive control
 
@@ -532,8 +558,8 @@ A false accusation is not: it would have an agent delete working code.
 Failure: any diagnostic that no platform's compiler would report, or a false positive on a used
 import.
 
-**`testdata` is not an omission.** `check` does not walk `testdata` directories — the go tool
-ignores them, so no build reaches them, and a finding about a file no build compiles is not a
+**`testdata` and `_`-prefixed names are not omissions.** `check` does not walk them — the go tool
+ignores both, so no build reaches them, and a finding about a file no build compiles is not a
 finding about the source. If the target holds fixtures there, they are skipped by scope, not
 missed by analysis; confirm with `outline`, which still lists them.
 
@@ -787,8 +813,8 @@ pass here can be vacuous:
 $ /tmp/golens check $GOROOT/src 2>&1 | wc -l   # 0
 ```
 
-No `grep -v` needed: `testdata` directories are out of check's scope (see case 18), so the
-fixtures that used to force one are no longer read at all.
+No `grep -v` needed: `testdata` directories and `_`-prefixed names are out of check's scope
+(see case 18), so the fixtures that used to force one are no longer read at all.
 
 - **Filename suffixes.** `_windows`, `_amd64`, `_linux_amd64`. The name is read from the first
   underscore onward: `os/zero_copy_linux.go` is linux-only and `runtime/os_only_solaris.go` is
@@ -881,6 +907,41 @@ would reject, and no build reaches those directories, so its walk prunes them. N
 `testdata` file directly and it is still checked.
 
 ☐
+
+---
+
+## Run log — 2026-10-27
+
+Subject: k9s at `ac1bcc62`, Go 1.27.3, golens v0.6.0 (built from `3ca9799`). Preflight: 1 build-tag
+file, 4 generic declarations, 0 cgo, 2 `go:embed`, largest `internal/config/styles.go` (826 lines).
+
+| Case | Result |
+|---|---|
+| 1 smoke | pass; root help lists four query commands plus `mcp` |
+| 2 grep cross-check | pass; 3,928 funcs both sides, no golens-only entries |
+| 3 whole tree | pass; 530 files, 530 headers, byte order clean, no duplicates |
+| 4 build tags | pass; `helpers_unix_test.go` shows `build: unix` |
+| 5 get function | pass; `main` span 30 bytes, byte-for-byte |
+| 6 generic method | **k9s unexercised** (generic funcs, no generic receiver); pass on `sync/atomic.Pointer.Store` |
+| 7 depth 2 | k9s has no embedded/unnamed fixtures; pass on a temporary fixture |
+| 8 cgo/embed | embed files parse; cgo unexercised on k9s, pass on stdlib `cmd/nm/nm_test.go` |
+| 9 large file | pass; 826 lines, 2 ms outline, `Style` bounds exact |
+| 10 overwrite | pass in a repository copy; `SeverityLevel` replacement survives `gofmt`, vet and outline |
+| 11 JSON | pass; A6 payloads identical; depth counts 9,245 / 14,974 in both renderings |
+| 12 ambiguity | pass with `get Invert internal/config`; `ActiveContext` is cross-package, not same-package ambiguity |
+| 13 check audit | pass; `check .` 0, `go build` 0, positive control 3, dash import silent, deep position 12:1 |
+| 14 style | pass; no style output, `--naming` unknown, structural parse still 3 |
+| 15 determinism | pass; byte-identical runs and exit codes 2/2/1/4/0 |
+| 16 bytes vs chars | pass; binary splice intact, decoded-string splice produces the documented failure |
+| 17 implicit constraints | pass; filename and tag pairs clean, positive control 3, stdlib check 0 |
+| 18 partial tree | pass; outline exit 4 with 45/7,134 skipped, 7,089 headers, JSON valid; check 0 |
+
+v0.6 surface checks: `buildable_now` true/false, directory `bounds` A6, multi-target `check`,
+`--skip-testdata --skip-ignored` over `$GOROOT/src` exit 0, JSON error kinds, MCP four tools, and
+the root embedding tests all pass.
+
+Environment caveat: cross-builds with `CGO_ENABLED=0` are clean for linux/darwin/windows/freebsd;
+openbsd fails inside `containerd/v2/pkg/archive` (`unix.Lsetxattr`), not in k9s or golens.
 
 ---
 
