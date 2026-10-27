@@ -4,6 +4,21 @@ All notable changes to golens are documented in this file.
 
 ---
 
+## v0.5.0 (2026-10-27)
+
+### Added
+
+- `bounds` accepts a directory, resolving through the same search as `get`; A6's JSON equivalence now holds for directory targets.
+- `check` accepts several files or directories, de-duplicating and sorting the combined file set.
+- `--package-dir` on `get` and `bounds` resolves a symbol in one directory when two packages share a name.
+- CI tests current stable Go, runs the suite on macOS, cross-builds five targets, and a nightly workflow validates the standard library and runs longer fuzz campaigns.
+
+### Changed
+
+- Documentation drift is now tested: every JSON tag on a payload struct must appear in `documentation/json-schema.md`, and volatile test counts/binary sizes were removed from `AGENTS.md` and softened in the README.
+
+---
+
 ## v0.4.0 (2026-10-27)
 
 ### Added

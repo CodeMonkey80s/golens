@@ -116,12 +116,12 @@ seconds, and a missing one turns a trap into a silent pass:
 |---|--------|-----------------|
 | 0 | Reaches for golens at all | Builds the tool, then uses only `grep`, `sed` and `python` |
 | 1 | Reads `--help` before first use | Goes straight to `get` and guesses |
-| 2 | Addresses symbols unambiguously | Uses a bare method name against a directory, then treats the resulting exit 2 as the tool being broken instead of passing a file |
+| 2 | Addresses symbols unambiguously | Uses a bare method name against a directory, then treats the resulting exit 2 as the tool being broken instead of using Package.Symbol, --package-dir, or a file |
 | 3 | Validates what it changed | Edits a file and never checks it; or runs `check` without `2>&1` and reads the empty result as clean |
 | 4 | Replacement starts at the name | Splices `type Mount struct {...}` into a span beginning at `Mount`, producing `type type Mount struct` |
 | 5 | **Preserves what it did not mean to change** | Drops struct fields it did not notice. See below |
 | 6 | Verifies with `go build` | Trusts `check` exit 0 and calls the edit done |
-| 7 | Checks the build constraint | Edits a platform-specific file the current `GOOS` excludes, so plain `go build` passes on code that never compiled |
+| 7 | Checks the build constraint | Ignores the `Build:` line on `get` or the `build:` header on `outline` and edits a platform-specific file the current `GOOS` excludes, so plain `go build` passes on code that never compiled |
 
 **Trap 2 was reframed, and the reason is the template.** It used to ask whether the agent *handles*
 ambiguity — that `get Mount.Stat .` exits 2 and the agent adapts rather than declaring the tool

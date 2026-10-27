@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"go/parser"
 	"go/token"
 	"os"
@@ -482,4 +483,48 @@ func countLines(b []byte) int {
 		}
 	}
 	return n
+}
+
+// TestBoundsAcceptsDirectory covers the input widened in v0.4.0: bounds resolves through the
+// same search as get, so a directory target works and the A6 JSON payloads stay identical.
+func TestBoundsAcceptsDirectory(t *testing.T) {
+	dir := t.TempDir()
+	testfixture.Write(t, dir, "a.go", "package p\n\nfunc F() {}\n")
+
+	var buf bytes.Buffer
+	if err := usecase.Bounds(goast.New(), "F", dir, &buf, format.Options{JSON: true}); err != nil {
+		t.Fatalf("Bounds: %v", err)
+	}
+	var payload struct {
+		File      string `json:"file"`
+		StartByte int    `json:"start_byte"`
+		EndByte   int    `json:"end_byte"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
+		t.Fatalf("Unmarshal: %v\n%s", err, buf.String())
+	}
+	if !strings.HasSuffix(payload.File, "a.go") {
+		t.Errorf("file = %q, want a.go", payload.File)
+	}
+	if payload.StartByte >= payload.EndByte {
+		t.Errorf("empty span [%d,%d)", payload.StartByte, payload.EndByte)
+	}
+}
+
+// TestBoundsDirectoryReportsAmbiguity guards the other direction: widening the input must not
+// silently pick one of two declarations.
+func TestBoundsDirectoryReportsAmbiguity(t *testing.T) {
+	dir := t.TempDir()
+	testfixture.Write(t, dir, "a.go", "package p\n\nfunc F() {}\n")
+	testfixture.Write(t, dir, "b.go", "package p\n\nfunc F() {}\n")
+
+	var buf bytes.Buffer
+	err := usecase.Bounds(goast.New(), "F", dir, &buf, format.Options{})
+	var ambiguous usecase.AmbiguousSymbol
+	if !errors.As(err, &ambiguous) {
+		t.Fatalf("err = %T (%v), want AmbiguousSymbol", err, err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("bounds wrote a payload on an ambiguous target: %s", buf.String())
+	}
 }

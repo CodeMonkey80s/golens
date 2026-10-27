@@ -24,16 +24,15 @@ Feature-complete. There is no next session, and nothing is blocked.
 
 | Field | Value |
 |---|---|
-| Tests | 458 (incl. subtests), 6 packages with tests, all passing |
-| Test count by package | arch 6 · cli 111 · domain 15 · goast 59 · format 23 · usecase 244 |
-| Verify with | **`go test -count=1 ./...`** — see the caching trap below |
-| Toolchain | go1.24 floor (tested in CI); no `golang.org/x` dependencies, only cobra and its two indirects |
-| Binary | 5.36 MiB stripped, budget 15 MiB |
-| Parse budget | ~15 µs typical, ~263 µs largest file here (budget 5 ms P95) |
-| Lint | `golangci-lint run ./...` — 0 issues, includes `revive` `var-naming` |
-| Self-check | `golens check ./internal` and `./cmd` both exit 0 |
+| Tests | **`go test -count=1 ./...`** — see the caching trap below |
+| Test count | `go test -count=1 -v ./...`, counting `=== RUN` lines (do not hardcode it here) |
+| Toolchain | go1.24 floor, tested in CI; no `golang.org/x` dependencies, only cobra and its two indirects |
+| Binary | build stripped and compare with the 15 MiB budget below; CI prints the size |
+| Parse budget | `TestParseP95UnderBudget`; benchmark command below; budget 5 ms P95 |
+| Lint | `golangci-lint run ./...` — includes `revive` `var-naming` |
+| Self-check | `golens check ./internal ./cmd` exits 0 |
 | Fuzz | `FuzzOutline`, `FuzzGet`, `FuzzBounds`, `FuzzCheck`, `FuzzResolve`; 10 s each in CI |
-| Latest tag | `v0.4.0` — build-aware output, `check --tags`, JSON errors, release archives |
+| Latest tag | `git describe --tags`; the source states no release number |
 | Remote | `github.com/CodeMonkey80s/golens`, public; `go install ...@latest` verified working |
 
 v0.3.0 added package-qualified lookup (`get Package.Symbol`), dot-import detection, and the
@@ -48,9 +47,8 @@ several analyses. Reproduce with
 `go test -run XXX -bench . ./internal/usecase ./internal/engine/goast`; expect roughly ±20%
 run-to-run, so hold to the budget rather than to a single figure.
 
-The binary size is quoted stripped, in MiB, which is the unit CI prints and budgets in.
-`go install` produces 8.12 MiB — the same code without `-ldflags="-s -w"` — so do not read the
-two figures as a contradiction. Both clear the budget.
+The binary size is measured stripped, in MiB, which is the unit CI prints and budgets in. A
+`go install` binary is larger because it is not stripped; both forms clear the 15 MiB budget.
 
 **Tags from `v0.2.7` onward carry the injection fix.** `v0.1.0` predates it and is the one
 release that reports a number from the source; do not use it as evidence about current
@@ -347,7 +345,7 @@ criteria; this is which test pins each.
 | A6 | `get --bounds-only` ≡ `bounds` | `TestSpecBoundsOnlyMatchesBounds`, plus format and usecase level |
 | A7 | golens never reports style | `TestCheckDoesNotJudgeStyle`, `TestCheckAcrossFilesReportsNothingStructural` |
 | A8 | Parse < 5 ms P95 | `TestParseP95UnderBudget` |
-| A9 | Binary < 15 MiB | 5.36 MiB, gated in CI |
+| A9 | Binary < 15 MiB | gated in CI; the job prints the measured size |
 | A10 | No cgo | `TestNoCgoDependency` |
 | A11 | `domain`/`usecase` import nothing external | `internal/arch` |
 | A12 | 12 fixture classes | `TestFixtureClasses` |

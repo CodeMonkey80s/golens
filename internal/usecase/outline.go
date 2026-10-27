@@ -174,24 +174,6 @@ func skipDir(name string, pruneTestdata bool) bool {
 	return slices.Contains(skippedDirs, name)
 }
 
-// statFile validates that target is a single Go file, returning it unchanged.
-//
-// bounds accepts a file only; a directory is a usage error rather than a silent
-// cross-file search, which keeps its contract narrower than get's.
-func statFile(target string) (string, error) {
-	info, err := os.Stat(target)
-	if err != nil {
-		return "", NotFoundFile(target)
-	}
-	if info.IsDir() {
-		return "", errDirectoryNotAccepted(target)
-	}
-	if !strings.HasSuffix(target, ".go") {
-		return "", errNotGoFile(target)
-	}
-	return target, nil
-}
-
 // Outline renders the outline of every file in target.
 func Outline(engine domain.Engine, target string, depth int, w io.Writer, opts format.Options) error {
 	paths, err := Files(target)

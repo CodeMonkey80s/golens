@@ -187,6 +187,7 @@ partial payload already written by `outline` or `get` stays valid.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `schema_version` | integer | yes | Always `1` |
+| `error` | object | yes | Error detail; see the fields below |
 | `error.kind` | string | yes | `not_found`, `ambiguous`, `usage`, or `parse_or_io` |
 | `error.message` | string | yes | Human-readable detail |
 | `error.exit_code` | integer | yes | The process exit code |

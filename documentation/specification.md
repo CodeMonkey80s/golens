@@ -164,6 +164,8 @@ golens get <symbol> <file|dir> [flags]
 **Flags**
 
 - `--bounds-only`: Excludes source code text; returns only line ranges and byte offsets.
+- `--package-dir <dir>`: Resolves the symbol only in this directory. It exists for the case a
+  package-qualified name cannot solve: two directories both declaring `package util`.
 - `--json`: Returns a structured JSON object.
 
 **Offsets are half-open.** `start_byte` is the first byte of the symbol and `end_byte` is one past its last byte, so `file[start_byte:end_byte]` is exactly the extracted source. Line numbers are inclusive at both ends, matching the `(9 lines)` count in the example below. The span is derived purely from the AST node, so the terminating newline is excluded and an overwrite of `[start_byte, end_byte)` preserves line structure. When `--bounds-only` is combined with `--json`, the payload is identical to `golens bounds`.
@@ -179,6 +181,8 @@ golens get <symbol> <file|dir> [flags]
 **Package-qualified lookup.** A query of the form `Package.Symbol` resolves `Symbol` in the named package. This is distinct from `Type.Method`, which selects a method within a type. The package name must match a package that was parsed in the search. If the package exists but the symbol does not, the run exits `2` naming the package and symbol. If the symbol is ambiguous within the package (multiple declarations), it exits `2` with the candidate list. A bare name that resolves in more than one package is still reported as cross-package, not as package-qualified ambiguity.
 
 A qualified name (`Type.Method`) selects a method within a type and cannot select a package. A package name cannot be used as a type name in a qualified lookup — when the first segment matches both a package and a type, `Type.Method` is tried first and package-qualified lookup applies only if it finds nothing. `TestAdversarialTypeMethodBeatsPackageQualified` pins this.
+
+When two directories in the search both declare the same package name, `Package.Symbol` is ambiguous. `--package-dir` narrows the search to one directory and resolves the same query.
 
 **Unparseable files in the search.** A file that does not parse is skipped rather than fatal, exactly as for `outline`. The symbol is resolved from the files that did parse, and the skipped files are named on stderr with the run still exiting `4` — the answer was found, but the search that produced it was incomplete, and exit `0` would claim otherwise. When the symbol resolves nowhere, the run still exits `2`, and the message says how many files could not be parsed: "not found" from a partial search is not the same answer as "not found" from a complete one, and the declaration may sit in a file that would not parse. Pointed at a single broken file there is nothing to salvage, so the parse error alone is the answer.
 
@@ -206,16 +210,17 @@ Calculates precise byte offsets and line bounds for targeted programmatic edits.
 **Usage**
 
 ```bash
-golens bounds <symbol> <file> [flags]
+golens bounds <symbol> <file|dir> [flags]
 ```
 
 **Flags**
 
 - `--json`: (Default behavior implicitly) Returns byte offsets.
+- `--package-dir <dir>`: Resolves the symbol only in this directory, as for `get`.
 
-**Human output.** `golens bounds <symbol> <file>` prints a single line: `UserStore.GetUser  lines 17-25  bytes 430-612`.
+**Human output.** `golens bounds <symbol> <file|dir>` prints a single line: `UserStore.GetUser  lines 17-25  bytes 430-612`.
 
-**Input.** Accepts a file only. Passing a directory is a usage error (exit `1`).
+**Input.** Accepts a file or a directory. A directory resolves the symbol through the same search as `get`; an ambiguous or missing name exits `2`, and an unparseable file in a directory makes the run exit `4` while still reporting a resolved span.
 
 **Offsets are half-open.** Byte offsets follow the same half-open convention as `golens get`: `[start_byte, end_byte)`. `end_line` is derived from `end_byte - 1` rather than from the AST end position, so a declaration ending at column 1 of the following line reports the correct line.
 
@@ -243,8 +248,11 @@ Validates source file syntax and detects unused imports and duplicate declaratio
 **Usage**
 
 ```bash
-golens check <file|dir> [flags]
+golens check <file|dir>... [flags]
 ```
+
+Several targets are accepted. Their file sets are de-duplicated and sorted before analysis, so
+overlapping targets do not repeat a diagnostic and argument order does not affect output.
 
 **Flags**
 

@@ -85,7 +85,11 @@ returns Base.Lock. golens resolves declarations, not the method set.
 A directory may hold package p beside an external test package p_test, and
 both may declare the same name without either redeclaring it. That exits 2
 as well, but it is reported as a name found in two packages rather than as
-an ambiguity, because there is no duplicate to fix. Pass the file.
+an ambiguity, because there is no duplicate to fix. Use p.Name to select one
+package, or pass the file.
+
+When two directories share a package name, --package-dir narrows the search
+to one directory; without it the package-qualified form is ambiguous.
 
 A file that does not parse is skipped, exactly as for outline. The symbol is
 resolved from the files that did parse, the skipped ones are named on stderr,
@@ -97,17 +101,22 @@ is nothing to salvage and the parse error is the whole answer.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			boundsOnly, _ := cmd.Flags().GetBool("bounds-only")
-			return usecase.Get(env.Engine, args[0], args[1], !boundsOnly, env.Stdout, flagOptions(cmd))
+			target := args[1]
+			if dir, _ := cmd.Flags().GetString("package-dir"); dir != "" {
+				target = dir
+			}
+			return usecase.Get(env.Engine, args[0], target, !boundsOnly, env.Stdout, flagOptions(cmd))
 		},
 	}
 
 	cmd.Flags().Bool("bounds-only", false, "omit source text; return only line ranges and byte offsets")
+	cmd.Flags().String("package-dir", "", "resolve the symbol only in this directory (useful when packages share a name)")
 	return cmd
 }
 
 func newBoundsCmd(env Env) *cobra.Command {
-	return &cobra.Command{
-		Use:   "bounds <symbol> <file>",
+	cmd := &cobra.Command{
+		Use:   "bounds <symbol> <file|dir>",
 		Short: "Calculate precise byte offsets and line bounds for targeted edits",
 		Long: `Calculate precise byte offsets and line bounds for targeted edits.
 
@@ -117,6 +126,8 @@ func newBoundsCmd(env Env) *cobra.Command {
   Edit    your replacement text must start at the name too
   Miss    symbol not found OR ambiguous -- both exit 2
   Parse   a file that does not parse exits 4 with the error on stderr
+  Search  a directory resolves the symbol across its packages, as get does
+  Filter  --package-dir limits the search when two packages share a name
 
   type User struct { ... }      bounds start at "User",  "type" is outside
   func NewUser() *User { ... }  bounds start at "func"
@@ -151,14 +162,21 @@ To edit safely: take the text "golens get" returned for the same symbol and writ
 it back.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return usecase.Bounds(env.Engine, args[0], args[1], env.Stdout, flagOptions(cmd))
+			target := args[1]
+			if dir, _ := cmd.Flags().GetString("package-dir"); dir != "" {
+				target = dir
+			}
+			return usecase.Bounds(env.Engine, args[0], target, env.Stdout, flagOptions(cmd))
 		},
 	}
+
+	cmd.Flags().String("package-dir", "", "resolve the symbol only in this directory (useful when packages share a name)")
+	return cmd
 }
 
 func newCheckCmd(env Env) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "check <file|dir>",
+		Use:   "check <file|dir>...",
 		Short: "Validate source syntax and detect unused imports or duplicate declarations",
 		Long: `Validate source syntax and detect unused imports or duplicate declarations.
 
@@ -170,6 +188,7 @@ func newCheckCmd(env Env) *cobra.Command {
   Tags     --tags integration matches "go build -tags integration"
   Limits   unused-import check is best-effort
   Scope    testdata directories are not walked; name a file to check it
+  Multi    several targets are de-duplicated and checked in one sorted run
 
 Exit 3 and exit 4 are different questions. 3 is about the source: fix the
 syntax, the import or the redeclaration. 4 is about the machine: a dangling
@@ -201,10 +220,10 @@ Check reports structural faults only. It does not judge style: no naming
 convention, no formatting, no idiom. A linter is the tool for that, and it is
 something a caller chooses to run rather than something they inherit by asking
 a structural question.`,
-		Args: cobra.ExactArgs(1),
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			tags, _ := cmd.Flags().GetStringSlice("tags")
-			return usecase.CheckWithOptions(env.Engine, args[0], usecase.CheckOptions{Tags: tags}, env.Stdout, env.Stderr, flagOptions(cmd))
+			return usecase.CheckTargetsWithOptions(env.Engine, args, usecase.CheckOptions{Tags: tags}, env.Stdout, env.Stderr, flagOptions(cmd))
 		},
 	}
 

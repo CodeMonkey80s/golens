@@ -6,12 +6,12 @@ edit using byte-accurate bounds.
 ```
 golens outline <file|dir>       structural hierarchy map
 golens get <symbol> <file|dir>  exact source of one symbol
-golens bounds <symbol> <file>   byte and line offsets for an edit
-golens check <file|dir>         fast syntax and namespace validation
+golens bounds <symbol> <file|dir> byte and line offsets for an edit
+golens check <file|dir>...      fast syntax and namespace validation
 ```
 
-Pure Go, no cgo, no daemon, no index. One binary, 5.36 MiB stripped (`-ldflags="-s -w"`), parses a
-typical file in about 15 µs and the largest file in this repository in about 263 µs.
+Pure Go, no cgo, no daemon, no index. One binary, about 5.4 MiB stripped (`-ldflags="-s -w"`), parses a typical file in tens of
+microseconds.
 
 ---
 
@@ -120,8 +120,7 @@ Tagged releases also attach `linux`, `darwin` and `windows` archives for `amd64`
 
 Requires the Go version in `go.mod` (currently 1.24). Builds with `CGO_ENABLED=0`.
 
-The `go install` binary is 8.12 MiB because it is not stripped; the 5.36 MiB figure quoted
-elsewhere is the `-ldflags="-s -w"` build above. Both are inside the 15 MiB budget.
+A `go install` binary is larger because it is not stripped; both forms are inside the 15 MiB budget.
 
 ### Version
 
@@ -217,6 +216,7 @@ The exact source of one declaration.
 | Flag | Effect |
 |---|---|
 | `--bounds-only` | Omit the source, return only ranges and offsets |
+| `--package-dir` | Resolve only in this directory; useful when two packages share a name |
 | `--json`, `--compact` | As above |
 
 Symbols may be a bare name (`Check`) or qualified for methods (`UserStore.GetUser`). Both
@@ -250,11 +250,11 @@ from the files that did parse, the skipped ones are named on stderr, and the run
 claim otherwise. A symbol that resolves nowhere still exits `2`, and says how many files could not
 be parsed, because it may be sitting in one of them.
 
-### `bounds <symbol> <file>`
+### `bounds <symbol> <file|dir>`
 
-Byte and line offsets for an edit. Accepts a single file only; a directory is a usage error.
+Byte and line offsets for an edit. A directory resolves the symbol through the same search as `get`; the JSON payload is identical to `get --bounds-only --json`. The `--package-dir` flag narrows the search when two packages share a name.
 
-### `check <file|dir>`
+### `check <file|dir>...`
 
 Fast validation — no type checker, no module resolution.
 
@@ -263,7 +263,8 @@ Fast validation — no type checker, no module resolution.
 | `--json`, `--compact` | As above |
 | `--tags` | Custom build tags, as in `go build -tags`; a file guarded by one participates in duplicate detection |
 
-`check` reports structural faults only. It does not judge style: no naming convention, no
+`check` accepts several files or directories in one run; they are de-duplicated and sorted, so
+overlapping targets do not repeat a diagnostic. `check` reports structural faults only. It does not judge style: no naming convention, no
 formatting, no idiom. Those belong to a linter, which is something a caller opts into rather
 than something they inherit by asking a structural question.
 
@@ -451,7 +452,7 @@ $ go build -ldflags "-s -w -X github.com/CodeMonkey80s/golens/internal/cli.Versi
 Cut one by tagging the commit and pushing the tag. Nothing in the source changes, so there is
 nothing to remember to bump.
 
-`golens check ./internal` and `./cmd` both exit 0 on this repository. The tool checks itself in CI,
+`golens check ./internal ./cmd` exits 0 on this repository. The tool checks itself in CI,
 which is how a false positive in its namespace check was caught.
 
 `golangci-lint` runs in CI too. Among the rules it enforces is `revive`'s `var-naming`, which
@@ -486,8 +487,8 @@ will differ on yours.
 
 | Budget | Measured here |
 |---|---|
-| Read + parse, single file — 5 ms P95 | ~15 µs typical, ~263 µs on the largest file in this repo |
-| Binary — 15 MiB | 5.36 MiB stripped (`-ldflags="-s -w"`) |
+| Read + parse, single file — 5 ms P95 | measured by the benchmark below |
+| Binary — 15 MiB | about 5.4 MiB stripped (`-ldflags="-s -w"`) |
 
 Reproduce with `go test -run XXX -bench Parse -benchtime 500x ./internal/engine/goast`. Expect
 run-to-run variation of roughly ±20%, so treat a single figure as indicative and the budget as the

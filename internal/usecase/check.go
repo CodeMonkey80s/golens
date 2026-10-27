@@ -53,7 +53,7 @@ func (HasDiagnostics) Error() string { return "diagnostics found" }
 // IsDiagnostics marks the error for exit 3.
 func (HasDiagnostics) IsDiagnostics() bool { return true }
 
-// Check validates the target and writes diagnostics to stderr, or the JSON payload to
+// Check validates one target and writes diagnostics to stderr, or the JSON payload to
 // stdout when --json is set.
 //
 // It is CheckWithOptions without custom build tags. Callers that model a tagged build (for
@@ -80,12 +80,30 @@ type CheckOptions struct {
 
 // CheckWithOptions is Check with an explicit build context.
 func CheckWithOptions(engine domain.Engine, target string, checkOpts CheckOptions, stdout, stderr io.Writer, opts format.Options) error {
-	paths, err := checkFiles(target)
+	return CheckTargetsWithOptions(engine, []string{target}, checkOpts, stdout, stderr, opts)
+}
+
+// CheckTargets validates several files or directories in one run.
+//
+// Paths are de-duplicated and globally sorted, so overlapping targets cannot produce the same
+// diagnostic twice and the output does not depend on argument order. A target that cannot be
+// read aborts before analysis: reporting diagnostics from half the request while silently
+// dropping the rest would make the exit code a claim the run cannot support.
+func CheckTargets(engine domain.Engine, targets []string, stdout, stderr io.Writer, opts format.Options) error {
+	return CheckTargetsWithOptions(engine, targets, CheckOptions{}, stdout, stderr, opts)
+}
+
+// CheckTargetsWithOptions is CheckTargets with an explicit build context.
+func CheckTargetsWithOptions(engine domain.Engine, targets []string, checkOpts CheckOptions, stdout, stderr io.Writer, opts format.Options) error {
+	paths, err := checkFilesForTargets(targets)
 	if err != nil {
 		return err
 	}
 	if len(paths) == 0 {
-		return errNoGoFiles(target)
+		if len(targets) == 1 {
+			return errNoGoFiles(targets[0])
+		}
+		return errNoGoFiles(strings.Join(targets, ", "))
 	}
 
 	pkg := packageSymbols{tags: tagSet(checkOpts.Tags)}
@@ -149,6 +167,32 @@ func CheckWithOptions(engine domain.Engine, target string, checkOpts CheckOption
 		return UnreadableFilesError{Count: len(unreadable), Total: len(paths), Quiet: opts.JSON}
 	}
 	return emitErr
+}
+
+// checkFilesForTargets collects the file set for one or more targets.
+//
+// checkFiles already returns each target's files sorted; the combined set is sorted again so
+// that `check ./b ./a` and `check ./a ./b` produce identical output. De-duplicating matters when
+// a caller names a file and its directory, or two overlapping trees.
+func checkFilesForTargets(targets []string) ([]string, error) {
+	seen := make(map[string]bool)
+	var paths []string
+
+	for _, target := range targets {
+		found, err := checkFiles(target)
+		if err != nil {
+			return nil, err
+		}
+		for _, path := range found {
+			if seen[path] {
+				continue
+			}
+			seen[path] = true
+			paths = append(paths, path)
+		}
+	}
+	sort.Strings(paths)
+	return paths, nil
 }
 
 // analyse runs the per-document checks. Package-level symbols are handed to pkg, which owns

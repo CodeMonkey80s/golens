@@ -129,8 +129,7 @@ jobs:
       # convention rather than following it.
       - name: golens on its own source
         run: |
-          ./golens check ./internal
-          ./golens check ./cmd
+          ./golens check ./internal ./cmd
 
           version=$(./golens --version)
           echo "version: $version"
@@ -177,3 +176,56 @@ jobs:
           cache: true
       - run: go test -count=1 ./...
       - run: go vet ./...
+
+  # The floor is what verify installs from go.mod. This job tests the current stable
+  # toolchain so a language or standard-library change that breaks newer Go is caught
+  # before a release, without making every PR run the whole matrix.
+  latest:
+    name: latest-go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+      - run: go test -count=1 ./...
+
+  # macOS exercises the path and symlink handling that Linux CI cannot. Windows tests
+  # are not run because creating symlinks there needs privileges the runner does not
+  # reliably grant; the cross-build job covers compilation.
+  macos:
+    name: macos
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test -count=1 ./...
+      - run: go vet ./...
+
+  cross-build:
+    name: cross-build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build
+        env:
+          GOOS: ${{ matrix.target.goos }}
+          GOARCH: ${{ matrix.target.goarch }}
+          CGO_ENABLED: "0"
+        run: go build ./...

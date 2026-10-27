@@ -15,16 +15,6 @@ func (e errNotGoFile) Error() string {
 // IsUsage marks the error as a usage mistake, so the CLI exits 1 rather than 4.
 func (e errNotGoFile) IsUsage() bool { return true }
 
-// errDirectoryNotAccepted reports a directory passed to a command that takes a file only.
-type errDirectoryNotAccepted string
-
-func (e errDirectoryNotAccepted) Error() string {
-	return fmt.Sprintf("%s is a directory; this command accepts a single file", string(e))
-}
-
-// IsUsage marks the error as a usage mistake, so the CLI exits 1.
-func (e errDirectoryNotAccepted) IsUsage() bool { return true }
-
 // errNoGoFiles reports a directory containing no Go sources.
 type errNoGoFiles string
 

@@ -104,7 +104,6 @@ func TestExitCodes(t *testing.T) {
 		// symbol: both mean the caller named something absent. Exit 4 is reserved for a
 		// file that exists but cannot be parsed.
 		{"missing file", []string{"outline", missing}, 2},
-		{"bounds on directory", []string{"bounds", "GetUser", dir}, 1},
 		{"check finds diagnostics", []string{"check", unused}, 3},
 		// The directory holds a broken file, so the outline is incomplete and the run still
 		// fails. What it must not do is hide the parseable files.

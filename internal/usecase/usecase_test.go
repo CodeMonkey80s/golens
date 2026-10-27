@@ -255,21 +255,6 @@ func TestResolveNotFound(t *testing.T) {
 	}
 }
 
-// TestBoundsRejectsDirectory covers decision D18: bounds takes a file only.
-func TestBoundsRejectsDirectory(t *testing.T) {
-	dir := t.TempDir()
-	write(t, dir, "user.go", userGo)
-
-	err := Bounds(engine(), "GetUser", dir, &bytes.Buffer{}, format.Options{})
-	if err == nil {
-		t.Fatal("expected usage error for directory")
-	}
-	var usage interface{ IsUsage() bool }
-	if !asUsage(err, &usage) {
-		t.Errorf("expected usage error, got %v", err)
-	}
-}
-
 func TestGetAcrossDirectory(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "user.go", "package p\n\nfunc Alpha() {}\n")

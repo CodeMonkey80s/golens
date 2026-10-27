@@ -33,7 +33,7 @@ the choice is the one that cannot be misread and cannot silently corrupt a file.
 | D15 | Comments are not parsed in v0.1 | Cheaper, matches every spec example, no output change. |
 | D16 | `get --bounds-only` and `bounds` share one code path | Eliminates two payload shapes drifting apart. |
 | D17 | Ambiguous symbol → exit 2 with candidates; bare method names allowed if unique | Better ergonomics than hard failure, still deterministic. |
-| D18 | `bounds` accepts a file only | §2.3 specifies `<file>`; do not widen the contract silently. |
+| D18 | `bounds` accepts a file only | Superseded by D35: a directory now resolves through the same search as `get`. |
 | D19 | Directory inputs parse files concurrently, bounded by GOMAXPROCS | Single-file latency budget is per-file; dirs are where wall-clock hurts agents. |
 | D20 | Clean package layout enforced by import direction | §3.1 requires decoupling; layout is what makes it real. |
 | D21 | A file's build set is name ∧ tag ∧ cgo, over the 47 real GOOS/GOARCH pairs | 70,854 false positives on the standard library until all three were modelled |
@@ -773,10 +773,10 @@ didn't catch them, and the lessons per session — see `history.md`.
 
 ### 5.4 §2.3 `golens bounds`
 
-> **Human output.** `golens bounds <symbol> <file>` prints a single line:
+> **Human output.** `golens bounds <symbol> <file|dir>` prints a single line:
 > `UserStore.GetUser  lines 17-25  bytes 430-612`.
 >
-> **Input.** Accepts a file only. Passing a directory is a usage error (`1`).
+> **Input.** Accepts a file or a directory. `D35` widens the original file-only contract.
 
 ### 5.5 §2.4 `golens check`
 
@@ -858,6 +858,20 @@ The resolution policy is annotation, not filtering. A symbol in a platform-exclu
 still a fact about the tree, so `get` returns it and says `build: windows`; ambiguity candidates
 carry `[build: ...]` markers. Silently preferring the current platform would hide a declaration
 the caller may have asked for.
+
+---
+
+### D35 · `bounds` accepts a directory, because A6 says it does
+
+D18 narrowed `bounds` to a file to keep its contract smaller than `get`'s. That was defensible
+before A6 was read carefully: A6 says `get --bounds-only` and `bounds` emit the identical JSON
+payload. With a directory target, `get --bounds-only` resolved and `bounds` exited 1, so the
+equivalence held only for the input nobody was comparing.
+
+`Bounds` now calls the same `Resolve` as `Get` and reports `sym.File` in the payload. A directory
+target therefore resolves, an ambiguous name exits 2, and a broken neighbour produces the span
+and exit 4 exactly as `get` does. `TestSpecBoundsAcceptsDirectory` compares the two JSON payloads;
+`TestBoundsDirectoryReportsAmbiguity` guards against silently picking one declaration.
 
 ---
 

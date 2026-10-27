@@ -307,25 +307,21 @@ func Get(engine domain.Engine, name, target string, includeSource bool, w io.Wri
 
 // Bounds reports the byte and line span of a single symbol without its source.
 //
-// The target must be a file: passing a directory is a usage error, per decision D18. That
-// narrows the skipping above to the single-file case, where a parse failure leaves nothing
-// to report a span for and is returned as-is by Resolve.
+// The target may be a file or a directory, exactly as for Get. Resolution therefore goes
+// through the same search, and the A6 payload equivalence holds for directory targets too:
+// `get --bounds-only --json` and `bounds --json` are byte-identical.
 func Bounds(engine domain.Engine, name, target string, w io.Writer, opts format.Options) error {
-	info, err := statFile(target)
+	sym, _, skipped, err := Resolve(engine, name, target)
 	if err != nil {
 		return err
 	}
 
-	sym, _, skipped, err := Resolve(engine, name, info)
-	if err != nil {
-		return err
-	}
-
+	file := filepath.ToSlash(sym.File)
 	var writeErr error
 	if opts.JSON {
-		writeErr = format.WriteJSON(w, format.Bounds(sym, filepath.ToSlash(target)), opts.Compact)
+		writeErr = format.WriteJSON(w, format.Bounds(sym, file), opts.Compact)
 	} else {
-		writeErr = format.WriteBoundsHuman(w, sym, filepath.ToSlash(target), opts.Compact)
+		writeErr = format.WriteBoundsHuman(w, sym, file, opts.Compact)
 	}
 	if writeErr != nil {
 		return writeErr

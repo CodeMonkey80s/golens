@@ -44,7 +44,6 @@ func TestSpecExitCodeTable(t *testing.T) {
 		{1, "usage: missing argument", []string{"outline"}},
 		{1, "usage: too many arguments", []string{"bounds", "a", "b", "c"}},
 		{1, "usage: unknown flag", []string{"outline", good, "--nope"}},
-		{1, "usage: bounds on a directory", []string{"bounds", "F", dir}},
 
 		{2, "not found: unknown symbol", []string{"get", "Missing", good}},
 		{2, "not found: missing file", []string{"outline", filepath.Join(dir, "nope.go")}},
@@ -195,20 +194,29 @@ func TestSpecBoundsOnlyMatchesBounds(t *testing.T) {
 	}
 }
 
-// TestSpecBoundsAcceptsFileOnly verifies the input clause in specification 2.3: a directory is a
-// usage error, exit 1.
-func TestSpecBoundsAcceptsFileOnly(t *testing.T) {
+// TestSpecBoundsAcceptsDirectory verifies the input clause in specification 2.3: a directory
+// resolves the symbol through the same search as get, and the JSON payloads stay identical.
+func TestSpecBoundsAcceptsDirectory(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "p.go"), []byte("package p\n\nfunc F() {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	_, stderr, code := run(t, "bounds", "F", dir)
-	if code != 1 {
-		t.Errorf("exit = %d, spec says a directory is a usage error (1)", code)
+	stdout, stderr, code := run(t, "bounds", "F", dir)
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 (stderr: %s)", code, stderr)
 	}
-	if !strings.Contains(stderr, "directory") {
-		t.Errorf("stderr should explain the problem:\n%s", stderr)
+	if !strings.Contains(stdout, "bytes") {
+		t.Errorf("bounds output does not carry a byte range:\n%s", stdout)
+	}
+
+	getJSON, _, getCode := run(t, "get", "F", dir, "--bounds-only", "--json")
+	boundsJSON, _, boundsCode := run(t, "bounds", "F", dir, "--json")
+	if getCode != 0 || boundsCode != 0 {
+		t.Fatalf("exit codes: get=%d bounds=%d", getCode, boundsCode)
+	}
+	if getJSON != boundsJSON {
+		t.Errorf("A6 says the payloads are identical.\nget:\n%s\nbounds:\n%s", getJSON, boundsJSON)
 	}
 }
 

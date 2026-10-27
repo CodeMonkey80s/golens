@@ -1,0 +1,72 @@
+name: nightly
+
+# The standard library is a broad real-world target: 8,000+ files, every platform suffix,
+# cgo, build tags and one intentionally unparseable compiler fixture. It is too slow for a
+# PR but catches regressions the unit tests and containerd sample miss.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stdlib:
+    name: stdlib
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Build golens
+        run: CGO_ENABLED=0 go build -o golens ./cmd/golens
+
+      - name: Check the standard library
+        run: ./golens check "$(go env GOROOT)/src"
+
+      # outline is expected to exit 4: the standard library contains one compiler fixture
+      # written to be unparseable. What matters is that every other file is still emitted
+      # and the partial JSON payload stays valid.
+      - name: Outline must be partial but valid
+        run: |
+          set +e
+          ./golens outline "$(go env GOROOT)/src" --json --compact > /tmp/stdlib-outline.json
+          code=$?
+          set -e
+          if [ "$code" -ne 4 ]; then
+            echo "outline exit = $code, want 4 (partial output on an unparseable fixture)"
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json
+          with open('/tmp/stdlib-outline.json', encoding='utf-8') as f:
+              files = json.load(f)
+          if not isinstance(files, list) or not files:
+              raise SystemExit('outline emitted no files')
+          print(f'outline files: {len(files)}')
+          PY
+
+  fuzz:
+    name: fuzz-${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - FuzzOutline
+          - FuzzGet
+          - FuzzBounds
+          - FuzzCheck
+          - FuzzResolve
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Fuzz for two minutes
+        run: go test -run '^$' -fuzz ${{ matrix.target }} -fuzztime 2m -parallel 4 ./internal/usecase

@@ -3,8 +3,9 @@
 golens runs CI on every push and pull request to `main`. This document describes the jobs,
 the gates that matter, and how to reproduce a run locally.
 
-CI installs the Go version in `go.mod` (currently the 1.24 floor), so the floor is tested rather
-than assumed. Release archives are built by the separate tag-triggered workflow described below.
+CI installs the Go version in `go.mod` (currently the 1.24 floor) and also tests current stable,
+so both ends of the range are tested rather than assumed. Release archives are built by the
+separate tag-triggered workflow described below.
 
 ---
 
@@ -23,7 +24,7 @@ Runs on `ubuntu-latest`. Steps, in order:
 | **Check formatting** | `gofmt -l .` must print nothing |
 | **Lint** | `golangci-lint` with bug-detection and formatter rules |
 | **Build and check the size budget** | Build with `CGO_ENABLED=0`, verify binary &lt; 15 MiB and no cgo dependency |
-| **golens on its own source** | `./golens check ./internal` and `./golens check ./cmd` both exit 0 |
+| **golens on its own source** | `./golens check ./internal ./cmd` exits 0 |
 | **golens on containerd** | `./golens check /tmp/containerd` exits 0, at a pinned commit |
 | **Upload the binary** | Uploads the built binary as an artifact |
 
@@ -31,6 +32,33 @@ Runs on `ubuntu-latest`. Steps, in order:
 
 Runs on `ubuntu-latest`: `go test -count=1 ./...` and `go vet ./...`. It exists so a
 contributor gets a fast answer without waiting for the race detector, fuzzing and size checks.
+
+### `latest-go`
+
+Runs the test suite on the current stable Go toolchain. `verify` installs the `go.mod` floor, so
+this is the other end of the compatibility range.
+
+### `macos`
+
+Runs `go test` and `go vet` on `macos-latest`. It covers path and symlink behaviour that Linux
+cannot; Windows tests are omitted because creating symlinks there needs privileges the runner
+does not reliably grant.
+
+### `cross-build`
+
+Builds `./...` for linux/arm64, darwin/amd64, darwin/arm64, windows/amd64 and windows/arm64 with
+`CGO_ENABLED=0`. Compilation only: runtime coverage stays on Linux and macOS.
+
+### Nightly
+
+`.github/workflows/nightly.yml` runs on a schedule and on demand:
+
+- `golens check "$(go env GOROOT)/src"` must exit 0.
+- `outline` on the standard library must exit 4 — some compiler fixtures are intentionally
+  unparseable — while its stdout remains a valid partial JSON array.
+- Each fuzz target runs for two minutes.
+
+The standard library is too slow for a PR but is the broadest real-world target available.
 
 ---
 
@@ -54,12 +82,12 @@ checks its size, and verifies no cgo dependency via `go list -deps | grep runtim
 
 ### Self-check
 
-`./golens check ./internal` and `./golens check ./cmd` must each exit 0. A checker that cannot be
-run on its own codebase is not trustworthy — this is how the namespace check's false positive on
-external test packages was caught.
+`./golens check ./internal ./cmd` must exit 0. A checker that cannot be run on its own codebase is
+not trustworthy — this is how the namespace check's false positive on external test packages was
+caught.
 
-`check` accepts exactly one path, which is why CI runs two commands rather than one. Passing
-both paths in one invocation exits 1 with `accepts 1 arg(s), received 2`.
+`check` accepts multiple paths, de-duplicates them and sorts the combined file set, so the CI
+invocation and a local one produce the same diagnostics regardless of argument order.
 
 ### Real-world validation
 
@@ -127,7 +155,6 @@ export CGO_ENABLED=0
 go build -ldflags="-s -w" -o golens ./cmd/golens
 # Verify binary < 15 MiB and no cgo dependency
 
-# Self-check (one path per invocation)
-./golens check ./internal
-./golens check ./cmd
+# Self-check
+./golens check ./internal ./cmd
 ```
