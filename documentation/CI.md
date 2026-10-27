@@ -53,10 +53,13 @@ Builds `./...` for linux/arm64, darwin/amd64, darwin/arm64, windows/amd64 and wi
 
 `.github/workflows/nightly.yml` runs on a schedule and on demand:
 
-- `golens check "$(go env GOROOT)/src"` must exit 0.
+- `go build std` must succeed, providing the compiler baseline.
+- `golens check "$(go env GOROOT)/src"` must exit 0 on that clean build.
 - `outline` on the standard library must exit 4 — some compiler fixtures are intentionally
   unparseable — while its stdout remains a valid partial JSON array.
 - Each fuzz target runs for two minutes.
+- A pinned k9s commit is compiled and then checked: `go build ./...` and `golens check .` must both
+  be clean. This is the second real-world target alongside containerd.
 
 The standard library is too slow for a PR but is the broadest real-world target available.
 

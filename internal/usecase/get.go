@@ -123,6 +123,17 @@ func ResolveWithOptions(engine domain.Engine, name, target string, resolveOpts R
 		if len(packages) > 1 {
 			return domain.Symbol{}, domain.Document{}, skipped, crossPackage(name, matches, packages)
 		}
+		// A package-level declaration and a method may share a name (type Symbol and
+		// func (d Document) Symbol are legal). In Go the method name is not in package
+		// scope, so the package-level declaration is the unambiguous answer to the bare
+		// name; the method remains addressable as Type.Method.
+		if sym, ok := packageLevelCandidate(matches); ok {
+			doc, parseErr := parseOne(engine, sym.File)
+			if parseErr.Err != nil {
+				return domain.Symbol{}, domain.Document{}, skipped, parseErr
+			}
+			return sym, doc, skipped, nil
+		}
 		names := make([]string, 0, len(matches))
 		for _, m := range matches {
 			candidate := filepath.ToSlash(m.File) + ": " + m.QualifiedName
@@ -138,6 +149,25 @@ func ResolveWithOptions(engine domain.Engine, name, target string, resolveOpts R
 			Total:   len(paths),
 		}
 	}
+}
+
+// packageLevelCandidate returns the single non-method match among matches, when there is one.
+// Methods are not package-level identifiers, so a bare name that also names a type, func, var
+// or const should resolve to that declaration rather than to a method that happens to share it.
+func packageLevelCandidate(matches []domain.Symbol) (domain.Symbol, bool) {
+	var candidate domain.Symbol
+	found := false
+	for _, match := range matches {
+		if match.Kind == domain.KindMethod {
+			continue
+		}
+		if found {
+			return domain.Symbol{}, false
+		}
+		candidate = match
+		found = true
+	}
+	return candidate, found
 }
 
 // tryPackageQualified attempts package-qualified lookup when the normal resolution finds nothing.
@@ -180,7 +210,15 @@ func tryPackageQualified(engine domain.Engine, name string, pkgNames map[string]
 	case 1:
 		return matches[0], matchDoc, pkgSkipped, nil
 	default:
-		// Multiple matches in the same package — genuine ambiguity.
+		// Multiple matches in the same package. A package-level declaration still wins over a
+		// method with the same bare name; only genuine peers are ambiguous.
+		if sym, ok := packageLevelCandidate(matches); ok {
+			doc, parseErr := parseOne(engine, sym.File)
+			if parseErr.Err != nil {
+				return domain.Symbol{}, domain.Document{}, pkgSkipped, parseErr
+			}
+			return sym, doc, pkgSkipped, nil
+		}
 		names := make([]string, 0, len(matches))
 		for _, m := range matches {
 			candidate := filepath.ToSlash(m.File) + ": " + m.QualifiedName

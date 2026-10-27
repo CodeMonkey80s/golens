@@ -181,6 +181,11 @@ ever looked at the human path. When you add a field that a declaration head depe
 `format.OutlineNode` too; `TestRenderersAgreeOnTheWholeCorpus` in `internal/format` then checks
 every declaration in this repository rather than the constructs a test remembered to name.
 
+**A package-level declaration outranks a method with the same bare name.** Go keeps method names
+out of package scope, so `get Symbol` must return `type Symbol`, while `get Document.Symbol` returns
+the method. `packageLevelCandidate` applies this only when every match is in one package; a name
+spread across packages is still cross-package, and two peers are still ambiguous.
+
 **Build constraints are computed once, in `decorateDocument`, and reported everywhere.** A file's
 effective constraint is the conjunction of its filename suffix, its `//go:build` line and `cgo`.
 The engine records only the comment; the usecase layer owns the rest. If you parse a document

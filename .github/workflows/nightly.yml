@@ -25,6 +25,11 @@ jobs:
       - name: Build golens
         run: CGO_ENABLED=0 go build -o golens ./cmd/golens
 
+      # The compiler is the oracle for the check differential: a clean standard library must
+      # produce zero diagnostics. This is the broadest real-world clean build available.
+      - name: Compile the standard library
+        run: go build std
+
       - name: Check the standard library
         run: ./golens check "$(go env GOROOT)/src"
 
@@ -70,3 +75,31 @@ jobs:
           cache: true
       - name: Fuzz for two minutes
         run: go test -run '^$' -fuzz ${{ matrix.target }} -fuzztime 2m -parallel 4 ./internal/usecase
+
+  k9s:
+    name: k9s
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+      - name: Build golens
+        run: CGO_ENABLED=0 go build -o /tmp/golens ./cmd/golens
+
+      # A second real-world target, pinned like containerd. k9s exercises generics, embedded
+      # types, test packages and a large internal package graph that the fixtures do not.
+      - name: Fetch k9s
+        run: |
+          git init -q /tmp/k9s
+          git -C /tmp/k9s remote add origin https://github.com/derailed/k9s.git
+          git -C /tmp/k9s fetch -q --depth 1 origin ac1bcc620cb153a647160c68bc4886f47dee4391
+          git -C /tmp/k9s checkout -q FETCH_HEAD
+
+      - name: Compile k9s
+        working-directory: /tmp/k9s
+        run: CGO_ENABLED=0 go build ./...
+
+      - name: Check k9s
+        run: /tmp/golens check /tmp/k9s

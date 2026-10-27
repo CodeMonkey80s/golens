@@ -226,7 +226,9 @@ Symbols may be a bare name (`Check`) or qualified for methods (`UserStore.GetUse
 exported and unexported identifiers resolve. Passing a directory searches the whole package.
 
 A bare method name is accepted when it is unique. When two receivers share a name the command
-exits `2` and lists the candidates rather than guessing.
+exits `2` and lists the candidates rather than guessing. A package-level declaration takes
+precedence over a method with the same bare name, because the method name is not in package scope;
+use `Type.Method` to select the method.
 
 Package-qualified lookup (`Package.Symbol`) resolves `Symbol` in the named package. This is
 distinct from `Type.Method`, which selects a method within a type. The package name must match a

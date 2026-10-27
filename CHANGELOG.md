@@ -4,6 +4,20 @@ All notable changes to golens are documented in this file.
 
 ---
 
+## v0.6.2 (2026-10-27)
+
+### Fixed
+
+- A bare name that matches both a package-level declaration and a method now resolves to the package-level declaration; before, `get Symbol` was ambiguous even though the method is not in package scope. `Type.Method` still selects the method.
+
+### Added
+
+- A differential `check` test compares `golens check` with `go build` across clean, unused-import, redeclaration, malformed-import, platform-variant, ignored/testdata and custom-tag cases.
+- Repository-wide symbol round-trip test and generated-declaration property test cover every package-level symbol in the tree and reconstruct spans from construction rather than the parser.
+- Nightly `go build std` provides a compiler baseline for the stdlib check.
+
+---
+
 ## v0.6.1 (2026-10-27)
 
 ### Fixed

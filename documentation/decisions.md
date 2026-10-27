@@ -53,6 +53,7 @@ the choice is the one that cannot be misread and cannot silently corrupt a file.
 | D35 | `bounds` accepts a directory, because A6 says it does | A6's payload equivalence held only for files while `get --bounds-only` accepted directories |
 | D36 | The embedding API and MCP are thin layers over usecase | One implementation keeps CLI, library and MCP output identical; MCP must keep stdout protocol-only |
 | D37 | Traversal flags are opt-in for structural commands, default for `check` | `check` asks what a build rejects; `outline`/`get`/`bounds` ask what the tree contains |
+| D38 | A package-level declaration outranks a method with the same bare name | Method names are not in package scope, so `get Symbol` must not be ambiguous merely because `Document.Symbol` exists |
 
 ---
 
@@ -904,6 +905,22 @@ and a name given explicitly still wins because that is a caller asking about tha
 
 The alternative — making `check` opt into testdata — was rejected because the standard library
 produced 1,212 diagnostics from deliberately broken compiler fixtures.
+
+---
+
+### D38 · A package-level name outranks a method with the same bare name
+
+Go permits `type Symbol` and `func (d Document) Symbol` in one package. `Lookup` returns both for
+the bare query `Symbol`, so the old resolver called it ambiguous even though the method name is not
+in package scope. That made a package-level type unaddressable by its own name.
+
+`packageLevelCandidate` applies a narrow rule: when every match is in one package and exactly one
+is not a method, return that declaration. `Document.Symbol` still selects the method. Two peers
+(two funcs, two methods, two types) remain ambiguous, and matches across packages still report
+cross-package.
+
+The differential `check` test and the repository-wide symbol walk are the evidence: they compare
+the resolver with `go build` and ask `get`/`bounds` about every symbol in this tree.
 
 ---
 
