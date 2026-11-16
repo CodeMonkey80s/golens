@@ -25,7 +25,7 @@ Runs on `ubuntu-latest`. Steps, in order:
 | **Lint** | `golangci-lint` with bug-detection and formatter rules |
 | **Build and check the size budget** | Build with `CGO_ENABLED=0`, verify binary &lt; 15 MiB and no cgo dependency |
 | **golens on its own source** | `./golens check ./internal ./cmd` exits 0 |
-| **golens on containerd** | `./golens check /tmp/containerd` exits 0, at a pinned commit |
+| **golens on containerd** | `./golens check containerd` exits 0, at a pinned commit |
 | **Upload the binary** | Uploads the built binary as an artifact |
 
 ### `quick` (lighter job)
@@ -94,7 +94,7 @@ invocation and a local one produce the same diagnostics regardless of argument o
 
 ### Real-world validation
 
-`./golens check /tmp/containerd` must exit 0. This validates golens against a real third-party
+`./golens check containerd` must exit 0. This validates golens against a real third-party
 module, catching regressions that unit tests cannot: platform filename constraints, cross-package
 resolution, unused-import heuristics on real import graphs, and build-tag interactions.
 

@@ -148,13 +148,19 @@ jobs:
       # every upstream change into a failure in this repository's PRs, with no
       # local change to blame and no way to reproduce the run later. Bump it in
       # a dedicated commit when you want newer coverage.
+      #
+      # The checkout goes through actions/checkout so a dropped packfile is retried
+      # instead of failing the build; a bare `git fetch` has no retry.
+      - name: Fetch containerd
+        uses: actions/checkout@v4
+        with:
+          repository: containerd/containerd
+          ref: 7cdee0c4ae07816b176488b0ab375bffcfa1ea68
+          path: containerd
+          fetch-depth: 1
+
       - name: golens on containerd
-        run: |
-          git init -q /tmp/containerd
-          git -C /tmp/containerd remote add origin https://github.com/containerd/containerd.git
-          git -C /tmp/containerd fetch -q --depth 1 origin 7cdee0c4ae07816b176488b0ab375bffcfa1ea68
-          git -C /tmp/containerd checkout -q FETCH_HEAD
-          ./golens check /tmp/containerd
+        run: ./golens check containerd
 
       - name: Upload the binary
         uses: actions/upload-artifact@v4
